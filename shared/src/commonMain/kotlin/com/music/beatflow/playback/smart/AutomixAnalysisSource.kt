@@ -23,7 +23,7 @@ package com.music.beatflow.playback.smart
      * Automix: its independently cached copy must always be YouTube Opus,
      * even while playback is JioSaavn or a lossless upgrade.
      */
-    fun opusUri(videoId: String): String = "bitchord://watch?v=$videoId&$OPUS_QUERY_PARAMETER=1"
+    fun opusUri(videoId: String): String = "beatflow://watch?v=$videoId&$OPUS_QUERY_PARAMETER=1"
 
     fun requestsYouTubeOpus(marker: String?): Boolean = marker == "1"
 }

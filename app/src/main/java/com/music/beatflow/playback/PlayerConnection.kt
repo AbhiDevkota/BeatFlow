@@ -694,7 +694,7 @@ fun Song.toMediaItem(): MediaItem {
         // resolves it — see [SourceResolver.substituteForYouTube] — and that
         // match is made on them, which the loader thread has no other way to
         // reach.
-        else -> "bitchord://watch?v=$videoId${matchQuery()}"
+        else -> "beatflow://watch?v=$videoId${matchQuery()}"
     }
     return MediaItem.Builder()
         .setMediaId(videoId)
@@ -791,7 +791,7 @@ fun Song.toDirectYouTubeMediaItem(): MediaItem =
         .build()
 
 private fun Song.directYouTubeUri(): String =
-    "bitchord://watch?v=$videoId${matchQuery()}&$DIRECT_YOUTUBE_PARAMETER=1&q=original"
+    "beatflow://watch?v=$videoId${matchQuery()}&$DIRECT_YOUTUBE_PARAMETER=1&q=original"
 
 /**
  * Whether there is a YouTube upload behind this song to go back *to* — the

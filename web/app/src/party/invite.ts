@@ -1,6 +1,6 @@
 /**
  * Party invites (JamInviteLink.kt): `https://bitchord.kushagrasingh.in/invite/<CODE>`,
- * optionally `?server=<custom server>`, and `bitchord://party/<CODE>`. On the
+ * optionally `?server=<custom server>`, and `beatflow://party/<CODE>`. On the
  * web the first is a route of this app (`/invite/:code`).
  */
 

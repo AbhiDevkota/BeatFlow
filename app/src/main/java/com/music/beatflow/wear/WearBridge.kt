@@ -416,7 +416,7 @@ object WearBridge {
                                     // only those: the tag is in the address, so
                                     // it also misses the resolver's own cache.
                                     Uri.parse(uri).let { parsed ->
-                                        if (parsed.scheme != "bitchord" || parsed.authority != "source") parsed else parsed.buildUpon()
+                                        if (parsed.scheme != "beatflow" || parsed.authority != "source") parsed else parsed.buildUpon()
                                             .appendQueryParameter(AudioCache.WATCH_READ_PARAM, "1")
                                             .build()
                                     },

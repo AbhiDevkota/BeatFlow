@@ -300,7 +300,7 @@ private fun Song.canStartStation(): Boolean =
  * notification, lockscreen/Bluetooth controls, and Android Auto surface for
  * free; UI processes attach with a MediaController.
  *
- * Queue items carry a `bitchord://watch?v=<videoId>` URI. The actual stream
+ * Queue items carry a `beatflow://watch?v=<videoId>` URI. The actual stream
  * URL is resolved lazily by [ResolvingDataSource] the moment ExoPlayer opens
  * the item — stream URLs expire after a few hours, so resolving at play time
  * (on Media3's loader thread, hence runBlocking is safe) keeps queues valid.
@@ -1725,7 +1725,7 @@ class PlaybackService : MediaLibraryService() {
             // is made in one place for every branch of it, and made from what
             // the resolver *returned* rather than from what each branch meant
             // to return. Nothing above this line knows what is really on the
-            // end of a `bitchord://` URI and nothing below it knows which
+            // end of a `beatflow://` URI and nothing below it knows which
             // track's bytes it is fetching; this is the seam where both are in
             // hand. See [StreamContainer].
             streamResolver.resolveDataSpec(dataSpec).also { resolved ->
@@ -1902,7 +1902,7 @@ class PlaybackService : MediaLibraryService() {
             // local files whose videoId is a content:// URI that cannot resolve.
             val fallback = if (uri.scheme == "content" || uri.scheme == "file") {
                 item.mediaId.takeIf { it.isNotBlank() }?.let { vid ->
-                    if (Downloads.saved.value.containsKey(vid)) "bitchord://watch?v=$vid" else null
+                    if (Downloads.saved.value.containsKey(vid)) "beatflow://watch?v=$vid" else null
                 }
             } else null
             if (fallback != null) {
@@ -4273,8 +4273,8 @@ class PlaybackService : MediaLibraryService() {
      * manifest through a progressive source — [StreamContainer] has the full
      * account of why one cannot be played that way and how it happens anyway.
      * The live path now declines to substitute one at all, but that is only the
-     * `bitchord://watch?v=…` half: a track queued from a module's own search
-     * results plays through `bitchord://source?…`, is resolved by that module
+     * `beatflow://watch?v=…` half: a track queued from a module's own search
+     * results plays through `beatflow://source?…`, is resolved by that module
      * and by nothing else, and has no YouTube copy to start on. For those there
      * is no choice to make in advance, and this is the only place that can see
      * what actually came back.
@@ -5184,7 +5184,7 @@ class PlaybackService : MediaLibraryService() {
 
     /**
      * Tells Media3 the type of a stream found behind one of our virtual
-     * `bitchord://` playback URIs.
+     * `beatflow://` playback URIs.
      *
      * The resolver replaces that URI with the real URL only after
      * [DefaultMediaSourceFactory] has selected a source implementation. A
@@ -5518,7 +5518,7 @@ class PlaybackService : MediaLibraryService() {
         // A manifest cannot be substituted here, however good it is. This
         // function runs on the loader thread, *inside* the open of a media
         // source that was built minutes ago from an extensionless
-        // `bitchord://` URI — so the source is already progressive and cannot
+        // `beatflow://` URI — so the source is already progressive and cannot
         // be told otherwise, and handing it a manifest is a track that fails
         // at 0ms rather than a track that plays lossless. See [StreamContainer]
         // for the log of exactly that.
@@ -5845,7 +5845,7 @@ class PlaybackService : MediaLibraryService() {
             if (!name.isNullOrBlank()) return name
         }
 
-        // 5. Virtual bitchord://source?s=... playback URI
+        // 5. Virtual beatflow://source?s=... playback URI
         if (uri?.authority == "source") {
             val configId = uri.getQueryParameter("s")
             val name = configId?.let { SourceRegistry.config(it)?.displayName }

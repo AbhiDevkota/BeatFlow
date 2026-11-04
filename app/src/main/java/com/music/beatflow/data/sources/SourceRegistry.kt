@@ -539,7 +539,7 @@ object SourceRegistry {
     /** The playback URI for a source-backed track; [PlaybackService] resolves it at open time. */
     fun trackUri(configId: String, trackId: String): String =
         Uri.Builder()
-            .scheme("bitchord")
+            .scheme("beatflow")
             .authority("source")
             .appendQueryParameter("s", configId)
             .appendQueryParameter("t", trackId)

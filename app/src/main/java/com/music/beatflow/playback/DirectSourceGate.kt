@@ -154,7 +154,7 @@ object DirectSourceGate {
      */
     fun isStreamReady(item: androidx.media3.common.MediaItem): Boolean {
         val uri = item.localConfiguration?.uri ?: return true
-        if (uri.scheme != "bitchord") return true
+        if (uri.scheme != "beatflow") return true
         val now = android.os.SystemClock.elapsedRealtime()
         readyCheck?.let { (id, ready, at) ->
             if (id == item.mediaId && (ready || now - at < READY_RECHECK_MS)) return ready

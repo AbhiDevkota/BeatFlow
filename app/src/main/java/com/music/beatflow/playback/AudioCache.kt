@@ -69,7 +69,7 @@ import kotlin.coroutines.coroutineContext
  * expire within hours, and differ between resolves of the same track, so
  * keying on them would cache every track afresh on every play. Because
  * [CacheDataSource] sits *outside* the resolving data source it sees the
- * original `bitchord://watch?v=<id>` request, and a cache hit never resolves a
+ * original `beatflow://watch?v=<id>` request, and a cache hit never resolves a
  * URL at all.
  */
 @UnstableApi
@@ -553,7 +553,7 @@ object AudioCache {
      * resolved at all.
      */
     fun originOf(uri: Uri): Origin? {
-        if (!::cache.isInitialized || uri.scheme != "bitchord") return null
+        if (!::cache.isInitialized || uri.scheme != "beatflow") return null
         val key = keyFactory.buildCacheKey(DataSpec(uri))
         return runCatching { cache.getContentMetadata(key).get(META_ORIGIN, null as String?) }
             .getOrNull()
@@ -748,7 +748,7 @@ object AudioCache {
      * Tags the cache entry [spec] is filling with who is serving it.
      *
      * Called from the player's resolving data source, the one place where the
-     * `bitchord://` request and the real stream URL it resolved to are both in
+     * `beatflow://` request and the real stream URL it resolved to are both in
      * hand — see PlaybackService. [CacheDataSource] has already put the cache
      * key it is writing under into [DataSpec.key], so the tag lands on exactly
      * the entry being filled, whichever rendition that is.
@@ -759,7 +759,7 @@ object AudioCache {
      */
     fun recordServed(spec: DataSpec, servedUrl: String) {
         if (!::cache.isInitialized) return
-        if (spec.uri.scheme != "bitchord") return
+        if (spec.uri.scheme != "beatflow") return
         val mediaId = mediaIdIn(spec.uri) ?: return
         val key = spec.key ?: keyFactory.buildCacheKey(spec)
         val origin = originOf(spec.uri, mediaId, servedUrl)
@@ -1036,7 +1036,7 @@ object AudioCache {
         // No upstream factory, so anything not on disk fails rather than streams.
         val source = CacheDataSource.Factory().setCache(cache).createDataSource()
         val spec = DataSpec.Builder()
-            .setUri(Uri.parse("bitchord://cache"))
+            .setUri(Uri.parse("beatflow://cache"))
             .setKey(copy.key)
             .setPosition(0)
             .setLength(copy.length)
@@ -1240,7 +1240,7 @@ object AudioCache {
      * way on a direct-mode miss.
      */
     private fun settleDirectEntry(uri: Uri) {
-        if (uri.scheme != "bitchord" || uri.authority != "watch") return
+        if (uri.scheme != "beatflow" || uri.authority != "watch") return
         val videoId = uri.getQueryParameter("v") ?: return
         // A rendition of its own (an upgrade, a revert), the watch's capped
         // copy and Automix's Opus are none of this: each has its own entry.
@@ -1438,7 +1438,7 @@ object AudioCache {
                 // earlier play: the player reads that head straight off disk,
                 // and the pin would then stream the substitute after it. That
                 // track's way up is the second look — see [heldByYouTube].
-                val youTubeFilled = heldByYouTube(cacheKeyOf(Uri.parse("bitchord://watch?v=$next")))
+                val youTubeFilled = heldByYouTube(cacheKeyOf(Uri.parse("beatflow://watch?v=$next")))
                 val warmed = if (substitutable && target != null && !pinnedToYouTube && !youTubeFilled) {
                     runCatching { SourceResolver.prefetchSubstitute(target) }
                         .onFailure { TrackLog.d(TAG, "warm-up substitute failed for $next: ${it.message}", about = next) }
@@ -1523,7 +1523,7 @@ object AudioCache {
                     // rest streamed after it — see [settleDirectEntry]. The
                     // Opus goes first, or the addon is not pinned at all and
                     // playback's own open settles it.
-                    val key = cacheKeyOf(Uri.parse("bitchord://watch?v=$id"))
+                    val key = cacheKeyOf(Uri.parse("beatflow://watch?v=$id"))
                     if (addon != null && heldByYouTube(key)) dropYouTubeEntry(key, id)
                     if (addon != null && heldByYouTube(key)) return@launch
                     StreamChoice.remember(id, stream, substituted = addon != null)
@@ -1546,7 +1546,7 @@ object AudioCache {
      * [target] is what a cross-source match is made on, and read-ahead cannot
      * reach it any other way: it runs for tracks that are not the current item,
      * so the session's metadata is the wrong track's, and the plain
-     * `bitchord://watch?v=…` URI it builds for itself carries an id and nothing
+     * `beatflow://watch?v=…` URI it builds for itself carries an id and nothing
      * else. It rides along from the queue instead — see
      * [PlaybackService.prefetchAround][com.music.beatflow.playback.PlaybackService].
      */
@@ -1846,7 +1846,7 @@ object AudioCache {
      * "openable with exactly these bytes".
      */
     private fun alignmentPrefixBytes(videoId: String): Long {
-        val watch = Uri.parse("bitchord://watch?v=$videoId")
+        val watch = Uri.parse("beatflow://watch?v=$videoId")
         val opus = Uri.parse(AutomixAnalysisSource.opusUri(videoId))
         val renditions = renditionsOf(watch)
         val sameSource = renditions
@@ -1923,7 +1923,7 @@ object AudioCache {
                     // regardless.
                     pull(
                         videoId,
-                        Uri.parse("bitchord://watch?v=$videoId"),
+                        Uri.parse("beatflow://watch?v=$videoId"),
                         0,
                         want,
                         /* pinKey = */ false,
@@ -2323,7 +2323,7 @@ object AudioCache {
      * from a track played earlier, or skipped back to — costs only the rest.
      */
     private suspend fun fetch(videoId: String, position: Long, length: Long) =
-        fetch(videoId, Uri.parse("bitchord://watch?v=$videoId"), position, length)
+        fetch(videoId, Uri.parse("beatflow://watch?v=$videoId"), position, length)
 
     /**
      * [pinKey] forces the write to land under [cacheKey] instead of wherever

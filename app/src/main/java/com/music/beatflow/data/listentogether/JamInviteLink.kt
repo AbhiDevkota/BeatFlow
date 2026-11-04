@@ -18,9 +18,9 @@ object JamInviteLink {
 
     const val ORIGIN = "https://bitchord.kushagrasingh.in"
 
-    private const val EXTRA_CONSUMED = "bitchord.jamInviteConsumed"
+    private const val EXTRA_CONSUMED = "beatflow.jamInviteConsumed"
     private const val HOST = "bitchord.kushagrasingh.in"
-    private const val CUSTOM_SCHEME = "bitchord"
+    private const val CUSTOM_SCHEME = "beatflow"
     private const val CUSTOM_HOST = "party"
 
     private val _pending = MutableStateFlow<ParsedJamInvite?>(null)
@@ -49,7 +49,7 @@ object JamInviteLink {
 
     /**
      * Parses an incoming invite:
-     * 1. bitchord://party/<CODE>?server=<SERVER>
+     * 1. beatflow://party/<CODE>?server=<SERVER>
      * 2. https://bitchord.kushagrasingh.in/invite/<CODE>?server=<SERVER>
      */
     fun parseInvite(value: String?): ParsedJamInvite? {
@@ -59,7 +59,7 @@ object JamInviteLink {
         val query = uri.rawQuery
         val server = extractQueryParam(query, "server")?.let { sanitizeServerUrl(it) }
 
-        // 1. Custom scheme: bitchord://party/<CODE> or bitchord://party?code=<CODE>
+        // 1. Custom scheme: beatflow://party/<CODE> or beatflow://party?code=<CODE>
         if (scheme == CUSTOM_SCHEME && host == CUSTOM_HOST) {
             val pathPart = uri.path.orEmpty().trim('/').takeIf { it.isNotBlank() }
             val candidate = pathPart ?: extractQueryParam(query, "code") ?: return null
@@ -91,9 +91,9 @@ object JamInviteLink {
         val base = customServer?.trim()?.trimEnd('/')
         return if (!base.isNullOrBlank()) {
             val encoded = runCatching { URLEncoder.encode(base, "UTF-8") }.getOrDefault(base)
-            "bitchord://party/$normalizedCode?server=$encoded"
+            "beatflow://party/$normalizedCode?server=$encoded"
         } else {
-            "bitchord://party/$normalizedCode"
+            "beatflow://party/$normalizedCode"
         }
     }
 
