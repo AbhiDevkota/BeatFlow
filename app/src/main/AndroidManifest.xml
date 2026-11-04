@@ -317,11 +317,11 @@
         <!--
           The launcher entries live on aliases, not on MainActivity, so the user can
           swap the home-screen icon by enabling one alias and disabling the others
-          (see AppIcon). Exactly one is enabled at a time; Default is the shipped one.
+          (see AppIcon). Exactly one is enabled at a time; Monochrome is the shipped one.
         -->
         <activity-alias
             android:name=".LauncherDefault"
-            android:enabled="true"
+            android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher"
@@ -335,7 +335,7 @@
 
         <activity-alias
             android:name=".LauncherMonochrome"
-            android:enabled="false"
+            android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_monochrome"
             android:roundIcon="@mipmap/ic_monochrome"

@@ -9,8 +9,8 @@ import android.content.pm.PackageManager
  * carrying the launcher intent filter; exactly one is enabled at a time.
  */
 enum class AppIcon(val alias: String, val iconRes: Int, val labelRes: Int) {
-    Default("LauncherDefault", R.mipmap.ic_launcher, R.string.app_icon_default),
     Monochrome("LauncherMonochrome", R.mipmap.ic_monochrome, R.string.app_icon_monochrome),
+    NeonBorder("LauncherDefault", R.mipmap.ic_launcher, R.string.app_icon_neon_border),
     NeonBorderless("LauncherNeonBorderless", R.mipmap.ic_neon_borderless, R.string.app_icon_neon_borderless);
 
     private fun component(context: Context) =
@@ -22,7 +22,7 @@ enum class AppIcon(val alias: String, val iconRes: Int, val labelRes: Int) {
             return entries.firstOrNull {
                 pm.getComponentEnabledSetting(it.component(context)) ==
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            } ?: Default
+            } ?: Monochrome
         }
 
         /** Enables [icon] before disabling the rest so there is never a moment with no launcher entry. */

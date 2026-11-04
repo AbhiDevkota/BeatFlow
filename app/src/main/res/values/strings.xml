@@ -350,7 +350,7 @@
     <string name="show_listen_together_button">Show Listen Together button</string>
     <string name="show_listen_together_button_subtitle">Off, the player shows only the audio output button between lyrics and the queue</string>
     <string name="app_icon">App icon</string>
-    <string name="app_icon_default">Default</string>
+    <string name="app_icon_neon_border" translatable="false">Neon Border</string>
     <string name="app_icon_monochrome" translatable="false">Monochrome</string>
     <string name="app_icon_neon_borderless" translatable="false">Neon Borderless</string>
     <string name="theme">Theme</string>
