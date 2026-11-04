@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -565,8 +564,7 @@ private fun TvTopBar(
             tint = TvGlass.TextPrimary,
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .height(21.dp)
-                .aspectRatio(730f / 484f),
+                .size(24.dp),
         )
         TvAvatarButton(
             imageUrl = if (signedIn) avatarUrl else null,
@@ -670,7 +668,7 @@ fun TvAppMark(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp =
             painter = painterResource(R.drawable.ic_logo),
             contentDescription = "BitChord",
             tint = Color.White,
-            modifier = Modifier.size(size * 0.52f),
+            modifier = Modifier.size(size * 0.56f),
         )
     }
 }

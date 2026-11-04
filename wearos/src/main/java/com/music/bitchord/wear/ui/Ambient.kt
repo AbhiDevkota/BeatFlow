@@ -110,10 +110,10 @@ fun AmbientPlayer(np: NowPlaying, ambient: Ambient) {
                 .align(Alignment.BottomCenter)
                 .offset(shift.x.dp, shift.y.dp)
                 .padding(bottom = h * 0.09f)
-                .size(width = h * 0.11f * LOGO_ASPECT, height = h * 0.11f),
+                .size(h * LOGO_SIZE),
         )
     }
 }
 
-/** ic_logo's viewport, 730 x 484 — as the phone's Home draws it. */
-private const val LOGO_ASPECT = 730f / 484f
+/** The mark's height as a fraction of the screen height. */
+private const val LOGO_SIZE = 0.13f
