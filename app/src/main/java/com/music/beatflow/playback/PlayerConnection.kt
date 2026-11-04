@@ -545,7 +545,7 @@ private const val EXTRA_SET_VIDEO_ID = "bitchord.setVideoId"
 internal const val EXTRA_LOCAL_URI = "bitchord.localUri"
 
 /** @see Song.localPath */
-internal const val EXTRA_LOCAL_PATH = "bitchord.localPath"
+internal const val EXTRA_LOCAL_PATH = "beatflow.localPath"
 
 /**
  * How long the track runs, as the row that queued it said.
