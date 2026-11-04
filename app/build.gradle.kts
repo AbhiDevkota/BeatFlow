@@ -115,7 +115,7 @@ android {
     productFlavors {
         create("dev") {
             dimension = "env"
-            applicationId = "com.dev.bitchord"
+            applicationId = "com.dev.beatflow"
             resValue("string", "app_name", "BeatFlow Dev")
         }
         create("prod") {
