@@ -35,7 +35,7 @@ the same signing key. So the watch app takes the phone app's ids:
 | Watch build | Package | Pairs with |
 | --- | --- | --- |
 | `devDebug` | `com.dev.bitchord` | the phone's `devDebug` (debug key) |
-| `prodRelease` | `com.music.bitchord` | the phone's `prodRelease` (release key) |
+| `prodRelease` | `com.music.beatflow` | the phone's `prodRelease` (release key) |
 
 A watch build only finds a phone build of the same flavor **and** signed with
 the same key. Published phone APKs are signed in CI with the key from

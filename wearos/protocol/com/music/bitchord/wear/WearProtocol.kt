@@ -1,4 +1,4 @@
-package com.music.bitchord.wear
+package com.music.beatflow.wear
 
 /**
  * The wire between the phone app and the watch app.

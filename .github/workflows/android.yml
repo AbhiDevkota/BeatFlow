@@ -2,7 +2,7 @@ name: Android Release APK
 
 on:
   push:
-    branches: [main]
+    branches: [prod/install]
   workflow_dispatch:
 
 jobs:
