@@ -138,7 +138,7 @@ export interface DiscordPresenceOptions {
   status: 'online' | 'idle' | 'dnd' | 'invisible';
   /** Lead with the song title rather than the artist in member lists. */
   useDetails: boolean;
-  /** Replaces "BitChord" after "Listening to"; empty keeps it. */
+  /** Replaces "BeatFlow" after "Listening to"; empty keeps it. */
   activityName: string;
   button1Text: string;
   button1Visible: boolean;
