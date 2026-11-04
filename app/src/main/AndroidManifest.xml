@@ -319,6 +319,7 @@
           swap the home-screen icon by enabling one alias and disabling the others
           (see AppIcon). Exactly one is enabled at a time; Monochrome is the shipped one.
         -->
+        <!-- Temporarily disabled: Neon Border icon
         <activity-alias
             android:name=".LauncherDefault"
             android:enabled="false"
@@ -332,6 +333,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        -->
 
         <activity-alias
             android:name=".LauncherMonochrome"

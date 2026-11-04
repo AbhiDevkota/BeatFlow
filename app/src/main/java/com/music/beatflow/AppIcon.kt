@@ -10,7 +10,7 @@ import android.content.pm.PackageManager
  */
 enum class AppIcon(val alias: String, val iconRes: Int, val labelRes: Int) {
     Monochrome("LauncherMonochrome", R.mipmap.ic_monochrome, R.string.app_icon_monochrome),
-    NeonBorder("LauncherDefault", R.mipmap.ic_launcher, R.string.app_icon_neon_border),
+    // NeonBorder("LauncherDefault", R.mipmap.ic_launcher, R.string.app_icon_neon_border),
     NeonBorderless("LauncherNeonBorderless", R.mipmap.ic_neon_borderless, R.string.app_icon_neon_borderless);
 
     private fun component(context: Context) =
