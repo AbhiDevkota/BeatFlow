@@ -201,7 +201,7 @@ export class Gateway {
       try {
         this.onMessage(JSON.parse(String(event.data)) as Payload);
       } catch (error) {
-        console.warn('BitChord: Discord gateway payload', error);
+        console.warn('BeatFlow: Discord gateway payload', error);
       }
     };
     socket.onclose = (event) => {
@@ -246,7 +246,7 @@ export class Gateway {
   }
 
   private drop(why: string): void {
-    console.info(`BitChord: Discord gateway dropped (${why})`);
+    console.info(`BeatFlow: Discord gateway dropped (${why})`);
     this.ready = false;
     this.socket?.close();
   }
