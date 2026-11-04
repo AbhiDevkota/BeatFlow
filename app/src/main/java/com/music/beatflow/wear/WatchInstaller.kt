@@ -62,8 +62,8 @@ import com.music.beatflow.wear.WearProtocol as P
 object WatchInstaller {
 
     private const val TAG = "BeatFlowWear"
-    private const val APK_ASSET = "wear/BitChordWear.apk"
-    private const val SHA_ASSET = "wear/BitChordWear.sha256"
+    private const val APK_ASSET = "wear/BeatFlowWear.apk"
+    private const val SHA_ASSET = "wear/BeatFlowWear.sha256"
     private const val PAIRING_SERVICE = "_adb-tls-pairing._tcp"
     private const val CONNECT_SERVICE = "_adb-tls-connect._tcp"
 
@@ -225,9 +225,9 @@ object WatchInstaller {
 
     /** The bundled APK, as a file — sendFile and the ADB stream both want one. */
     private fun bundledApk(app: Context): File {
-        val target = File(app.cacheDir, "wear/BitChordWear.apk")
+        val target = File(app.cacheDir, "wear/BeatFlowWear.apk")
         val hash = bundledHash(app)
-        val stamp = File(target.parentFile, "BitChordWear.sha256")
+        val stamp = File(target.parentFile, "BeatFlowWear.sha256")
         if (target.exists() && stamp.exists() && stamp.readText() == hash) return target
         target.parentFile?.mkdirs()
         app.assets.open(APK_ASSET).use { input -> target.outputStream().use { input.copyTo(it) } }
