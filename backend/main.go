@@ -829,7 +829,7 @@ func handleInviteLanding(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deepLink := fmt.Sprintf("beatflow://party/%s?server=%s", url.PathEscape(code), url.QueryEscape(origin))
-	intentURI := fmt.Sprintf("intent://party/%s?server=%s#Intent;scheme=bitchord;end", url.PathEscape(code), url.QueryEscape(origin))
+	intentURI := fmt.Sprintf("intent://party/%s?server=%s#Intent;scheme=beatflow;end", url.PathEscape(code), url.QueryEscape(origin))
 
 	currentSongTitle := ""
 	currentSongArtist := ""
