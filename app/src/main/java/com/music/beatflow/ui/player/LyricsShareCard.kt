@@ -162,6 +162,35 @@ internal class LyricsCardScene(
     }
 
     /**
+     * Where each sung line hands over, on the clip's own clock: the start of
+     * whatever follows it — a break's own start when the pick skipped a
+     * stretch, or the next sung line's start when nothing was skipped — and
+     * the end of the clip for the last line. A line dims from here, so a
+     * break lights its dots instead of leaving the line above standing.
+     */
+    private val fallStarts: List<Long> = run {
+        val span = spanOf(request.lines) ?: return@run emptyList()
+        val endOfClip = span.second - span.first
+        val sung = request.lines.filter { !it.isGap && it.startMs != null }
+        val out = mutableListOf<Long>()
+        var si = 0
+        request.lines.forEachIndexed { idx, line ->
+            if (line.isGap || line.startMs == null) return@forEachIndexed
+            val next = request.lines.getOrNull(idx + 1)
+            val fall = if (next?.isGap == true) {
+                // The break's own start is the end of this line's singing.
+                line.endMs?.let { it - span.first }
+                    ?: (sung.getOrNull(si + 1)?.startMs?.let { it - span.first } ?: endOfClip)
+            } else {
+                sung.getOrNull(si + 1)?.startMs?.let { it - span.first } ?: endOfClip
+            }
+            out += fall
+            si++
+        }
+        out
+    }
+
+    /**
      * The breaks, on the clip's own clock: a break's dots fill from the end of
      * the sung line before it to the start of the one after — the stretch the
      * pick skipped, which is exactly the silence the dots are there to time.
@@ -401,8 +430,9 @@ internal class LyricsCardScene(
     private fun weightFor(group: Int, t: Long): Float {
         if (group >= lineStarts.size || lineStarts.isEmpty()) return 1f
         val rise = ((t - lineStarts[group]).toFloat() / CROSSFADE_MS).coerceIn(0f, 1f)
-        val next = lineStarts.getOrNull(group + 1)
-        val fall = if (next != null) ((t - next).toFloat() / CROSSFADE_MS).coerceIn(0f, 1f) else 0f
+        val fall = fallStarts.getOrNull(group)?.let {
+            ((t - it).toFloat() / CROSSFADE_MS).coerceIn(0f, 1f)
+        } ?: 0f
         return DIM_LIT + (1f - DIM_LIT) * rise * (1f - fall)
     }
 }
@@ -487,7 +517,7 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
             // panel's own three dots filling across the break; this row stays
             // in the layout so the passage's height does not change between
             // the two.
-            val marker = type.body(size * 0.65f, 0x66FFFFFF.toInt())
+            val marker = type.body(size * 0.65f, 0x66FFFFFF)
             val markerHeight = marker.descent() - marker.ascent()
             rows += Row("(...)", marker, markerHeight, 0f, isGap = true, lineIndex = index)
             return@forEachIndexed
