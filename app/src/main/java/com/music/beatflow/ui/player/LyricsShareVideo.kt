@@ -104,43 +104,37 @@ internal suspend fun renderLyricsShareVideo(
 
     try {
         // ── The picture ─────────────────────────────────────────────────────
-        val frameBitmap = Bitmap.createBitmap(
-            scene.width.roundToInt(),
-            scene.height.roundToInt(),
-            Bitmap.Config.ARGB_8888,
-        )
-        val frameCanvas = Canvas(frameBitmap)
         val encoded = GlVideoEncoder(scene.width.roundToInt(), scene.height.roundToInt())
 
         val video = try {
             encoded.start()
+            // The card goes up to the GPU once, as layers; every frame after
+            // is the GPU's to composite.
+            encoded.setLayers(scene.gpuLayers())
             val samples = mutableListOf<Sample>()
             var format: MediaFormat? = null
             fun collect(sample: Sample?, codecFormat: MediaFormat?) {
                 if (codecFormat != null) format = codecFormat
                 if (sample != null) samples += sample
             }
-            // While the highlight holds still — most of any clip — the frame
-            // is the one before it: the rows' brightness is compared frame to
-            // frame, and an unchanged frame is posted at its new timestamp
-            // without a redraw or an upload. The encoder sees a frame a step
-            // regardless; the work between them is what goes.
             // The clip is variable-frame-rate, and glad of it: the picture
-            // only changes when the highlight hands one line to the next, so
-            // only those moments are submitted — at full 30fps through each
-            // crossfade, and a single frame across every hold between them.
-            // The timestamps carry the pacing, the encoder sees a tenth of
-            // the frames, and the last frame is always sent so the container
-            // knows where the clip ends.
+            // only changes when the highlight hands one line to the next or a
+            // break's dot steps on, so only those moments are submitted — at
+            // full 30fps through each crossfade, and a single frame across
+            // every hold between them. The timestamps carry the pacing, the
+            // encoder sees a fraction of the frames, and the last frame is
+            // always sent so the container knows where the clip ends.
             var lastAlphas: IntArray? = null
+            val gpuAlphas = FloatArray(scene.gpuLayerCount() + 1)
+            gpuAlphas[0] = 1f // the furniture stands whole
             for (frame in 0 until frameCount) {
                 callerContext.ensureActive()
                 val alphas = scene.frameAlphas((frame * FRAME_MS).toLong())
                 if (lastAlphas == null || !alphas.contentEquals(lastAlphas) ||
                     frame == frameCount - 1
                 ) {
-                    scene.draw(frameCanvas, alphas)
-                    encoded.draw(frameBitmap, frame * MICROS_PER_FRAME)
+                    for (i in alphas.indices) gpuAlphas[i + 1] = alphas[i] / 255f
+                    encoded.drawFrame(gpuAlphas, frame * MICROS_PER_FRAME)
                     lastAlphas = alphas
                 }
                 encoded.drain(::collect)
@@ -150,8 +144,7 @@ internal suspend fun renderLyricsShareVideo(
             // preceded it — across a hold that is seconds, and the clip would
             // linger long after its sound had ended. One more frame a step
             // after the last keeps the tail one frame long, as it should be.
-            scene.draw(frameCanvas, lastAlphas ?: scene.frameAlphas(0L))
-            encoded.draw(frameBitmap, frameCount * MICROS_PER_FRAME)
+            encoded.drawFrame(gpuAlphas, frameCount * MICROS_PER_FRAME)
             encoded.drain(::collect)
             encoded.finish(::collect)
             if (samples.isEmpty()) return@withContext null
@@ -211,6 +204,12 @@ internal class Track(val format: MediaFormat, val samples: List<Sample>)
  * The encoder's input surface, fronted by EGL so every frame can carry the
  * timestamp it deserves — see [renderLyricsShareVideo] for why a canvas on the
  * surface would pace the clip by the wall clock.
+ *
+ * The card arrives as layers — the furniture, the sung rows, the break's dots
+ * — each uploaded to its own texture **once**. A frame is then the GPU's alone
+ * to make: every layer is drawn at its place with its brightness, nothing is
+ * rasterised, copied or carried across per frame, and the CPU's only part in
+ * a frame is naming the numbers.
  */
 private class GlVideoEncoder(private val width: Int, private val height: Int) {
     private var encoder: MediaCodec? = null
@@ -219,12 +218,16 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
     private var program = 0
-    private var texture = 0
-    private var quad: FloatBuffer? = null
-    /** The frame's pixels, walked over once per upload — see [upload]. */
+    private var alphaHandle = 0
+    private var positionHandle = 0
+    private var texHandle = 0
+    private var layers: List<GpuTexture> = emptyList()
+    /** Scratch for the one-time layer uploads, sized to the largest layer. */
     private var pixels: ByteBuffer? = null
-    private var texturedOnce = false
     private val bufferInfo = MediaCodec.BufferInfo()
+
+    /** A layer in GPU terms: its texture and its quad, ready to draw. */
+    private class GpuTexture(val texture: Int, val quad: FloatBuffer)
 
     fun start() {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
@@ -274,76 +277,102 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         if (!EGL14.eglMakeCurrent(display, eglSurface, eglSurface, eglContext)) fail("eglMakeCurrent")
 
         program = buildProgram()
-        texture = buildTexture()
-        quad = ByteBuffer.allocateDirect(QUAD.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
-            put(QUAD)
-            position(0)
-        }
-        pixels = ByteBuffer.allocateDirect(width * height * 4).order(ByteOrder.nativeOrder())
-    }
-
-    /** Draws [bitmap] as the next frame, stamped [presentationUs] microseconds in. */
-    fun draw(bitmap: Bitmap, presentationUs: Long) {
-        upload(bitmap)
-        present(presentationUs)
+        alphaHandle = GLES20.glGetUniformLocation(program, "uAlpha")
+        positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
+        texHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
     }
 
     /**
-     * Posts another frame whose pixels the texture already holds — the same
-     * picture at a new timestamp. The buffer is still drawn in full: what a
-     * window surface hands back after a swap has no defined content, only the
-     * texture is guaranteed to still be there.
+     * Uploads the layers once, each to its own texture, and builds each one's
+     * quad. After this the frame loop touches no pixels at all.
      */
-    fun present(presentationUs: Long) {
-        drawQuad()
-        EGLExt.eglPresentationTimeANDROID(display, eglSurface, presentationUs * 1000L)
-        if (!EGL14.eglSwapBuffers(display, eglSurface)) fail("eglSwapBuffers")
-    }
-
-    /** Copies [bitmap] into the texture the quad is drawn with. */
-    private fun upload(bitmap: Bitmap) {
-        // GLUtils has texImage2D but no public sub-image call, so the pixels go
-        // over through a buffer: copied straight out of the bitmap and handed
-        // to GLES — the first draw allocates the texture, the rest update it.
-        val buffer = pixels!!
-        buffer.clear()
-        bitmap.copyPixelsToBuffer(buffer)
-        buffer.position(0)
-        if (texturedOnce) {
-            GLES20.glTexSubImage2D(
-                GLES20.GL_TEXTURE_2D, 0, 0, 0, width, height,
-                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buffer,
-            )
-        } else {
-            GLES20.glTexImage2D(
-                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0,
-                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buffer,
-            )
-            texturedOnce = true
+    fun setLayers(layers: List<LyricsCardScene.GpuLayer>) {
+        var maxBytes = 0
+        for (layer in layers) {
+            maxBytes = maxOf(maxBytes, layer.bitmap.rowBytes * layer.bitmap.height)
         }
+        val scratch = ByteBuffer.allocateDirect(maxBytes).order(ByteOrder.nativeOrder())
+        val handles = IntArray(layers.size)
+        GLES20.glGenTextures(layers.size, handles, 0)
+        this.layers = layers.mapIndexed { index, layer ->
+            val bitmap = layer.bitmap
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, handles[index])
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            scratch.clear()
+            bitmap.copyPixelsToBuffer(scratch)
+            scratch.position(0)
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, bitmap.width, bitmap.height, 0,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, scratch,
+            )
+            GpuTexture(handles[index], quadFor(layer, bitmap.width, bitmap.height))
+        }
+        pixels = scratch
     }
 
-    private fun drawQuad() {
+    /**
+     * One layer's corner positions, from its place on the card into the
+     * viewport's -1..1, interleaved with its texture coordinates — the same
+     * four-floats-a-corner layout the draw reads, with the v coordinate
+     * flipped because a bitmap's first row is its top.
+     */
+    private fun quadFor(layer: LyricsCardScene.GpuLayer, bitmapWidth: Int, bitmapHeight: Int): FloatBuffer {
+        val x0 = layer.x / width * 2f - 1f
+        val x1 = (layer.x + bitmapWidth) / width * 2f - 1f
+        val yTop = 1f - layer.y / height * 2f
+        val yBot = 1f - (layer.y + bitmapHeight) / height * 2f
+        val floats = floatArrayOf(
+            x0, yBot, 0f, 1f,
+            x1, yBot, 1f, 1f,
+            x0, yTop, 0f, 0f,
+            x1, yTop, 1f, 0f,
+        )
+        return ByteBuffer.allocateDirect(floats.size * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .apply { put(floats); position(0) }
+    }
+
+    /**
+     * Composites one frame entirely on the GPU: every layer drawn at its
+     * place with its brightness, then stamped [presentationUs] microseconds
+     * in. [alphas] runs one entry per layer, the furniture first at full.
+     */
+    fun drawFrame(alphas: FloatArray, presentationUs: Long) {
         GLES20.glViewport(0, 0, width, height)
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(program)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
-        val corners = quad ?: return
-        val positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
-        val texHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
+        // Premultiplied-over: the layers left the canvas premultiplied, so the
+        // blend is one-and-inverse-source, not source-alpha.
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        for ((index, layer) in layers.withIndex()) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, layer.texture)
+            GLES20.glUniform1f(alphaHandle, alphas[index])
+            drawQuad(layer.quad)
+        }
+        GLES20.glDisable(GLES20.GL_BLEND)
+        EGLExt.eglPresentationTimeANDROID(display, eglSurface, presentationUs * 1000L)
+        if (!EGL14.eglSwapBuffers(display, eglSurface)) fail("eglSwapBuffers")
+    }
+
+    private fun drawQuad(quad: FloatBuffer) {
         GLES20.glEnableVertexAttribArray(positionHandle)
         // The buffer interleaves position and texture coordinate — two floats
         // each, four to a corner — so the stride is one whole corner. A stride
         // of zero walks the positions straight through the coordinates: vertex
         // one's position becomes vertex zero's texture coordinate, and the quad
         // tears into the wedge that was rendering all along.
-        GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 16, corners)
+        GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 16, quad)
         GLES20.glEnableVertexAttribArray(texHandle)
         GLES20.glVertexAttribPointer(
             texHandle, 2, GLES20.GL_FLOAT, false, 16,
-            corners.duplicate().apply { position(2) },
+            quad.duplicate().apply { position(2) },
         )
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         GLES20.glDisableVertexAttribArray(positionHandle)
@@ -418,6 +447,10 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         runCatching { inputSurface?.release() }
         inputSurface = null
         if (display != EGL14.EGL_NO_DISPLAY) {
+            if (layers.isNotEmpty()) {
+                val handles = IntArray(layers.size) { layers[it].texture }
+                GLES20.glDeleteTextures(handles.size, handles, 0)
+            }
             runCatching {
                 EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
             }
@@ -428,6 +461,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         display = EGL14.EGL_NO_DISPLAY
         eglSurface = EGL14.EGL_NO_SURFACE
         eglContext = EGL14.EGL_NO_CONTEXT
+        layers = emptyList()
     }
 
     private fun buildProgram(): Int {
@@ -443,9 +477,10 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         val fragment = """
             precision mediump float;
             uniform sampler2D uTexture;
+            uniform float uAlpha;
             varying vec2 vTexCoord;
             void main() {
-                gl_FragColor = texture2D(uTexture, vTexCoord);
+                gl_FragColor = texture2D(uTexture, vTexCoord) * uAlpha;
             }
         """.trimIndent()
 
@@ -462,35 +497,9 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         return program
     }
 
-    private fun buildTexture(): Int {
-        val handles = IntArray(1)
-        GLES20.glGenTextures(1, handles, 0)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, handles[0])
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-        return handles[0]
-    }
-
     private fun fail(what: String): Nothing = throw IllegalStateException("Video encoder: $what failed")
 
     companion object {
-        /**
-         * Corners as a triangle strip — position first, texture coordinate
-         * packed right after, per corner. The v coordinate runs the other way
-         * round to the frame buffer because a bitmap's first row is its top
-         * while GL's v=0 is the bottom: the frame's bottom-left shows the
-         * bitmap's bottom-left.
-         */
-        private val QUAD = floatArrayOf(
-            // x, y, u, v
-            -1f, -1f, 0f, 1f,
-            1f, -1f, 1f, 1f,
-            -1f, 1f, 0f, 0f,
-            1f, 1f, 1f, 0f,
-        )
-
         private const val EGL_RECORDABLE_ANDROID = 0x3142
         private const val DRAIN_TIMEOUT_US = 10_000L
     }

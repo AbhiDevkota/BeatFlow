@@ -350,48 +350,47 @@ internal class LyricsCardScene(
         }
     }
 
+    /** One thing the GPU frame feed composites: a bitmap and where it sits. */
+    internal class GpuLayer(val bitmap: Bitmap, val x: Float, val y: Float)
+
+    /**
+     * The clip's layers for the GPU: the furniture whole, then every sung row
+     * and every break dot at its place. Uploaded once; the frame loop only
+     * names how bright each stands, and the compositing itself never leaves
+     * the GPU — no bitmap is drawn, copied or carried across per frame.
+     */
+    fun gpuLayers(): List<GpuLayer> = buildList {
+        add(GpuLayer(base, 0f, 0f))
+        for (layer in clipLayers) add(GpuLayer(layer.bitmap, layer.x, layer.y))
+    }
+
+    /** How many layers [gpuLayers] carries — the furniture plus the passage. */
+    fun gpuLayerCount(): Int = clipLayers.size + 1
+
     /**
      * How bright every layer of the clip stands at [t], milliseconds in — one
-     * entry per layer, in layer order, 0..255. Sung rows read the highlight;
-     * a break's dots read its clock, each owning its third and filling across
-     * it, the way the panel lights them. The frame loop compares these frame
-     * to frame: while nothing has changed, the frame is a re-post of the one
-     * before it and needs neither a redraw nor an upload.
+     * entry per clip layer, in layer order, 0..255. Sung rows read the
+     * highlight; a break's dots read its clock, each owning its third and
+     * filling across it, the way the panel lights them. The frame loop
+     * compares these frame to frame: while nothing has changed, no frame is
+     * submitted at all — the timestamps carry the pacing.
      */
     fun frameAlphas(t: Long): IntArray = IntArray(clipLayers.size) { i ->
         val layer = clipLayers[i]
-        when {
-            // A sung row: lit by the highlight.
-            layer.gap < 0 && layer.dot < 0 ->
-                (255f * weightFor(layer.group, t)).roundToInt().coerceIn(0, 255)
-            // A dot with no clock either side — it can only rest.
-            layer.gap < 0 -> (GAP_DOT_REST * 255f).roundToInt()
-            else -> {
-                val (start, end) = gapSpanList[layer.gap]
-                val span = (end - start).coerceAtLeast(1L)
-                // Stepped rather than fluid: the clip is variable-frame-rate,
-                // and each step is one more frame the break costs. A dot
-                // filling over a few seconds needs no more than a couple of
-                // dozen.
-                val through = (((t - start).toFloat() / span).coerceIn(0f, 1f) * GAP_STEPS)
-                    .roundToInt() / GAP_STEPS.toFloat()
-                val lit = (through * GAP_DOTS - layer.dot).coerceIn(0f, 1f)
-                ((GAP_DOT_REST + (1f - GAP_DOT_REST) * lit) * 255f).roundToInt()
-            }
+        if (layer.gap < 0) {
+            (255f * weightFor(layer.group, t)).roundToInt().coerceIn(0, 255)
+        } else {
+            val (start, end) = gapSpanList[layer.gap]
+            val span = (end - start).coerceAtLeast(1L)
+            // Stepped rather than fluid: the clip is variable-frame-rate, and
+            // each step is one more frame the break costs. A dot filling over
+            // a few seconds needs no more than a couple of dozen.
+            val through = (((t - start).toFloat() / span).coerceIn(0f, 1f) * GAP_STEPS)
+                .roundToInt() / GAP_STEPS.toFloat()
+            val lit = (through * GAP_DOTS - layer.dot).coerceIn(0f, 1f)
+            ((GAP_DOT_REST + (1f - GAP_DOT_REST) * lit) * 255f).roundToInt()
         }
     }
-
-    /** Draws a frame of the clip, the layers held at [alphas] from [frameAlphas]. */
-    fun draw(canvas: Canvas, alphas: IntArray) {
-        canvas.drawBitmap(base, 0f, 0f, null)
-        for (i in clipLayers.indices) {
-            val layer = clipLayers[i]
-            blitPaint.alpha = alphas[i].coerceIn(0, 255)
-            canvas.drawBitmap(layer.bitmap, layer.x, layer.y, blitPaint)
-        }
-    }
-
-    private val blitPaint = Paint()
 
     /**
      * How far line [group] is lit at [t]: it rises over [CROSSFADE_MS] from its
