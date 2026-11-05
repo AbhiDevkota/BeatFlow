@@ -309,7 +309,7 @@ internal fun AndroidLyricsShareSheet(
                                             context,
                                             made.file,
                                             request.song.title,
-                                            LYRICS_FILE_PREFIX,
+                                            CLIP_FILE_PREFIX,
                                         )
                                         galleryUri = uri
                                         if (uri == null) {
@@ -394,7 +394,7 @@ internal fun AndroidLyricsShareSheet(
                                                 context,
                                                 made.file,
                                                 request.song.title,
-                                                LYRICS_FILE_PREFIX,
+                                                CLIP_FILE_PREFIX,
                                             )
                                             galleryUri = uri
                                             saved = uri != null
@@ -442,7 +442,7 @@ internal fun AndroidLyricsShareSheet(
                                                 context,
                                                 made.file,
                                                 request.song.title,
-                                                LYRICS_FILE_PREFIX,
+                                                CLIP_FILE_PREFIX,
                                             )
                                             galleryUri = uri
                                             if (uri == null) {
@@ -537,3 +537,5 @@ private fun RowScope.ModeAction(
  */
 private const val LYRICS_FILE_NAME = "lyrics.png"
 private const val LYRICS_FILE_PREFIX = "bitchord-lyrics"
+/** Clips get the product's own name on them; the photo keeps the feature's. */
+private const val CLIP_FILE_PREFIX = "beatflow"

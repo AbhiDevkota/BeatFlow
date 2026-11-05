@@ -555,7 +555,13 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
                     // The wipe, feathered the way the panel feathers its
                     // boundary: lit solid up to now, fading out over the
                     // next slice of the row rather than cut at a pixel.
-                    float lit = 1.0 - smoothstep(uReveal, uReveal + 0.08, vTexCoord.x);
+                    // Nothing at all is lit before the line's own words
+                    // begin: at uReveal == 0 the feather would still span
+                    // the row's left edge, leaving its first letter glowing
+                    // while the rest of the line sits back.
+                    float lit = uReveal > 0.0
+                        ? 1.0 - smoothstep(uReveal, uReveal + 0.08, vTexCoord.x)
+                        : 0.0;
                     t = t * mix(0.35, 1.0, lit);
                 }
                 gl_FragColor = t;

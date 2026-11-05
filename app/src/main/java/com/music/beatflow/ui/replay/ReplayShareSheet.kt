@@ -61,6 +61,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
@@ -383,7 +385,11 @@ internal suspend fun saveVideoToGalleryUri(
     label: String,
     prefix: String = "bitchord-replay",
 ): Uri? = withContext(Dispatchers.IO) {
-    val name = "$prefix-${label.replace(' ', '-').lowercase(Locale.ROOT)}.mp4"
+    // A date-time on the tail, so saving the same song twice is two files
+    // rather than the " (1)" a gallery app would append to a duplicate, and
+    // the row itself says when the clip was made.
+    val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+    val name = "$prefix-${label.replace(' ', '-').lowercase(Locale.ROOT)}-$stamp.mp4"
     runCatching {
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
