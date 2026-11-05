@@ -516,8 +516,6 @@
     <string name="lyrics_share_video_silent">Audio lagu tidak dapat diakses, jadi klip disimpan tanpa suara.</string>
     <string name="lyrics_share_description">Baris yang kamu pilih, ditata pada kartu bersama sampul.</string>
     <string name="lyrics_share_photo">Foto</string>
-    <string name="lyrics_share_story">Jadikan story</string>
-    <string name="lyrics_share_story_revert">Kembali ke kartu</string>
     <string name="lyrics_share_add_to_story">Tambahkan ke story</string>
     <string name="listening_shape">Pola mendengarkan Anda</string>
     <string name="member_since">Anggota sejak</string>

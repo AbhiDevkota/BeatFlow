@@ -492,8 +492,6 @@
     <string name="lyrics_share_video_silent">Dźwięk utworu był poza zasięgiem, więc klip zapisano bez dźwięku.</string>
     <string name="lyrics_share_description">Wybrane wersy, ułożone na karcie z okładką.</string>
     <string name="lyrics_share_photo">Zdjęcie</string>
-    <string name="lyrics_share_story">Zmień na relację</string>
-    <string name="lyrics_share_story_revert">Wróć do karty</string>
     <string name="lyrics_share_add_to_story">Dodaj do relacji</string>
     <string name="listening_shape">Twój wzorzec słuchania</string>
     <string name="member_since">Członek od</string>

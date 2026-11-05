@@ -532,8 +532,6 @@
     <string name="lyrics_share_video_silent">L’audio de la chanson était inaccessible, le clip a donc été enregistré sans son.</string>
     <string name="lyrics_share_description">Les lignes que vous avez choisies, mises en page sur une carte avec la pochette.</string>
     <string name="lyrics_share_photo">Photo</string>
-    <string name="lyrics_share_story">Convertir en story</string>
-    <string name="lyrics_share_story_revert">Revenir à la carte</string>
     <string name="lyrics_share_add_to_story">Ajouter à la story</string>
     <string name="listening_shape">Votre profil d\'écoute</string>
     <string name="member_since">Membre depuis</string>

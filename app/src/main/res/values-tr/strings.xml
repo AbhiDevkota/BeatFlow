@@ -560,8 +560,6 @@
     <string name="lyrics_share_video_silent">Şarkının sesine erişilemedi, klip sessiz kaydedildi.</string>
     <string name="lyrics_share_description">Seçtiğin satırlar, kapakla birlikte bir kart üzerine yerleştirildi.</string>
     <string name="lyrics_share_photo">Fotoğraf</string>
-    <string name="lyrics_share_story">Hikâyeye çevir</string>
-    <string name="lyrics_share_story_revert">Karta dön</string>
     <string name="lyrics_share_add_to_story">Hikâyeye ekle</string>
     <string name="listening_shape">Dinleme örüntün</string>
     <string name="member_since">Üyelik başlangıcı</string>

@@ -750,8 +750,6 @@
     <string name="lyrics_share_video_silent">The song’s audio was out of reach, so the clip was saved without sound.</string>
     <string name="lyrics_share_description">The lines you picked, laid out on a card with the cover.</string>
     <string name="lyrics_share_photo">Photo</string>
-    <string name="lyrics_share_story">Make it a story</string>
-    <string name="lyrics_share_story_revert">Back to the card</string>
     <string name="lyrics_share_add_to_story">Add to Story</string>
     <string name="listening_shape">Your listening pattern</string>
     <string name="member_since">Member since</string>

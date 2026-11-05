@@ -24,9 +24,7 @@ import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.PhoneIphone
 import androidx.compose.material.icons.rounded.Photo
-import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -99,10 +97,6 @@ internal fun AndroidLyricsShareSheet(
     val haptics = rememberHaptics()
 
     var video by remember(request) { mutableStateOf(false) }
-    // Same picture, cut to the 9:16 frame a story wants instead of to its lines.
-    // The video is always that frame, so the preview follows whichever of the
-    // two is in force.
-    var story by remember(request) { mutableStateOf(false) }
 
     var image by remember(request) { mutableStateOf<Bitmap?>(null) }
     var failed by remember(request) { mutableStateOf(false) }
@@ -120,11 +114,11 @@ internal fun AndroidLyricsShareSheet(
     // offered: the panel would open a mode whose whole answer is an error.
     val videoPossible = remember(request) { spanOf(request.lines) != null }
 
-    LaunchedEffect(request, story, video) {
+    LaunchedEffect(request, video) {
         image = null
         failed = false
         saved = false
-        image = runCatching { renderLyricsShareCard(context, request, story || video) }
+        image = runCatching { renderLyricsShareCard(context, request) }
             .onFailure { failed = true }
             .getOrNull()
     }
@@ -249,11 +243,7 @@ internal fun AndroidLyricsShareSheet(
                 // picture may take is what the drawer has left after the words
                 // and the buttons — it shrinks before anything else would, and
                 // the buttons stay on the sheet without a scroll.
-                val ratio = if (video) {
-                    9f / 16f
-                } else {
-                    bitmap?.let { it.width.toFloat() / it.height } ?: (9f / 16f)
-                }
+                val ratio = bitmap?.let { it.width.toFloat() / it.height } ?: (9f / 16f)
                 val maxWidthPx = drawerWidthPx.toFloat()
                 val idealWidth = (0.72f * ratio).coerceIn(0.36f, 0.92f) * maxWidthPx
                 val idealHeight = idealWidth / ratio
@@ -293,20 +283,6 @@ internal fun AndroidLyricsShareSheet(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (!video) {
-                        ShareAction(
-                            label = stringResource(if (story) R.string.lyrics_share_story_revert else R.string.lyrics_share_story),
-                            icon = if (story) Icons.Rounded.Undo else Icons.Rounded.PhoneIphone,
-                            accent = false,
-                            enabled = image != null,
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                haptics.play(Haptic.Tap)
-                                story = !story
-                            },
-                        )
-                    }
-
                     // The one-tap story: Instagram opens on the media itself
                     // rather than on a chooser, for the picture and the clip
                     // alike — the clip travels as its gallery row, the picture

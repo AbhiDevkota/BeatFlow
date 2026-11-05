@@ -65,10 +65,8 @@ import kotlinx.coroutines.withContext
 internal suspend fun renderLyricsShareCard(
     context: Context,
     card: LyricsShareRequest,
-    /** Pad out to the full 1080Ã—1920 frame, the passage centred in the room. */
-    story: Boolean = false,
 ): Bitmap = withContext(Dispatchers.Default) {
-    buildLyricsCardScene(context, card, story).render()
+    buildLyricsCardScene(context, card).render()
 }
 
 // â”€â”€ The scene â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -96,7 +94,6 @@ internal suspend fun renderLyricsShareCard(
 internal class LyricsCardScene(
     context: Context,
     private val request: LyricsShareRequest,
-    story: Boolean,
     allowScroll: Boolean = false,
     /** Resolved sleeve, loaded once for every frame to share. */
     private val cover: Bitmap?,
@@ -114,10 +111,9 @@ internal class LyricsCardScene(
     private val headTop = HEADER_BOTTOM + GAP_ABOVE_BODY
     private val frameRoom = MAX_CARD_H - FOOTER_THUMB - FOOTER_PAD - GAP_BELOW_BODY - headTop
     private val plan: Plan
-    /** A story is always the whole frame, so the spare room is split above and
-     * below the passage; otherwise the card is only as tall as its words. */
-    private val spare: Float
-    private val bodyTop: Float
+    /** The passage starts right under the air the header keeps, and the card
+     * ends right after the words — the size is the passage's own. */
+    private val bodyTop: Float = headTop
 
     /** The card's drawn size â€” the video's frame is exactly this. */
     val width: Float = CARD_W.toFloat()
@@ -222,9 +218,7 @@ internal class LyricsCardScene(
 
     init {
         plan = fittestPlan(type, request.lines, frameRoom, allowScroll)
-        spare = if (story) (frameRoom - plan.content).coerceAtLeast(0f) else 0f
-        bodyTop = headTop + spare / 2
-        height = bodyTop + plan.content + spare / 2 + GAP_BELOW_BODY + FOOTER_THUMB + FOOTER_PAD
+        height = bodyTop + plan.content + GAP_BELOW_BODY + FOOTER_THUMB + FOOTER_PAD
         thumbY = height - FOOTER_PAD - FOOTER_THUMB
     }
 
@@ -251,6 +245,13 @@ internal class LyricsCardScene(
 
     val passageTopPx: Float get() = passageTop
     val passageHeightPx: Float get() = passageHeight
+
+    /**
+     * How far up the clip may paint the passage: the header's own bottom, so
+     * the air between the two stays open to the sung line's spring rather
+     * than being shaved off at the window's edge.
+     */
+    val passageClipTopPx: Float = HEADER_BOTTOM
 
     // â”€â”€ The rasters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // The furniture once, whole; the words once each. This is the pass that
@@ -573,12 +574,11 @@ internal class LyricsCardScene(
 internal suspend fun buildLyricsCardScene(
     context: Context,
     request: LyricsShareRequest,
-    story: Boolean,
     allowScroll: Boolean = false,
 ): LyricsCardScene = withContext(Dispatchers.Default) {
     val cover = request.artworkUrl?.let { loadBitmap(context, it) }
     val logo = loadedLogo(context)
-    LyricsCardScene(context, request, story, allowScroll, cover, logo)
+    LyricsCardScene(context, request, allowScroll, cover, logo)
 }
 
 // â”€â”€ Fitting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

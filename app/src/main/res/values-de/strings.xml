@@ -531,8 +531,6 @@
     <string name="lyrics_share_video_silent">Die Tonspur war nicht erreichbar, der Clip wurde ohne Ton gespeichert.</string>
     <string name="lyrics_share_description">Die Zeilen, die du ausgewählt hast, auf einer Karte mit dem Cover.</string>
     <string name="lyrics_share_photo">Foto</string>
-    <string name="lyrics_share_story">Als Story formatieren</string>
-    <string name="lyrics_share_story_revert">Zurück zur Karte</string>
     <string name="lyrics_share_add_to_story">Zur Story hinzufügen</string>
     <string name="listening_shape">Dein Hörmuster</string>
     <string name="member_since">Mitglied seit</string>

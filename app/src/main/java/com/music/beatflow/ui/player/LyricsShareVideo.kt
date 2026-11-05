@@ -86,9 +86,11 @@ internal suspend fun renderLyricsShareVideo(
     request: LyricsShareRequest,
     onProgress: (Float) -> Unit = {},
 ): LyricsVideo? = withContext(Dispatchers.Default) {
-    // The frame is the story card: the whole 9:16, the passage centred in it,
-    // however short the pick â€” a video has one shape for its whole length.
-    val scene = buildLyricsCardScene(context, request, story = true, allowScroll = true)
+    // The frame is the card itself: however short the pick, the clip is
+    // exactly the picture the still draws — sized to its own lines rather
+    // than padded out to any one frame — and a video has one shape for its
+    // whole length.
+    val scene = buildLyricsCardScene(context, request, allowScroll = true)
     val (startMs, endMs) = spanOf(request.lines) ?: return@withContext null
     val spanMs = (endMs - startMs).coerceAtMost(MAX_SPAN_MS).coerceAtLeast(MIN_SPAN_MS)
     val frameCount = (spanMs * FPS / 1000f).roundToInt().coerceAtLeast(1)
@@ -104,13 +106,16 @@ internal suspend fun renderLyricsShareVideo(
 
     try {
         // â”€â”€ The picture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        val encoded = GlVideoEncoder(scene.width.roundToInt(), scene.height.roundToInt())
+        // The card's height is a sum of type metrics, which lands odd as
+        // often as not — and the codec's chroma planes want counts it can
+        // pair up, so the frame is floored to even by a pixel of backdrop.
+        val encoded = GlVideoEncoder(scene.width.roundToInt(), scene.height.roundToInt() and 1.inv())
 
         val video = try {
             encoded.start()
             // The card goes up to the GPU once, as layers; every frame after
             // is the GPU's to composite.
-            encoded.setLayers(scene.gpuLayers(), scene.passageTopPx, scene.passageTopPx + scene.passageHeightPx)
+            encoded.setLayers(scene.gpuLayers(), scene.passageClipTopPx, scene.passageTopPx + scene.passageHeightPx)
             val samples = mutableListOf<Sample>()
             var format: MediaFormat? = null
             fun collect(sample: Sample?, codecFormat: MediaFormat?) {

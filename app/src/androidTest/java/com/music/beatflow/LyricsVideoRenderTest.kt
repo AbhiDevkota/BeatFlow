@@ -60,7 +60,7 @@ class LyricsVideoRenderTest {
             ),
         )
 
-        val still = buildLyricsCardScene(context, request, story = true, allowScroll = true).render()
+        val still = buildLyricsCardScene(context, request, allowScroll = true).render()
         saveToGallery(context, still, "diag-still", "diag")
 
         val startedAt = System.currentTimeMillis()

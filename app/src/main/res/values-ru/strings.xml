@@ -551,8 +551,6 @@
     <string name="lyrics_share_video_silent">Аудио песни было недоступно, поэтому клип сохранён без звука.</string>
     <string name="lyrics_share_description">Выбранные строки на карточке вместе с обложкой.</string>
     <string name="lyrics_share_photo">Фото</string>
-    <string name="lyrics_share_story">Сделать для сторис</string>
-    <string name="lyrics_share_story_revert">Вернуть карточку</string>
     <string name="lyrics_share_add_to_story">Добавить в сторис</string>
     <string name="listening_shape">Ваша модель прослушивания</string>
     <string name="member_since">Участник с</string>

@@ -553,8 +553,6 @@
     <string name="lyrics_share_video_silent">Không truy cập được âm thanh bài hát nên clip được lưu không có tiếng.</string>
     <string name="lyrics_share_description">Những dòng bạn chọn, được bố trí trên một thẻ cùng ảnh bìa.</string>
     <string name="lyrics_share_photo">Ảnh</string>
-    <string name="lyrics_share_story">Chuyển thành story</string>
-    <string name="lyrics_share_story_revert">Quay lại thẻ</string>
     <string name="lyrics_share_add_to_story">Thêm vào story</string>
     <string name="listening_shape">Thói quen nghe nhạc của bạn</string>
     <string name="member_since">Thành viên từ</string>
