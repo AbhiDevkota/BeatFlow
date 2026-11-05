@@ -546,6 +546,7 @@
     <string name="lyrics_share_photo">รูปภาพ</string>
     <string name="lyrics_share_story">แปลงเป็นสตอรี่</string>
     <string name="lyrics_share_story_revert">กลับเป็นการ์ด</string>
+    <string name="lyrics_share_add_to_story">เพิ่มลงสตอรี่</string>
     <string name="listening_shape">รูปแบบการฟังของคุณ</string>
     <string name="member_since">สมาชิกตั้งแต่</string>
     <string name="member_since_value">เป็นสมาชิกตั้งแต่ %1$s</string>

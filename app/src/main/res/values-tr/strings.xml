@@ -562,6 +562,7 @@
     <string name="lyrics_share_photo">Fotoğraf</string>
     <string name="lyrics_share_story">Hikâyeye çevir</string>
     <string name="lyrics_share_story_revert">Karta dön</string>
+    <string name="lyrics_share_add_to_story">Hikâyeye ekle</string>
     <string name="listening_shape">Dinleme örüntün</string>
     <string name="member_since">Üyelik başlangıcı</string>
     <string name="member_since_value">%1$s tarihinden beri üye</string>

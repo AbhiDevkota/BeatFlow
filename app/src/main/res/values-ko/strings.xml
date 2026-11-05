@@ -717,6 +717,7 @@
     <string name="lyrics_share_photo">사진</string>
     <string name="lyrics_share_story">스토리 만들기</string>
     <string name="lyrics_share_story_revert">카드로 돌아가기</string>
+    <string name="lyrics_share_add_to_story">스토리에 추가</string>
     <string name="listening_shape">내 감상 패턴</string>
     <string name="member_since">가입일</string>
     <string name="member_since_value">가입일 %1$s</string>

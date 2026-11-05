@@ -497,6 +497,7 @@
     <string name="lyrics_share_photo">תמונה</string>
     <string name="lyrics_share_story">המר לסטורי</string>
     <string name="lyrics_share_story_revert">חזרה לכרטיס</string>
+    <string name="lyrics_share_add_to_story">הוסף לסטורי</string>
     <string name="listening_shape">דפוס ההאזנה שלך</string>
     <string name="member_since">חבר מאז</string>
     <string name="member_since_value">חבר מאז %1$s</string>

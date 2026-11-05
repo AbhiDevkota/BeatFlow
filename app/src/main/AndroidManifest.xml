@@ -66,6 +66,15 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!--
+      Named so the direct "Add to Story" hand-off can see it: from Android 11
+      an implicit intent only resolves packages the manifest declares, and the
+      Instagram package is the whole point of that intent.
+    -->
+    <queries>
+        <package android:name="com.instagram.android" />
+    </queries>
+
     <application
         android:name=".BeatFlowApplication"
         android:allowBackup="true"

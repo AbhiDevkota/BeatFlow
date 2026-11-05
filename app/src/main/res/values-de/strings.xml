@@ -533,6 +533,7 @@
     <string name="lyrics_share_photo">Foto</string>
     <string name="lyrics_share_story">Als Story formatieren</string>
     <string name="lyrics_share_story_revert">Zurück zur Karte</string>
+    <string name="lyrics_share_add_to_story">Zur Story hinzufügen</string>
     <string name="listening_shape">Dein Hörmuster</string>
     <string name="member_since">Mitglied seit</string>
     <string name="member_since_value">Mitglied seit %1$s</string>

@@ -278,6 +278,23 @@ internal fun sendIntent(uri: Uri, mime: String = MIME) = Intent(Intent.ACTION_SE
     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
 /**
+ * Hands the media straight to Instagram, whose share sheet puts Story first —
+ * the one tap "Add to Story" exists for. Instagram is not guaranteed to be
+ * there (the manifest names it only so the resolution can see it), so a miss
+ * falls back to the ordinary chooser: the same sheet this app has always
+ * opened, with the story apps in it like any other.
+ */
+internal fun shareToStory(context: Context, uri: Uri, mime: String = MIME, chooserTitle: String) {
+    val direct = sendIntent(uri, mime).setPackage(INSTAGRAM_PACKAGE)
+    val opened = runCatching { context.startActivity(direct) }.isSuccess
+    if (!opened) {
+        context.startActivity(Intent.createChooser(sendIntent(uri, mime), chooserTitle))
+    }
+}
+
+private const val INSTAGRAM_PACKAGE = "com.instagram.android"
+
+/**
  * Writes the poster somewhere another app can read it.
  *
  * The app's own cache, exposed through a [FileProvider] rather than by handing

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Movie
@@ -61,6 +62,7 @@ import com.music.beatflow.ui.replay.cacheForSharing
 import com.music.beatflow.ui.replay.saveToGallery
 import com.music.beatflow.ui.replay.saveVideoToGalleryUri
 import com.music.beatflow.ui.replay.sendIntent
+import com.music.beatflow.ui.replay.shareToStory
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
 
@@ -304,6 +306,68 @@ internal fun AndroidLyricsShareSheet(
                             },
                         )
                     }
+
+                    // The one-tap story: Instagram opens on the media itself
+                    // rather than on a chooser, for the picture and the clip
+                    // alike — the clip travels as its gallery row, the picture
+                    // as the cache copy the share already writes.
+                    ShareAction(
+                        label = stringResource(R.string.lyrics_share_add_to_story),
+                        icon = Icons.Rounded.AutoStories,
+                        accent = false,
+                        enabled = image != null && !rendering && !working,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            haptics.play(Haptic.Tap)
+                            if (video) {
+                                val made = clip ?: return@ShareAction
+                                scope.launch {
+                                    working = true
+                                    try {
+                                        if (!made.hasAudio) {
+                                            PlayerPlatform.host.showMessage(
+                                                context.getString(R.string.lyrics_share_video_silent),
+                                            )
+                                        }
+                                        val uri = galleryUri ?: saveVideoToGalleryUri(
+                                            context,
+                                            made.file,
+                                            request.song.title,
+                                            LYRICS_FILE_PREFIX,
+                                        )
+                                        galleryUri = uri
+                                        if (uri == null) {
+                                            failed = true
+                                        } else {
+                                            shareToStory(
+                                                context,
+                                                uri,
+                                                VIDEO_MIME,
+                                                context.getString(R.string.share_your_lyrics),
+                                            )
+                                        }
+                                    } finally {
+                                        working = false
+                                    }
+                                }
+                            } else {
+                                val drawn = image ?: return@ShareAction
+                                scope.launch {
+                                    val uri = cacheForSharing(context, drawn, LYRICS_FILE_NAME)
+                                    if (uri == null) {
+                                        failed = true
+                                        saved = false
+                                    } else {
+                                        shareToStory(
+                                            context,
+                                            uri,
+                                            chooserTitle = context.getString(R.string.share_your_lyrics),
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                    )
 
                     if (failed) {
                         Text(
