@@ -229,8 +229,17 @@ internal class LyricsCardScene(
     // â”€â”€ The rasters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // The furniture once, whole; the words once each. This is the pass that
     // pays for shaping, gradients and the sleeve â€” every frame after it blits.
-    private val base: Bitmap
-    private val stillRows: List<RowImage>
+    private val base: Bitmap = run {
+        Bitmap.createBitmap(CARD_W, height.roundToInt(), Bitmap.Config.ARGB_8888).apply {
+            val furniture = Canvas(this)
+            drawBackdrop(furniture, backdropColors, this@LyricsCardScene.height)
+            furniture.drawText(BRAND, CARD_W - CARD_MARGIN, HEADER_BASELINE, brand)
+            drawLogo(furniture, logo, logoRight, HEADER_BASELINE, brand)
+            drawArtwork(furniture, cover, rawTitle, CARD_MARGIN, thumbY, FOOTER_THUMB, false)
+            furniture.drawText(footerTitle, textX, thumbY + 74f, titlePaint)
+            furniture.drawText(footerArtist, textX, thumbY + 132f, artistPaint)
+        }
+    }
 
     private val baselines: FloatArray = run {
         val out = FloatArray(plan.rows.size)
@@ -244,17 +253,7 @@ internal class LyricsCardScene(
         out
     }
 
-    init {
-        base = Bitmap.createBitmap(CARD_W, height.roundToInt(), Bitmap.Config.ARGB_8888)
-        val furniture = Canvas(base)
-        drawBackdrop(furniture, backdropColors, height)
-        furniture.drawText(BRAND, CARD_W - CARD_MARGIN, HEADER_BASELINE, brand)
-        drawLogo(furniture, logo, logoRight, HEADER_BASELINE, brand)
-        drawArtwork(furniture, cover, rawTitle, CARD_MARGIN, thumbY, FOOTER_THUMB, false)
-        furniture.drawText(footerTitle, textX, thumbY + 74f, titlePaint)
-        furniture.drawText(footerArtist, textX, thumbY + 132f, artistPaint)
-        stillRows = plan.rows.mapIndexed { index, row -> rasterise(row, baselines[index]) }
-    }
+    private val stillRows: List<RowImage> = plan.rows.mapIndexed { index, row -> rasterise(row, baselines[index]) }
 
     /** One passage row, rasterised once and parked where it belongs. */
     private class RowImage(
@@ -309,36 +308,33 @@ internal class LyricsCardScene(
         val dot: Int = -1,
     )
 
-    private val clipLayers: List<ClipLayer>
-    private val dotBitmap: Bitmap
-    /** Each break's span on the clip's clock, in the order its dots were laid. */
-    private val gapSpanList: List<Pair<Long, Long>>
-
-    init {
+    private val dotBitmap: Bitmap = run {
         val dotSize = (plan.size * DOT_TO_TYPE).roundToInt().coerceAtLeast(6)
-        dotBitmap = Bitmap.createBitmap(dotSize, dotSize, Bitmap.Config.ARGB_8888)
-        Canvas(dotBitmap).drawCircle(
-            dotSize / 2f,
-            dotSize / 2f,
-            dotSize / 2f - 0.5f,
-            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE },
-        )
-        val stride = dotSize + (plan.size * DOT_GAP_TO_TYPE).roundToInt()
+        Bitmap.createBitmap(dotSize, dotSize, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawCircle(
+                dotSize / 2f,
+                dotSize / 2f,
+                dotSize / 2f - 0.5f,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE },
+            )
+        }
+    }
 
+    /** Each break's span on the clip's clock, in the order its dots were laid. */
+    private val gapSpanList: List<Pair<Long, Long>> = gapSpans.values.toList()
+
+    private val clipLayers: List<ClipLayer> = run {
+        val dotSize = (plan.size * DOT_TO_TYPE).roundToInt().coerceAtLeast(6)
+        val stride = dotSize + (plan.size * DOT_GAP_TO_TYPE).roundToInt()
         val layers = mutableListOf<ClipLayer>()
-        val spans = mutableListOf<Pair<Long, Long>>()
         var gapOrdinal = -1
         plan.rows.forEachIndexed { index, row ->
             val image = stillRows[index]
             if (!row.isGap) {
                 layers += ClipLayer(image.bitmap, image.x, image.y, row.group, row.isSub, row.charStart, row.charEnd)
             } else {
-                gapOrdinal++
                 val span = gapSpans[row.lineIndex]
                 if (span == null) {
-                    // A break with no clock either side â€” unsynced words, or a
-                    // marker at the very edge of the pick â€” keeps its dots at
-                    // rest, which is all a mark with no time can say.
                     repeat(GAP_DOTS) { dot ->
                         layers += ClipLayer(
                             dotBitmap,
@@ -353,8 +349,7 @@ internal class LyricsCardScene(
                         )
                     }
                 } else {
-                    spans += span
-                    // Centred on the marker's own midline, where the "(...)" sat.
+                    gapOrdinal++
                     val centerY = baselines[index] - plan.size * 0.65f * 0.30f
                     repeat(GAP_DOTS) { dot ->
                         layers += ClipLayer(
@@ -372,8 +367,7 @@ internal class LyricsCardScene(
                 }
             }
         }
-        clipLayers = layers
-        gapSpanList = spans
+        layers
     }
 
     /** The still, as one bitmap. */
@@ -426,8 +420,12 @@ internal class LyricsCardScene(
             // Stepped rather than fluid: the clip is variable-frame-rate, and
             // each step is one more frame the break costs. A dot filling over
             // a few seconds needs no more than a couple of dozen.
-            val through = (((t - start).toFloat() / span).coerceIn(0f, 1f) * GAP_STEPS)
-                .roundToInt() / GAP_STEPS.toFloat()
+            // The dots fill across the break and then stand down: once the
+            // silence is over they go back to rest, instead of staying lit
+            // for as long as the clip runs.
+            val through = if (t >= end) 0f else
+                (((t - start).toFloat() / span).coerceIn(0f, 1f) * GAP_STEPS)
+                    .roundToInt() / GAP_STEPS.toFloat()
             val lit = (through * GAP_DOTS - layer.dot).coerceIn(0f, 1f)
             ((GAP_DOT_REST + (1f - GAP_DOT_REST) * lit) * 255f).roundToInt()
         }

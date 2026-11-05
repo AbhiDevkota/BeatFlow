@@ -4,18 +4,19 @@ import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.music.beatflow.data.model.Song
-import com.music.beatflow.data.lyrics.LyricWord
 import com.music.beatflow.ui.player.LyricsShareLine
 import com.music.beatflow.ui.player.LyricsShareRequest
 import com.music.beatflow.ui.player.buildLyricsCardScene
 import com.music.beatflow.ui.player.renderLyricsShareVideo
+import com.music.beatflow.ui.replay.saveToGallery
+import com.music.beatflow.ui.replay.saveVideoToGalleryUri
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * Renders a clip from a synthetic pick straight to the app's external files,
- * next to the scene's own still â€” so the two can be pulled and compared: if
+ * next to the scene's own still — so the two can be pulled and compared: if
  * the still is clean and the clip is torn, the fault is in the encode path,
  * not in the layout.
  */
@@ -35,109 +36,33 @@ class LyricsVideoRenderTest {
             song = song,
             artworkUrl = null,
             lines = listOf(
-                LyricsShareLine(
-                    "à¤à¥€à¤²à¤¾à¤•à¥‹ à¤¤à¤¿à¤°à¥‡à¤®à¤¾", null,
-                    startMs = 0, endMs = 8_000,
-                    words = listOf(
-                        LyricWord(0, 3_000, "à¤à¥€à¤²à¤¾à¤•à¥‹"),
-                        LyricWord(3_000, 8_000, "à¤¤à¤¿à¤°à¥‡à¤®à¤¾"),
-                    ),
-                ),
+                LyricsShareLine("Line one of the verse", null, startMs = 0, endMs = 8_000,
+                    words = listOf(com.music.beatflow.data.lyrics.LyricWord(0, 3_000, "Line"),
+                        com.music.beatflow.data.lyrics.LyricWord(3_000, 8_000, "one of the verse"))),
                 LyricsShareLine("", null, isGap = true),
-                LyricsShareLine(
-                    "à¤•à¤¾à¤¡à¥à¤¨à¥‡ à¤­à¤ à¤ à¤¿à¤•à¥ˆ à¤¹à¥‹", null,
-                    startMs = 11_000, endMs = 14_000,
-                    words = listOf(
-                        LyricWord(11_000, 12_000, "à¤•à¤¾à¤¡à¥à¤¨à¥‡"),
-                        LyricWord(12_000, 12_500, "à¤­à¤"),
-                        LyricWord(12_500, 13_300, "à¤ à¤¿à¤•à¥ˆ"),
-                        LyricWord(13_300, 14_000, "à¤¹à¥‹"),
-                    ),
-                ),
-                LyricsShareLine(
-                    "à¤¤à¥à¤¯à¥‹ à¤®à¤¾à¤¯à¤¾à¤•à¥‹ à¤•à¥à¤à¥ˆ à¤¨à¤—à¤°", null,
-                    startMs = 14_000, endMs = 22_000,
-                    words = listOf(
-                        LyricWord(14_000, 15_000, "à¤¤à¥à¤¯à¥‹"),
-                        LyricWord(15_000, 17_000, "à¤®à¤¾à¤¯à¤¾à¤•à¥‹"),
-                        LyricWord(17_000, 18_500, "à¤•à¥à¤à¥ˆ"),
-                        LyricWord(18_500, 22_000, "à¤¨à¤—à¤°"),
-                    ),
-                ),
+                LyricsShareLine("Line two of the verse", null, startMs = 11_000, endMs = 14_000,
+                    words = listOf(com.music.beatflow.data.lyrics.LyricWord(11_000, 12_000, "Line"),
+                        com.music.beatflow.data.lyrics.LyricWord(12_000, 12_500, "two"),
+                        com.music.beatflow.data.lyrics.LyricWord(12_500, 13_300, "of the"),
+                        com.music.beatflow.data.lyrics.LyricWord(13_300, 14_000, "verse"))),
+                LyricsShareLine("Line three of the verse", null, startMs = 14_000, endMs = 22_000,
+                    words = listOf(com.music.beatflow.data.lyrics.LyricWord(14_000, 15_000, "Line"),
+                        com.music.beatflow.data.lyrics.LyricWord(15_000, 17_000, "three"),
+                        com.music.beatflow.data.lyrics.LyricWord(17_000, 18_500, "of the"),
+                        com.music.beatflow.data.lyrics.LyricWord(18_500, 22_000, "verse"))),
             ),
         )
 
-        val out = context.getExternalFilesDir(null)!!.resolve("video-debug")
-        out.mkdirs()
-
         val still = buildLyricsCardScene(context, request, story = true).render()
-        still.compress(Bitmap.CompressFormat.PNG, 100, out.resolve("still.png").outputStream())
-        com.music.beatflow.ui.replay.saveToGallery(context, still, "diag-still", "diag")
+        saveToGallery(context, still, "diag-still", "diag")
 
         val startedAt = System.currentTimeMillis()
         val video = renderLyricsShareVideo(context, request)
         val elapsed = System.currentTimeMillis() - startedAt
         if (video != null) {
-            com.music.beatflow.ui.replay.saveVideoToGalleryUri(
-                context, video.file, "diag-clip", "diag",
-            )
+            saveVideoToGalleryUri(context, video.file, "diag-clip", "diag")
         }
         android.util.Log.d("LyricsVideoRenderTest", "render ms=$elapsed hasAudio=${video?.hasAudio}")
-
-        // â”€â”€ The sound, exercised on its own: a synthesized tone, cut to
-        // 1s..5s, decoded, faded, re-encoded, muxed, and left where the pull
-        // can reach it. The clip above answers for the picture; this answers
-        // for everything audio.
-        val rate = 44_100
-        val pcm = ByteArray(rate * 6 * 2 * 2)
-        val shorts = java.nio.ByteBuffer.wrap(pcm).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-        for (i in 0 until rate * 6) {
-            val v = (Math.sin(2 * Math.PI * 440.0 * i / rate) * 12_000).toInt().toShort()
-            shorts.put(i * 2, v)
-            shorts.put(i * 2 + 1, v)
-        }
-        val wav = java.io.File(context.cacheDir, "tone.wav")
-        java.io.DataOutputStream(java.io.FileOutputStream(wav).buffered()).use { out ->
-            fun tag(s: String) = out.write(s.toByteArray())
-            tag("RIFF"); out.writeIntLe(36 + pcm.size); tag("WAVE")
-            tag("fmt "); out.writeIntLe(16); out.writeShortLe(1); out.writeShortLe(2)
-            out.writeIntLe(rate); out.writeIntLe(rate * 2 * 2); out.writeShortLe(4); out.writeShortLe(16)
-            tag("data"); out.writeIntLe(pcm.size); out.write(pcm)
-        }
-        val tone = com.music.beatflow.playback.smart.LocalAudioSource.open(
-            context.contentResolver,
-            android.net.Uri.fromFile(wav),
-        )!!
-        val track = com.music.beatflow.ui.player.encodeAudioSpan(
-            tone,
-            1_000_000L,
-            5_000_000L,
-            checkActive = {},
-        )
-        android.util.Log.d("LyricsVideoRenderTest", "audio samples=${track?.samples?.size}")
-        if (track != null) {
-            val muxed = java.io.File(context.cacheDir, "tone-aac.m4a")
-            val muxer = android.media.MediaMuxer(
-                muxed.path,
-                android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4,
-            )
-            val audioTrack = muxer.addTrack(track.format)
-            muxer.start()
-            for (s in track.samples) {
-                muxer.writeSampleData(audioTrack, java.nio.ByteBuffer.wrap(s.bytes), s.info)
-            }
-            muxer.stop()
-            muxer.release()
-            com.music.beatflow.ui.replay.saveVideoToGalleryUri(context, muxed, "diag-audio", "diag")
-        }
         Unit
-    }
-
-    private fun java.io.DataOutputStream.writeIntLe(v: Int) {
-        write(v and 0xFF); write((v shr 8) and 0xFF); write((v shr 16) and 0xFF); write((v shr 24) and 0xFF)
-    }
-
-    private fun java.io.DataOutputStream.writeShortLe(v: Int) {
-        write(v and 0xFF); write((v shr 8) and 0xFF)
     }
 }
