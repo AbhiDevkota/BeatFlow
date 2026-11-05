@@ -30,9 +30,12 @@ class LyricsShareCardTest {
         }
     }
 
-    @Test fun theSixthLineIsRefusedRatherThanShrinkingTheType() {
-        val taken = shortLine.length * 5
-        assertFalse(fitsOnCard(taken, shortLine))
+    @Test fun theLinePastTheBudgetIsRefusedRatherThanShrinkingTheType() {
+        // As many whole lines as the budget holds — the last of them still
+        // fits — and then one more, which must not.
+        val full = (SHARE_CARD_CHAR_BUDGET / shortLine.length) * shortLine.length
+        assertTrue("a line up to the budget is pickable", fitsOnCard(full - shortLine.length, shortLine))
+        assertFalse(fitsOnCard(full, shortLine))
     }
 
     @Test fun aLineOverTheBudgetOnItsOwnIsRefused() {

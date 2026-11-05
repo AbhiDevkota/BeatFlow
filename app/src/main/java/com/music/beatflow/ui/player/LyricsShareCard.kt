@@ -244,7 +244,9 @@ internal class LyricsCardScene(
             (y - passageHeight / 2f).coerceIn(0f, fullPassageHeight - passageHeight)
         }
         lastScrollOffset += (target - lastScrollOffset) * 0.2f
-        return (lastScrollOffset / 4f).toInt() * 4f
+        // Two pixels rather than four: the karaoke scroll reads glassy at
+        // this size, and the VFR loop still skips every frame in between.
+        return (lastScrollOffset / 2f).toInt() * 2f
     }
 
     val passageTopPx: Float get() = passageTop
@@ -293,19 +295,24 @@ internal class LyricsCardScene(
         row.paint.getTextBounds(row.text, 0, row.text.length, bounds)
         val left = x.toInt()
         val top = baseline.toInt()
-        val bitmap = Bitmap.createBitmap(bounds.width() + 2, bounds.height() + 2, Bitmap.Config.ARGB_8888)
+        // Transparent room above the ink, so the sung word has somewhere to
+        // rise into — the panel opens the row's band upward for the same
+        // lift. The row is blitted that many pixels higher to pay for it,
+        // so where the still puts it does not move.
+        val headroom = (plan.size * LIFT_HEADROOM_RATIO).roundToInt().coerceAtLeast(4)
+        val bitmap = Bitmap.createBitmap(bounds.width() + 2, bounds.height() + 2 + headroom, Bitmap.Config.ARGB_8888)
         // The fraction of a pixel the row sits at on the card goes into the
         // bitmap, so what gets blitted is what a direct draw would have made.
         Canvas(bitmap).drawText(
             row.text,
             1f - bounds.left + (x - left),
-            1f - bounds.top + (baseline - top),
+            1f - bounds.top + (baseline - top) + headroom,
             row.paint,
         )
         return RowImage(
             bitmap,
             (left + bounds.left - 1).toFloat(),
-            (top + bounds.top - 1).toFloat(),
+            (top + bounds.top - 1 - headroom).toFloat(),
             row.group,
         )
     }
@@ -409,8 +416,12 @@ internal class LyricsCardScene(
         }
     }
 
-    /** One thing the GPU frame feed composites: a bitmap and where it sits. */
-    internal class GpuLayer(val bitmap: Bitmap, val x: Float, val y: Float)
+    /**
+     * One thing the GPU frame feed composites: a bitmap and where it sits,
+     * plus how far the sung word lifts within it — the rise as a share of
+     * the row's own height, which the shader turns into a sampling shift.
+     */
+    internal class GpuLayer(val bitmap: Bitmap, val x: Float, val y: Float, val liftUv: Float = 0f)
 
     /**
      * The clip's layers for the GPU: the furniture whole, then every sung row
@@ -420,7 +431,13 @@ internal class LyricsCardScene(
      */
     fun gpuLayers(): List<GpuLayer> = buildList {
         add(GpuLayer(base, 0f, 0f))
-        for (layer in clipLayers) add(GpuLayer(layer.bitmap, layer.x, layer.y))
+        for (layer in clipLayers) {
+            // The sung word's rise, as a share of the row's own height — the
+            // shader shifts its sampling by this much at the sweep's edge.
+            // A break's dot has no words in it and stands still.
+            val liftUv = if (layer.gap >= 0) 0f else (plan.size * WORD_RISE_RATIO) / layer.bitmap.height
+            add(GpuLayer(layer.bitmap, layer.x, layer.y, liftUv))
+        }
     }
 
     /** How many layers [gpuLayers] carries â€” the furniture plus the passage. */
@@ -468,6 +485,7 @@ internal class LyricsCardScene(
         val alphas = frameAlphas(t)
         val reveals = FloatArray(clipLayers.size)
         val actives = BooleanArray(clipLayers.size)
+        val bounces = FloatArray(clipLayers.size)
         val active = activeGroup(t)
         val sungLines = request.lines.filter { !it.isGap }
         val spanStart = spanOf(request.lines)?.first ?: 0L
@@ -476,6 +494,7 @@ internal class LyricsCardScene(
             if (layer.gap >= 0) {
                 reveals[i] = 1f
                 actives[i] = false
+                bounces[i] = 0f
             } else {
                 val line = sungLines.getOrNull(layer.group)
                 val songTime = t + spanStart
@@ -491,10 +510,31 @@ internal class LyricsCardScene(
                 }
                 reveals[i] = (rowReveal * TEXT_STEPS).roundToInt() / TEXT_STEPS.toFloat()
                 actives[i] = layer.group == active
+                bounces[i] = bounceAt(layer.group, t)
             }
         }
-        return FrameState(alphas, reveals, actives, scrollOffset(t))
+        return FrameState(alphas, reveals, actives, bounces, scrollOffset(t))
     }
+
+    /**
+     * The bouncy lift of a sung line at [t], in pixels (negative = up). The
+     * line springs up with an overshoot when it becomes active, holds while
+     * it is being sung, and settles back when it hands over.
+     */
+    private fun bounceAt(group: Int, t: Long): Float {
+        if (group < 0 || group >= lineStarts.size) return 0f
+        val riseStart = lineStarts[group] - CROSSFADE_MS.toLong()
+        val settleStart = fallStarts.getOrElse(group) { Long.MAX_VALUE }
+        val rise = ((t - riseStart).toFloat() / BOUNCE_RISE_MS).coerceIn(0f, 1f)
+        val settle = if (settleStart == Long.MAX_VALUE) 0f
+            else ((t - settleStart).toFloat() / BOUNCE_FALL_MS).coerceIn(0f, 1f)
+        val back = rise - 1f
+        val overshoot = 1f + (BOUNCE_BACK + 1f) * back * back * back + BOUNCE_BACK * back * back
+        val settleEased = 1f - smooth(settle)
+        return -BOUNCE_LIFT_PX * overshoot * settleEased
+    }
+
+    private fun smooth(fraction: Float) = fraction * fraction * (3f - 2f * fraction)
 
     private fun activeGroup(t: Long): Int {
         var g = -1
@@ -504,11 +544,12 @@ internal class LyricsCardScene(
 
     /** The state of every layer of the clip at [t], for the frame loop to
      * compare and composite. */
-    data class FrameState(val alphas: IntArray, val reveals: FloatArray, val actives: BooleanArray, val scrollOffset: Float = 0f) {
+    data class FrameState(val alphas: IntArray, val reveals: FloatArray, val actives: BooleanArray, val bounces: FloatArray, val scrollOffset: Float = 0f) {
         fun sameAs(other: FrameState?): Boolean = other != null &&
             alphas.contentEquals(other.alphas) &&
             reveals.contentEquals(other.reveals) &&
             actives.contentEquals(other.actives) &&
+            bounces.contentEquals(other.bounces) &&
             scrollOffset == other.scrollOffset
     }
 
@@ -774,7 +815,19 @@ private const val DIM_LIT = 0.35f
 /** How finely a sung line's word sweep is stepped. The clip is
  * variable-frame-rate, and each step is one more frame the line costs â€”
  * a couple of dozen across a line reads as fluid for a sweep this size. */
-private const val TEXT_STEPS = 48
+private const val TEXT_STEPS = 96
+
+// -- The sung word's rise off the line --
+/** The panel's WORD_RISE (2 dp) as a share of its lyric type (30 sp). */
+private const val WORD_RISE_RATIO = 0.0667f
+/** Transparent room kept above each row's ink for that rise to happen in. */
+private const val LIFT_HEADROOM_RATIO = 0.12f
+
+// -- The bounce --
+private const val BOUNCE_RISE_MS = 350f
+private const val BOUNCE_FALL_MS = 300f
+private const val BOUNCE_LIFT_PX = 8f
+private const val BOUNCE_BACK = 1.70158f
 
 // â”€â”€ The break's dots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -797,4 +850,4 @@ private const val GAP_DOT_REST = 0.25f
  * one more frame a break costs. Two dozen across three dots reads as fluid
  * for marks this small and caps a long interlude's bill.
  */
-private const val GAP_STEPS = 24
+private const val GAP_STEPS = 48

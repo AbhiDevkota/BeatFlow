@@ -130,6 +130,7 @@ internal suspend fun renderLyricsShareVideo(
             val gpuReveals = FloatArray(scene.gpuLayerCount() + 1)
             gpuReveals[0] = 1f
             val gpuActives = BooleanArray(scene.gpuLayerCount() + 1)
+            val gpuBounces = FloatArray(scene.gpuLayerCount() + 1)
             for (frame in 0 until frameCount) {
                 callerContext.ensureActive()
                 val state = scene.frameState((frame * FRAME_MS).toLong())
@@ -140,8 +141,9 @@ internal suspend fun renderLyricsShareVideo(
                         gpuAlphas[i + 1] = state.alphas[i] / 255f
                         gpuReveals[i + 1] = state.reveals[i]
                         gpuActives[i + 1] = state.actives[i]
+                        gpuBounces[i + 1] = -state.bounces[i] * 2f / scene.height
                     }
-                    encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, -scene.scrollOffset((frame * FRAME_MS).toLong()) * 2f / scene.height, frame * MICROS_PER_FRAME)
+                    encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, gpuBounces, -state.scrollOffset * 2f / scene.height, frame * MICROS_PER_FRAME)
                     lastState = state
                 }
                 encoded.drain(::collect)
@@ -156,8 +158,9 @@ internal suspend fun renderLyricsShareVideo(
                 gpuAlphas[i + 1] = tail.alphas[i] / 255f
                 gpuReveals[i + 1] = tail.reveals[i]
                 gpuActives[i + 1] = tail.actives[i]
+                gpuBounces[i + 1] = -tail.bounces[i] * 2f / scene.height
             }
-            encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, -scene.scrollOffset(frameCount * FRAME_MS.toLong()) * 2f / scene.height, frameCount * MICROS_PER_FRAME)
+            encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, gpuBounces, -tail.scrollOffset * 2f / scene.height, frameCount * MICROS_PER_FRAME)
             encoded.drain(::collect)
             encoded.finish(::collect)
             if (samples.isEmpty()) return@withContext null
@@ -234,6 +237,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     private var alphaHandle = 0
     private var revealHandle = 0
     private var activeHandle = 0
+    private var liftHandle = 0
     private var scrollHandle = 0
     private var positionHandle = 0
     private var texHandle = 0
@@ -245,7 +249,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     private val bufferInfo = MediaCodec.BufferInfo()
 
     /** A layer in GPU terms: its texture and its quad, ready to draw. */
-    private class GpuTexture(val texture: Int, val quad: FloatBuffer)
+    private class GpuTexture(val texture: Int, val quad: FloatBuffer, val liftUv: Float)
 
     fun start() {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
@@ -298,6 +302,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         alphaHandle = GLES20.glGetUniformLocation(program, "uAlpha")
         revealHandle = GLES20.glGetUniformLocation(program, "uReveal")
         activeHandle = GLES20.glGetUniformLocation(program, "uActive")
+        liftHandle = GLES20.glGetUniformLocation(program, "uLift")
         scrollHandle = GLES20.glGetUniformLocation(program, "uScroll")
         positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
         texHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
@@ -331,7 +336,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
                 GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, bitmap.width, bitmap.height, 0,
                 GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, scratch,
             )
-            GpuTexture(handles[index], quadFor(layer, bitmap.width, bitmap.height))
+            GpuTexture(handles[index], quadFor(layer, bitmap.width, bitmap.height), layer.liftUv)
         }
         this.passageTop = passageTop
         this.passageBottom = passageBottom
@@ -367,7 +372,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
      * in. [alphas] runs one entry per layer, the furniture first at full;
      * [reveals] and [actives] drive the word sweep and the active line.
      */
-    fun drawFrame(alphas: FloatArray, reveals: FloatArray, actives: BooleanArray, scrollNdc: Float, presentationUs: Long) {
+    fun drawFrame(alphas: FloatArray, reveals: FloatArray, actives: BooleanArray, bounces: FloatArray, scrollNdc: Float, presentationUs: Long) {
         GLES20.glViewport(0, 0, width, height)
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
@@ -381,6 +386,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         // own window — the scissor keeps a scrolling line from painting over
         // the header or the footer.
         GLES20.glUniform1f(scrollHandle, 0f)
+        GLES20.glUniform1f(liftHandle, 0f)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, layers[0].texture)
         GLES20.glUniform1f(alphaHandle, alphas[0])
         GLES20.glUniform1f(revealHandle, reveals[0])
@@ -393,7 +399,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
             GLES20.glUniform1f(alphaHandle, alphas[index])
             GLES20.glUniform1f(revealHandle, reveals[index])
             GLES20.glUniform1i(activeHandle, if (actives[index]) 1 else 0)
-            GLES20.glUniform1f(scrollHandle, scrollNdc)
+            GLES20.glUniform1f(liftHandle, layers[index].liftUv)
+            GLES20.glUniform1f(scrollHandle, scrollNdc + bounces[index])
             drawQuad(layers[index].quad)
         }
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
@@ -521,13 +528,30 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
             uniform sampler2D uTexture;
             uniform float uAlpha;
             uniform float uReveal;
+            uniform float uLift;
             uniform int uActive;
             varying vec2 vTexCoord;
             void main() {
-                vec4 t = texture2D(uTexture, vTexCoord) * uAlpha;
+                vec2 uv = vTexCoord;
+                // The word being sung rides up off the line and the words
+                // behind it settle back down — the panel's rise, carried as
+                // a wave that travels with the sweep's edge: nothing ahead
+                // of it, a peak a word behind it, flat by two words.
+                if (uActive == 1 && uLift > 0.0) {
+                    float behind = clamp(uReveal - uv.x, 0.0, 1.0);
+                    float wave = sin(clamp(behind / 0.16, 0.0, 1.0) * 3.14159265);
+                    // Eases out as the line's last word is sung rather than
+                    // snapping flat the moment the highlight hands over.
+                    wave *= 1.0 - smoothstep(0.92, 1.0, uReveal);
+                    uv.y = min(uv.y + uLift * wave, 1.0);
+                }
+                vec4 t = texture2D(uTexture, uv) * uAlpha;
                 if (uActive == 1) {
-                    float dim = 0.35;
-                    t = t * (vTexCoord.x < uReveal ? 1.0 : dim);
+                    // The wipe, feathered the way the panel feathers its
+                    // boundary: lit solid up to now, fading out over the
+                    // next slice of the row rather than cut at a pixel.
+                    float lit = 1.0 - smoothstep(uReveal, uReveal + 0.08, vTexCoord.x);
+                    t = t * mix(0.35, 1.0, lit);
                 }
                 gl_FragColor = t;
             }
