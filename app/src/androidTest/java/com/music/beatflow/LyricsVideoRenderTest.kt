@@ -1,9 +1,10 @@
-package com.music.beatflow
+﻿package com.music.beatflow
 
 import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.music.beatflow.data.model.Song
+import com.music.beatflow.data.lyrics.LyricWord
 import com.music.beatflow.ui.player.LyricsShareLine
 import com.music.beatflow.ui.player.LyricsShareRequest
 import com.music.beatflow.ui.player.buildLyricsCardScene
@@ -14,7 +15,7 @@ import org.junit.runner.RunWith
 
 /**
  * Renders a clip from a synthetic pick straight to the app's external files,
- * next to the scene's own still — so the two can be pulled and compared: if
+ * next to the scene's own still â€” so the two can be pulled and compared: if
  * the still is clean and the clip is torn, the fault is in the encode path,
  * not in the layout.
  */
@@ -34,10 +35,35 @@ class LyricsVideoRenderTest {
             song = song,
             artworkUrl = null,
             lines = listOf(
-                LyricsShareLine("झीलाको तिरेमा", null, startMs = 0, endMs = 8_000),
+                LyricsShareLine(
+                    "à¤à¥€à¤²à¤¾à¤•à¥‹ à¤¤à¤¿à¤°à¥‡à¤®à¤¾", null,
+                    startMs = 0, endMs = 8_000,
+                    words = listOf(
+                        LyricWord(0, 3_000, "à¤à¥€à¤²à¤¾à¤•à¥‹"),
+                        LyricWord(3_000, 8_000, "à¤¤à¤¿à¤°à¥‡à¤®à¤¾"),
+                    ),
+                ),
                 LyricsShareLine("", null, isGap = true),
-                LyricsShareLine("काड्ने भए ठिकै हो", null, startMs = 11_000, endMs = 14_000),
-                LyricsShareLine("त्यो मायाको कुँै नगर", null, startMs = 14_000, endMs = 22_000),
+                LyricsShareLine(
+                    "à¤•à¤¾à¤¡à¥à¤¨à¥‡ à¤­à¤ à¤ à¤¿à¤•à¥ˆ à¤¹à¥‹", null,
+                    startMs = 11_000, endMs = 14_000,
+                    words = listOf(
+                        LyricWord(11_000, 12_000, "à¤•à¤¾à¤¡à¥à¤¨à¥‡"),
+                        LyricWord(12_000, 12_500, "à¤­à¤"),
+                        LyricWord(12_500, 13_300, "à¤ à¤¿à¤•à¥ˆ"),
+                        LyricWord(13_300, 14_000, "à¤¹à¥‹"),
+                    ),
+                ),
+                LyricsShareLine(
+                    "à¤¤à¥à¤¯à¥‹ à¤®à¤¾à¤¯à¤¾à¤•à¥‹ à¤•à¥à¤à¥ˆ à¤¨à¤—à¤°", null,
+                    startMs = 14_000, endMs = 22_000,
+                    words = listOf(
+                        LyricWord(14_000, 15_000, "à¤¤à¥à¤¯à¥‹"),
+                        LyricWord(15_000, 17_000, "à¤®à¤¾à¤¯à¤¾à¤•à¥‹"),
+                        LyricWord(17_000, 18_500, "à¤•à¥à¤à¥ˆ"),
+                        LyricWord(18_500, 22_000, "à¤¨à¤—à¤°"),
+                    ),
+                ),
             ),
         )
 
@@ -58,7 +84,7 @@ class LyricsVideoRenderTest {
         }
         android.util.Log.d("LyricsVideoRenderTest", "render ms=$elapsed hasAudio=${video?.hasAudio}")
 
-        // ── The sound, exercised on its own: a synthesized tone, cut to
+        // â”€â”€ The sound, exercised on its own: a synthesized tone, cut to
         // 1s..5s, decoded, faded, re-encoded, muxed, and left where the pull
         // can reach it. The clip above answers for the picture; this answers
         // for everything audio.

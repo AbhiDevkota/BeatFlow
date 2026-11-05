@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.beatflow.data.lyrics.LyricLine
+import com.music.beatflow.data.lyrics.LyricWord
 import com.music.beatflow.data.model.Song
 import com.music.beatflow.sharedui.resources.Res
 import com.music.beatflow.sharedui.resources.cancel
@@ -67,7 +68,34 @@ data class LyricsShareLine(
     val isGap: Boolean = false,
     val startMs: Long? = null,
     val endMs: Long? = null,
-)
+    /** Per-word timing, when the provider carried it. The clip sweeps its
+     * text word by word from these; an empty list lights the whole line at
+     * once, the way an unsynced verse has to. */
+    val words: List<LyricWord> = emptyList(),
+) {
+    /** How far through [text] the singing has got at [positionMs], 0..1, as a
+     * fractional character count — the same sweep the panel draws, ported so
+     * the clip can follow it. Unsynchronised lines light whole. */
+    fun revealedChars(positionMs: Long): Float {
+        if (words.isEmpty()) return if (positionMs >= (startMs ?: 0L)) text.length.toFloat() else 0f
+        var offset = 0
+        for ((index, word) in words.withIndex()) {
+            val start = text.indexOf(word.text, offset).takeIf { it >= 0 } ?: offset
+            val end = start + word.text.length
+            if (positionMs < word.startMs) return start.toFloat()
+            if (positionMs < word.endMs) return start + word.charsSungAt(positionMs)
+            val next = words.getOrNull(index + 1)
+            if (next != null && positionMs < next.startMs) {
+                val gapStart = text.indexOf(next.text, end).takeIf { it >= 0 } ?: end
+                val pause = (next.startMs - word.endMs).coerceAtLeast(1L)
+                val through = (positionMs - word.endMs).toFloat() / pause
+                return end + through * (gapStart - end)
+            }
+            offset = end
+        }
+        return text.length.toFloat()
+    }
+}
 
 /**
  * Everything the platform's card renderer needs, gathered once by the player.
@@ -310,6 +338,9 @@ internal fun rememberLyricsPicker(
                         subText = sub?.takeIf { it.isNotBlank() && it != line.text },
                         startMs = sungStartMs(line, offsetMs),
                         endMs = sungEndMs(source, index, offsetMs),
+                        words = line.words.map {
+                            it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs)
+                        },
                     ),
                 )
             }

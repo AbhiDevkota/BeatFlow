@@ -1,4 +1,4 @@
-package com.music.beatflow.ui.player
+﻿package com.music.beatflow.ui.player
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -42,31 +42,31 @@ import kotlinx.coroutines.withContext
  * the sound, in a container a chat app will accept. Android's answer is
  * `MediaCodec` (an encoder fed frames) and `MediaMuxer` (the MP4 wrapper), and
  * there is nothing higher-level to reach for that isn't a whole rendering
- * engine. The frames come from [LyricsCardScene] — the same layout the still
- * card draws, so the clip is the picture moving — and the sound is the song
+ * engine. The frames come from [LyricsCardScene] â€” the same layout the still
+ * card draws, so the clip is the picture moving â€” and the sound is the song
  * itself, decoded from wherever the app already has it and re-encoded to AAC,
  * trimmed to exactly the passage the lyrics span.
  *
  * ## Why EGL
  *
  * The encoder takes frames through a `Surface`, and a surface timestamps what
- * lands on it by the wall clock — which would pace the clip by how fast this
+ * lands on it by the wall clock â€” which would pace the clip by how fast this
  * device happens to draw, drifting the words off the music. Drawing through
  * EGL instead lets each frame carry the timestamp it deserves
  * (`eglPresentationTimeANDROID`), so frame 200 always lands at 6.67s whatever
  * the renderer was doing. The scene draws into a software bitmap exactly as
- * the photo does, and the bitmap is uploaded as a texture — identical pixels,
+ * the photo does, and the bitmap is uploaded as a texture â€” identical pixels,
  * at exact times.
  *
  * ## The audio
  *
- * Read through [MediaExtractor] off the same source the player uses — a local
+ * Read through [MediaExtractor] off the same source the player uses â€” a local
  * file where the track is one, else the rendition already on disk in
  * [AudioCache], which is where streamed audio lands. It is the raw recording,
  * not the playing output: no equalizer, no crossfade, the same courtesy a
  * screenshot of the photo card is. Decoded to PCM, edged with a short fade so
- * the cut doesn't click, re-encoded AAC, and if any of that is impossible — a
- * source nothing cached, a codec the device won't give — the clip is still
+ * the cut doesn't click, re-encoded AAC, and if any of that is impossible â€” a
+ * source nothing cached, a codec the device won't give â€” the clip is still
  * made, silent, and the caller says so.
  */
 internal data class LyricsVideo(
@@ -78,7 +78,7 @@ internal data class LyricsVideo(
 /**
  * Renders [request] as a clip from the first picked line to the last.
  *
- * @param onProgress 0..1, called as often as there is news — the frame loop is
+ * @param onProgress 0..1, called as often as there is news â€” the frame loop is
  * most of the work and reports through it.
  */
 internal suspend fun renderLyricsShareVideo(
@@ -87,7 +87,7 @@ internal suspend fun renderLyricsShareVideo(
     onProgress: (Float) -> Unit = {},
 ): LyricsVideo? = withContext(Dispatchers.Default) {
     // The frame is the story card: the whole 9:16, the passage centred in it,
-    // however short the pick — a video has one shape for its whole length.
+    // however short the pick â€” a video has one shape for its whole length.
     val scene = buildLyricsCardScene(context, request, story = true)
     val (startMs, endMs) = spanOf(request.lines) ?: return@withContext null
     val spanMs = (endMs - startMs).coerceAtMost(MAX_SPAN_MS).coerceAtLeast(MIN_SPAN_MS)
@@ -103,7 +103,7 @@ internal suspend fun renderLyricsShareVideo(
     }.getOrElse { return@withContext null }
 
     try {
-        // ── The picture ─────────────────────────────────────────────────────
+        // â”€â”€ The picture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         val encoded = GlVideoEncoder(scene.width.roundToInt(), scene.height.roundToInt())
 
         val video = try {
@@ -119,32 +119,45 @@ internal suspend fun renderLyricsShareVideo(
             }
             // The clip is variable-frame-rate, and glad of it: the picture
             // only changes when the highlight hands one line to the next or a
-            // break's dot steps on, so only those moments are submitted — at
+            // break's dot steps on, so only those moments are submitted â€” at
             // full 30fps through each crossfade, and a single frame across
             // every hold between them. The timestamps carry the pacing, the
             // encoder sees a fraction of the frames, and the last frame is
             // always sent so the container knows where the clip ends.
-            var lastAlphas: IntArray? = null
+            var lastState: LyricsCardScene.FrameState? = null
             val gpuAlphas = FloatArray(scene.gpuLayerCount() + 1)
             gpuAlphas[0] = 1f // the furniture stands whole
+            val gpuReveals = FloatArray(scene.gpuLayerCount() + 1)
+            gpuReveals[0] = 1f
+            val gpuActives = BooleanArray(scene.gpuLayerCount() + 1)
             for (frame in 0 until frameCount) {
                 callerContext.ensureActive()
-                val alphas = scene.frameAlphas((frame * FRAME_MS).toLong())
-                if (lastAlphas == null || !alphas.contentEquals(lastAlphas) ||
+                val state = scene.frameState((frame * FRAME_MS).toLong())
+                if (lastState == null || !state.sameAs(lastState) ||
                     frame == frameCount - 1
                 ) {
-                    for (i in alphas.indices) gpuAlphas[i + 1] = alphas[i] / 255f
-                    encoded.drawFrame(gpuAlphas, frame * MICROS_PER_FRAME)
-                    lastAlphas = alphas
+                    for (i in state.alphas.indices) {
+                        gpuAlphas[i + 1] = state.alphas[i] / 255f
+                        gpuReveals[i + 1] = state.reveals[i]
+                        gpuActives[i + 1] = state.actives[i]
+                    }
+                    encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, frame * MICROS_PER_FRAME)
+                    lastState = state
                 }
                 encoded.drain(::collect)
                 onProgress((frame + 1).toFloat() / frameCount * 0.78f)
             }
             // The container reads the last sample's length as the gap that
-            // preceded it — across a hold that is seconds, and the clip would
+            // preceded it â€” across a hold that is seconds, and the clip would
             // linger long after its sound had ended. One more frame a step
             // after the last keeps the tail one frame long, as it should be.
-            encoded.drawFrame(gpuAlphas, frameCount * MICROS_PER_FRAME)
+            val tail = scene.frameState(frameCount * FRAME_MS.toLong())
+            for (i in tail.alphas.indices) {
+                gpuAlphas[i + 1] = tail.alphas[i] / 255f
+                gpuReveals[i + 1] = tail.reveals[i]
+                gpuActives[i + 1] = tail.actives[i]
+            }
+            encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, frameCount * MICROS_PER_FRAME)
             encoded.drain(::collect)
             encoded.finish(::collect)
             if (samples.isEmpty()) return@withContext null
@@ -153,7 +166,7 @@ internal suspend fun renderLyricsShareVideo(
             encoded.release()
         }
 
-        // ── The sound ───────────────────────────────────────────────────────
+        // â”€â”€ The sound â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         onProgress(0.78f)
         val audio = openSongAudio(context, request.song)?.use { source ->
             encodeAudioSpan(
@@ -165,7 +178,7 @@ internal suspend fun renderLyricsShareVideo(
         }
         onProgress(0.97f)
 
-        // ── The container ───────────────────────────────────────────────────
+        // â”€â”€ The container â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         val videoTrack = muxer.addTrack(video.format)
         val audioTrack = audio?.let { muxer.addTrack(it.format) }
         muxer.start()
@@ -181,7 +194,7 @@ internal suspend fun renderLyricsShareVideo(
         LyricsVideo(out, hasAudio = audioTrack != null)
     } catch (e: Exception) {
         if (e is CancellationException) {
-            // Stood down mid-render — the half-written clip is not a clip.
+            // Stood down mid-render â€” the half-written clip is not a clip.
             out.delete()
             throw e
         }
@@ -198,15 +211,15 @@ internal class Sample(val bytes: ByteArray, val info: MediaCodec.BufferInfo)
 /** A track's settled output format and everything encoded into it. */
 internal class Track(val format: MediaFormat, val samples: List<Sample>)
 
-// ── The frame feed ─────────────────────────────────────────────────────────
+// â”€â”€ The frame feed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * The encoder's input surface, fronted by EGL so every frame can carry the
- * timestamp it deserves — see [renderLyricsShareVideo] for why a canvas on the
+ * timestamp it deserves â€” see [renderLyricsShareVideo] for why a canvas on the
  * surface would pace the clip by the wall clock.
  *
- * The card arrives as layers — the furniture, the sung rows, the break's dots
- * — each uploaded to its own texture **once**. A frame is then the GPU's alone
+ * The card arrives as layers â€” the furniture, the sung rows, the break's dots
+ * â€” each uploaded to its own texture **once**. A frame is then the GPU's alone
  * to make: every layer is drawn at its place with its brightness, nothing is
  * rasterised, copied or carried across per frame, and the CPU's only part in
  * a frame is naming the numbers.
@@ -219,6 +232,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
     private var program = 0
     private var alphaHandle = 0
+    private var revealHandle = 0
+    private var activeHandle = 0
     private var positionHandle = 0
     private var texHandle = 0
     private var layers: List<GpuTexture> = emptyList()
@@ -278,6 +293,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
 
         program = buildProgram()
         alphaHandle = GLES20.glGetUniformLocation(program, "uAlpha")
+        revealHandle = GLES20.glGetUniformLocation(program, "uReveal")
+        activeHandle = GLES20.glGetUniformLocation(program, "uActive")
         positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
         texHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
     }
@@ -315,7 +332,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
 
     /**
      * One layer's corner positions, from its place on the card into the
-     * viewport's -1..1, interleaved with its texture coordinates — the same
+     * viewport's -1..1, interleaved with its texture coordinates â€” the same
      * four-floats-a-corner layout the draw reads, with the v coordinate
      * flipped because a bitmap's first row is its top.
      */
@@ -339,10 +356,10 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     /**
      * Composites one frame entirely on the GPU: every layer drawn at its
      * place with its brightness, then stamped [presentationUs] microseconds
-     * in. [alphas] runs one entry per layer, the furniture first at full.
+     * in. [alphas] runs one entry per layer, the furniture first at full;
+     * [reveals] and [actives] drive the word sweep and the active line.
      */
-    fun drawFrame(alphas: FloatArray, presentationUs: Long) {
-        GLES20.glViewport(0, 0, width, height)
+    fun drawFrame(alphas: FloatArray, reveals: FloatArray, actives: BooleanArray, presentationUs: Long) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(program)
@@ -354,6 +371,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         for ((index, layer) in layers.withIndex()) {
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, layer.texture)
             GLES20.glUniform1f(alphaHandle, alphas[index])
+            GLES20.glUniform1f(revealHandle, reveals[index])
+            GLES20.glUniform1i(activeHandle, if (actives[index]) 1 else 0)
             drawQuad(layer.quad)
         }
         GLES20.glDisable(GLES20.GL_BLEND)
@@ -363,8 +382,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
 
     private fun drawQuad(quad: FloatBuffer) {
         GLES20.glEnableVertexAttribArray(positionHandle)
-        // The buffer interleaves position and texture coordinate — two floats
-        // each, four to a corner — so the stride is one whole corner. A stride
+        // The buffer interleaves position and texture coordinate â€” two floats
+        // each, four to a corner â€” so the stride is one whole corner. A stride
         // of zero walks the positions straight through the coordinates: vertex
         // one's position becomes vertex zero's texture coordinate, and the quad
         // tears into the wedge that was rendering all along.
@@ -425,7 +444,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     /**
      * Ends the stream: the last frame is still travelling the surface pipeline
      * when this is called, so the queue is drained until it has landed before
-     * the end-of-stream is signalled — signalling early would cut the clip's
+     * the end-of-stream is signalled â€” signalling early would cut the clip's
      * final frame off, and with it the clip's own duration.
      */
     fun finish(onSample: (Sample?, MediaFormat?) -> Unit) {
@@ -494,6 +513,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         GLES20.glAttachShader(program, shader(GLES20.GL_VERTEX_SHADER, vertex))
         GLES20.glAttachShader(program, shader(GLES20.GL_FRAGMENT_SHADER, fragment))
         GLES20.glLinkProgram(program)
+        val linkStatus = IntArray(1)
+        GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linkStatus, 0)
         return program
     }
 
@@ -505,11 +526,11 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     }
 }
 
-// ── The sound ──────────────────────────────────────────────────────────────
+// â”€â”€ The sound â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * The song's recording, from wherever this app already has it: the file for a
- * track that lives on the device, else the rendition the disk cache holds —
+ * track that lives on the device, else the rendition the disk cache holds â€”
  * which is what a streamed track's playback was reading anyway.
  *
  * Null when neither exists, which is how a clip ends up silent.
@@ -522,7 +543,7 @@ internal fun openSongAudio(context: Context, song: Song): MediaDataSource? {
             return LocalAudioSource.open(context.contentResolver, uri)
         }
     }
-    // The cache is keyed by recording, not by the expiring stream URL — see
+    // The cache is keyed by recording, not by the expiring stream URL â€” see
     // AudioCache. The fullest rendition on disk is the one to read.
     val watch = Uri.parse("beatflow://watch?v=${song.videoId}")
     val pick = AudioCache.renditionsOf(watch).maxByOrNull { it.cachedPrefix } ?: return null
@@ -545,7 +566,7 @@ private inline fun <T> MediaDataSource.use(block: (MediaDataSource) -> T): T {
  * open or close on a click.
  *
  * @param onProgress 0..1 through the span, called as chunks come out of the
- * decoder — the sound is most of what the last stretch of a render takes, and
+ * decoder â€” the sound is most of what the last stretch of a render takes, and
  * without this the button would sit at the video's last number for seconds.
  */
 internal fun encodeAudioSpan(
@@ -592,7 +613,7 @@ internal fun encodeAudioSpan(
                     setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 65_536)
                 }
 
-            // A rate the encoder won't take — a 96kHz FLAC, say — falls back to
+            // A rate the encoder won't take â€” a 96kHz FLAC, say â€” falls back to
             // the one every encoder takes, resampled on the way through.
             var resample = false
             try {
@@ -656,7 +677,7 @@ internal fun encodeAudioSpan(
                     }
                 }
 
-                // Drain the decoder into `held` — one chunk, only when the
+                // Drain the decoder into `held` â€” one chunk, only when the
                 // last one has been taken.
                 if (held == null && !decoderDone) {
                     val outIndex = decoder.dequeueOutputBuffer(info, 0L)
@@ -729,7 +750,7 @@ internal fun encodeAudioSpan(
                 }
                 // Nothing anywhere and the encoder still hasn't said EOS: it
                 // should have, once the decoder was done. A stall is counted,
-                // not waited out forever — the clip keeps whatever was encoded.
+                // not waited out forever â€” the clip keeps whatever was encoded.
                 if (!worked) {
                     if (decoderDone && !encoderDone) {
                         if (++stale > STALE_ROUNDS) break
@@ -780,7 +801,7 @@ private fun resampleLinear(src: ByteArray, srcRate: Int, srcCh: Int, dstRate: In
 }
 
 /**
- * A short fade on the clip's first and last [FADE_MS], over the raw samples —
+ * A short fade on the clip's first and last [FADE_MS], over the raw samples â€”
  * the cut lands mid-song, and a boundary that starts at full swing clicks.
  */
 private fun fade(chunk: ByteArray, ptsUs: Long, sampleRate: Int, channels: Int, spanUs: Long) {
@@ -801,7 +822,7 @@ private fun fade(chunk: ByteArray, ptsUs: Long, sampleRate: Int, channels: Int, 
     }
 }
 
-// ── Constants ──────────────────────────────────────────────────────────────
+// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 private const val FPS = 30
 private const val FRAME_MS = 1000f / FPS
@@ -828,6 +849,6 @@ private const val STALE_ROUNDS = 1_000
 /** How long the sound takes to come up, and to go away, at each end. */
 private const val FADE_MS = 120
 
-/** Where the clip waits to be saved or handed off — the FileProvider's folder. */
+/** Where the clip waits to be saved or handed off â€” the FileProvider's folder. */
 internal const val VIDEO_SHARE_FOLDER = "shared"
 internal const val VIDEO_FILE_NAME = "lyrics-video.mp4"

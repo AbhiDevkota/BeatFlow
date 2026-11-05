@@ -1,4 +1,4 @@
-package com.music.beatflow.ui.player
+﻿package com.music.beatflow.ui.player
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
+import com.music.beatflow.data.lyrics.LyricWord
 import com.music.beatflow.ui.replay.Fonts
 import com.music.beatflow.ui.replay.drawArtwork
 import com.music.beatflow.ui.replay.drawBackdrop
@@ -28,8 +29,8 @@ import kotlinx.coroutines.withContext
  * scrubber, the glow falloff, whichever lines happened to be on screen and the
  * status bar of that particular phone, so two people sharing the same verse
  * would send two different-looking pictures. A card laid out here is the verse,
- * the sleeve and this app's mark, and nothing else — and it is only as tall as
- * that verse needs, which holds it inside 1080×1920 (9:16): the shape a story
+ * the sleeve and this app's mark, and nothing else â€” and it is only as tall as
+ * that verse needs, which holds it inside 1080Ã—1920 (9:16): the shape a story
  * or a chat head expects. Keeping it there is the player's job, by refusing
  * more words at the pick rather than by shrinking them here.
  *
@@ -49,14 +50,14 @@ import kotlinx.coroutines.withContext
  * chosen rather than fixed: the layout is retried down a fixed ladder of sizes
  * until the rows stop overflowing, and the card is then grown to exactly the
  * room those rows take. The bottom rung of that ladder is a floor rather than a
- * last resort — no card ever sets type smaller than it to squeeze a passage
+ * last resort â€” no card ever sets type smaller than it to squeeze a passage
  * in, so a passage too long for the frame lengthens the card instead of being
  * cut, or made small enough to hold a phone at arm's length to read.
  *
  * ## The video
  *
  * The layout work lives in [LyricsCardScene], which is also what the video
- * renderer draws with — one frame per step of the song, the same layout at
+ * renderer draws with â€” one frame per step of the song, the same layout at
  * every one of them, so the clip and the picture cannot disagree about where
  * anything sits. A scene is built once and drawn many times; only the lyric
  * highlight moves between frames.
@@ -64,51 +65,51 @@ import kotlinx.coroutines.withContext
 internal suspend fun renderLyricsShareCard(
     context: Context,
     card: LyricsShareRequest,
-    /** Pad out to the full 1080×1920 frame, the passage centred in the room. */
+    /** Pad out to the full 1080Ã—1920 frame, the passage centred in the room. */
     story: Boolean = false,
 ): Bitmap = withContext(Dispatchers.Default) {
     buildLyricsCardScene(context, card, story).render()
 }
 
-// ── The scene ──────────────────────────────────────────────────────────────
+// â”€â”€ The scene â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * The card, laid out once and drawable at any moment of the song.
  *
- * Everything that does not change between two frames of a video — the fonts,
- * the sleeve, the palette, the fitted type, where every row's baseline sits —
+ * Everything that does not change between two frames of a video â€” the fonts,
+ * the sleeve, the palette, the fitted type, where every row's baseline sits â€”
  * is settled here, at construction. And more than settled: the furniture
  * (backdrop, the mark and the word, the sleeve and the credit) is *drawn* once
  * into the base, and every passage row is rasterised once into its own small
  * bitmap. A frame of video then costs one blit of the base plus one small blit
- * per row carrying the highlight's alpha — no gradients, no text shaping, no
+ * per row carrying the highlight's alpha â€” no gradients, no text shaping, no
  * vector inflation per frame, each of which would be most of what a frame
  * takes. The row bitmaps keep their text at the same sub-pixel offset it would
  * have been drawn at directly, so the raster is the one a direct draw makes.
  *
  * Drawn as the still it is pixel for pixel what the card has always been.
  * Drawn at a moment of the song, the line being sung stands full white and
- * the rest sit back, handing over to each other on a short crossfade — the
+ * the rest sit back, handing over to each other on a short crossfade â€” the
  * panel's own cursor rule (the last line whose stamp has passed), read off
  * the same stamps the pick carried.
  */
 internal class LyricsCardScene(
     context: Context,
-    request: LyricsShareRequest,
+    private val request: LyricsShareRequest,
     story: Boolean,
     /** Resolved sleeve, loaded once for every frame to share. */
     private val cover: Bitmap?,
-    /** The mark, inflated once — see [loadedLogo]. */
+    /** The mark, inflated once â€” see [loadedLogo]. */
     private val logo: Drawable?,
 ) {
     private val type: Fonts = Fonts(context)
 
-    // ── Sizing ──────────────────────────────────────────────────────────────
+    // â”€â”€ Sizing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // No room is reserved for the words to sit in: they get their own height,
     // and the card is built down from that number. A chorus comes out a strip
     // barely taller than its own text instead of a 9:16 sheet with a paragraph
     // floating in the middle of it, and the size comes down only as far as the
-    // ladder goes — past that the frame gives rather than the type does.
+    // ladder goes â€” past that the frame gives rather than the type does.
     private val headTop = HEADER_BOTTOM + GAP_ABOVE_BODY
     private val frameRoom = MAX_CARD_H - FOOTER_THUMB - FOOTER_PAD - GAP_BELOW_BODY - headTop
     private val plan: Plan
@@ -117,10 +118,10 @@ internal class LyricsCardScene(
     private val spare: Float
     private val bodyTop: Float
 
-    /** The card's drawn size — the video's frame is exactly this. */
+    /** The card's drawn size â€” the video's frame is exactly this. */
     val width: Float = CARD_W.toFloat()
-    val height: Float    // ── Header ──────────────────────────────────────────────────────────────
-    // The mark and the word, at the top right — the same pair the Replay
+    val height: Float    // â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // The mark and the word, at the top right â€” the same pair the Replay
     // carries, so two of these cards still read as one family. Nothing else
     // goes above the passage: the picture is the verse, not a caption for it.
     private val brand = type.heading(46f, 0xE6FFFFFF.toInt()).apply {
@@ -128,13 +129,13 @@ internal class LyricsCardScene(
     }
     private val logoRight = CARD_W - CARD_MARGIN - brand.measureText(BRAND) - LOGO_GAP
 
-    // ── The passage, positioned once ────────────────────────────────────────
+    // â”€â”€ The passage, positioned once â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Every row keeps the baseline it will be drawn at for the life of the
-    // scene, and the group it belongs to — the picked line it came from — so
+    // scene, and the group it belongs to â€” the picked line it came from â€” so
     // the video can dim and light whole lines rather than stray wraps.
 
-    // ── Footer ──────────────────────────────────────────────────────────────
-    // Which song this is — which only the backdrop had been saying until now.
+    // â”€â”€ Footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Which song this is â€” which only the backdrop had been saying until now.
     private val thumbY: Float
     private val textX = CARD_MARGIN + FOOTER_THUMB + 34f
     private val room = CARD_W - CARD_MARGIN - textX
@@ -144,7 +145,7 @@ internal class LyricsCardScene(
     private val footerArtist = ellipsised(request.song.artist, artistPaint, room)
     private val rawTitle = request.song.title
 
-    // ── Backdrop ────────────────────────────────────────────────────────────
+    // â”€â”€ Backdrop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // The palette comes off the sleeve once; the gradients themselves are
     // drawn once with it, into the base below.
     private val backdropColors = paletteOf(cover)
@@ -163,8 +164,8 @@ internal class LyricsCardScene(
 
     /**
      * Where each sung line hands over, on the clip's own clock: the start of
-     * whatever follows it — a break's own start when the pick skipped a
-     * stretch, or the next sung line's start when nothing was skipped — and
+     * whatever follows it â€” a break's own start when the pick skipped a
+     * stretch, or the next sung line's start when nothing was skipped â€” and
      * the end of the clip for the last line. A line dims from here, so a
      * break lights its dots instead of leaving the line above standing.
      */
@@ -192,7 +193,7 @@ internal class LyricsCardScene(
 
     /**
      * The breaks, on the clip's own clock: a break's dots fill from the end of
-     * the sung line before it to the start of the one after — the stretch the
+     * the sung line before it to the start of the one after â€” the stretch the
      * pick skipped, which is exactly the silence the dots are there to time.
      * Keyed by the pick entry the gap row came from.
      */
@@ -225,9 +226,9 @@ internal class LyricsCardScene(
         thumbY = height - FOOTER_PAD - FOOTER_THUMB
     }
 
-    // ── The rasters ─────────────────────────────────────────────────────────
+    // â”€â”€ The rasters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // The furniture once, whole; the words once each. This is the pass that
-    // pays for shaping, gradients and the sleeve — every frame after it blits.
+    // pays for shaping, gradients and the sleeve â€” every frame after it blits.
     private val base: Bitmap
     private val stillRows: List<RowImage>
 
@@ -286,18 +287,23 @@ internal class LyricsCardScene(
         )
     }
 
-    // ── The clip's layers ───────────────────────────────────────────────────
-    // The same rows the still blits, minus the "(...)" markers — a break is
+    // â”€â”€ The clip's layers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // The same rows the still blits, minus the "(...)" markers â€” a break is
     // not a symbol parked on screen here, it is the panel's three dots
-    // filling across the silence — plus one dot layer per dot.
+    // filling across the silence â€” plus one dot layer per dot.
 
     /** One thing the clip's frame loop composites. */
     private class ClipLayer(
         val bitmap: Bitmap,
         val x: Float,
         val y: Float,
-        /** The sung line this row belongs to — the highlight reads it. */
+        /** The sung line this row belongs to â€” the highlight reads it. */
         val group: Int,
+        /** A translation or romanisation rides its line's clock, uniformly. */
+        val isSub: Boolean,
+        /** Where this row's text sits in its line, for the word sweep. */
+        val charStart: Int,
+        val charEnd: Int,
         /** The break this dot belongs to, and which of its three it is. */
         val gap: Int = -1,
         val dot: Int = -1,
@@ -325,13 +331,13 @@ internal class LyricsCardScene(
         plan.rows.forEachIndexed { index, row ->
             val image = stillRows[index]
             if (!row.isGap) {
-                layers += ClipLayer(image.bitmap, image.x, image.y, row.group)
+                layers += ClipLayer(image.bitmap, image.x, image.y, row.group, row.isSub, row.charStart, row.charEnd)
             } else {
                 gapOrdinal++
                 val span = gapSpans[row.lineIndex]
                 if (span == null) {
-                    // A break with no clock either side — unsynced words, or a
-                    // marker at the very edge of the pick — keeps its dots at
+                    // A break with no clock either side â€” unsynced words, or a
+                    // marker at the very edge of the pick â€” keeps its dots at
                     // rest, which is all a mark with no time can say.
                     repeat(GAP_DOTS) { dot ->
                         layers += ClipLayer(
@@ -339,6 +345,9 @@ internal class LyricsCardScene(
                             CARD_MARGIN + dot * stride.toFloat(),
                             baselines[index] - plan.size * 0.65f * 0.30f - dotSize / 2f,
                             group = -1,
+                            isSub = false,
+                            charStart = 0,
+                            charEnd = 0,
                             gap = -1,
                             dot = dot,
                         )
@@ -353,6 +362,9 @@ internal class LyricsCardScene(
                             CARD_MARGIN + dot * stride.toFloat(),
                             centerY - dotSize / 2f,
                             group = -1,
+                            isSub = false,
+                            charStart = 0,
+                            charEnd = 0,
                             gap = gapOrdinal,
                             dot = dot,
                         )
@@ -371,7 +383,7 @@ internal class LyricsCardScene(
         return bitmap
     }
 
-    /** Draws the still — every row at its own colour's full strength. */
+    /** Draws the still â€” every row at its own colour's full strength. */
     fun draw(canvas: Canvas) {
         canvas.drawBitmap(base, 0f, 0f, null)
         for (image in stillRows) {
@@ -386,23 +398,23 @@ internal class LyricsCardScene(
      * The clip's layers for the GPU: the furniture whole, then every sung row
      * and every break dot at its place. Uploaded once; the frame loop only
      * names how bright each stands, and the compositing itself never leaves
-     * the GPU — no bitmap is drawn, copied or carried across per frame.
+     * the GPU â€” no bitmap is drawn, copied or carried across per frame.
      */
     fun gpuLayers(): List<GpuLayer> = buildList {
         add(GpuLayer(base, 0f, 0f))
         for (layer in clipLayers) add(GpuLayer(layer.bitmap, layer.x, layer.y))
     }
 
-    /** How many layers [gpuLayers] carries — the furniture plus the passage. */
+    /** How many layers [gpuLayers] carries â€” the furniture plus the passage. */
     fun gpuLayerCount(): Int = clipLayers.size + 1
 
     /**
-     * How bright every layer of the clip stands at [t], milliseconds in — one
+     * How bright every layer of the clip stands at [t], milliseconds in â€” one
      * entry per clip layer, in layer order, 0..255. Sung rows read the
      * highlight; a break's dots read its clock, each owning its third and
      * filling across it, the way the panel lights them. The frame loop
      * compares these frame to frame: while nothing has changed, no frame is
-     * submitted at all — the timestamps carry the pacing.
+     * submitted at all â€” the timestamps carry the pacing.
      */
     fun frameAlphas(t: Long): IntArray = IntArray(clipLayers.size) { i ->
         val layer = clipLayers[i]
@@ -422,9 +434,65 @@ internal class LyricsCardScene(
     }
 
     /**
+     * How bright, how far sung, and whether each layer is the one being sung
+     * at [t], milliseconds into the clip â€” one entry per clip layer, in layer
+     * order. Sung rows read the highlight and the word sweep; a break's dots
+     * read its clock, each owning its third and filling across it, the way
+     * the panel lights them. The frame loop compares these frame to frame:
+     * while nothing has changed, no frame is submitted at all â€” the
+     * timestamps carry the pacing.
+     */
+    fun frameState(t: Long): FrameState {
+        val alphas = frameAlphas(t)
+        val reveals = FloatArray(clipLayers.size)
+        val actives = BooleanArray(clipLayers.size)
+        val active = activeGroup(t)
+        val sungLines = request.lines.filter { !it.isGap }
+        val spanStart = spanOf(request.lines)?.first ?: 0L
+        for (i in clipLayers.indices) {
+            val layer = clipLayers[i]
+            if (layer.gap >= 0) {
+                reveals[i] = 1f
+                actives[i] = false
+            } else {
+                val line = sungLines.getOrNull(layer.group)
+                val songTime = t + spanStart
+                val lineReveal = if (line == null || line.words.isEmpty()) {
+                    if (songTime >= (line?.startMs ?: 0L)) 1f else 0f
+                } else {
+                    (line.revealedChars(songTime) / line.text.length.coerceAtLeast(1)).coerceIn(0f, 1f)
+                }
+                val rowReveal = if (layer.isSub) lineReveal else {
+                    val span = (layer.charEnd - layer.charStart).coerceAtLeast(1)
+                    ((line?.revealedChars(songTime) ?: 0f) - layer.charStart)
+                        .coerceIn(0f, span.toFloat()) / span
+                }
+                reveals[i] = (rowReveal * TEXT_STEPS).roundToInt() / TEXT_STEPS.toFloat()
+                actives[i] = layer.group == active
+            }
+        }
+        return FrameState(alphas, reveals, actives)
+    }
+
+    private fun activeGroup(t: Long): Int {
+        var g = -1
+        for (i in lineStarts.indices) if (lineStarts[i] <= t) g = i else break
+        return g
+    }
+
+    /** The state of every layer of the clip at [t], for the frame loop to
+     * compare and composite. */
+    data class FrameState(val alphas: IntArray, val reveals: FloatArray, val actives: BooleanArray) {
+        fun sameAs(other: FrameState?): Boolean = other != null &&
+            alphas.contentEquals(other.alphas) &&
+            reveals.contentEquals(other.reveals) &&
+            actives.contentEquals(other.actives)
+    }
+
+    /**
      * How far line [group] is lit at [t]: it rises over [CROSSFADE_MS] from its
      * own start, and is pulled back down over the same window as the line after
-     * it rises — the two crossfading, the way the panel hands one line to the
+     * it rises â€” the two crossfading, the way the panel hands one line to the
      * next. Between them it sits at [DIM_LIT].
      */
     private fun weightFor(group: Int, t: Long): Float {
@@ -448,21 +516,27 @@ internal suspend fun buildLyricsCardScene(
     LyricsCardScene(context, request, story, cover, logo)
 }
 
-// ── Fitting ────────────────────────────────────────────────────────────────
+// â”€â”€ Fitting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 private class Row(
     val text: String,
     val paint: Paint,
     val height: Float,
     val gapBefore: Float,
-    /** Drawn centred rather than off the left edge — the gap marker. */
+    /** Drawn centred rather than off the left edge â€” the gap marker. */
     val centered: Boolean = false,
     val isGap: Boolean = false,
     /** Which picked line this row belongs to, for the video's highlight. */
     val group: Int = -1,
-    /** Which entry of the pick this row came from — a gap row points at its
+    /** Which entry of the pick this row came from â€” a gap row points at its
      * own marker, which is how the clip finds the break's clock. */
     val lineIndex: Int = -1,
+    /** Where this row's text sits in its line, so the word sweep can light
+     * it from the left as the singer reaches each word. */
+    val charStart: Int = 0,
+    val charEnd: Int = 0,
+    /** A translation or romanisation rides its line's clock, uniformly. */
+    val isSub: Boolean = false,
 )
 
 /** The rows at one size, with everything needed to place them. */
@@ -497,7 +571,7 @@ private fun fittestPlan(
  * The rows at one [size], set in the face the lyrics panel draws with.
  *
  * SF Pro Display Heavy with the panel's tight tracking and its line advance,
- * carried over as the same ratios the panel's 34sp headline uses — so the card
+ * carried over as the same ratios the panel's 34sp headline uses â€” so the card
  * reads as a still of that panel rather than as a different app quoting it.
  * Compose's tracking is absolute and `Paint`'s is a fraction of the size, hence
  * the divisions: -0.7 over 34 for the words, -0.7 over 20 for the smaller line
@@ -512,7 +586,7 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
     var group = -1
     lines.forEachIndexed { index, line ->
         if (line.isGap) {
-            // The skipped lines, as "(...)" — the conventional editorial mark
+            // The skipped lines, as "(...)" â€” the conventional editorial mark
             // for an omission, on the still. The clip replaces it with the
             // panel's own three dots filling across the break; this row stays
             // in the layout so the passage's height does not change between
@@ -524,7 +598,7 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
         }
         group++
         var firstOfLine = true
-        fun add(text: String, paint: Paint, height: Float) {
+        fun add(text: String, paint: Paint, height: Float, charStart: Int, isSub: Boolean) {
             // One verse line is one paragraph: its first row carries the space
             // above it and its wraps sit tight underneath, so a phrase reads as
             // a block rather than as a list of separate sentences.
@@ -533,19 +607,25 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
                 firstOfLine && index > 0 -> size * 0.55f
                 else -> 0f
             }
-            rows += Row(text, paint, height, gap, group = group, lineIndex = index)
+            rows += Row(text, paint, height, gap, group = group, lineIndex = index,
+                charStart = charStart, charEnd = charStart + text.length, isSub = isSub)
             firstOfLine = false
         }
-        wrap(line.text, primary, CARD_CONTENT_W).forEach { add(it, primary, size * LEAD) }
+        val wrapped = wrap(line.text, primary, CARD_CONTENT_W)
+        wrapped.forEach { w -> add(w.text, primary, size * LEAD, w.charStart, false) }
         val sub = line.subText
         if (!sub.isNullOrBlank() && sub != line.text) {
-            wrap(sub, secondary, CARD_CONTENT_W).forEach { add(it, secondary, subSize * SUB_LEAD) }
+            wrap(sub, secondary, CARD_CONTENT_W).forEach { w ->
+                add(w.text, secondary, subSize * SUB_LEAD, 0, true)
+            }
         }
     }
     return Plan(rows, -primary.ascent(), size)
 }
 
-// ── Text ───────────────────────────────────────────────────────────────────
+// â”€â”€ Text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+private data class WrappedLine(val text: String, val charStart: Int)
 
 /**
  * Greedy wrap at [width], breaking wherever the line has to.
@@ -553,42 +633,51 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
  * Not a plain word-wrap: Japanese, Chinese and Korean lyrics carry no spaces at
  * all, and a wrapper that only split on spaces would hand the whole verse to
  * `drawText` and let it run off the card. `breakText` finds the character that
- * fits, and only then is the break walked back to a space — so scripts that keep
+ * fits, and only then is the break walked back to a space â€” so scripts that keep
  * their words apart lose nothing, and scripts that don't still get several lines.
+ *
+ * Each piece carries where it began in the source, so the word sweep knows which
+ * characters it owns.
  */
-private fun wrap(text: String, paint: Paint, width: Float): List<String> {
+private fun wrap(text: String, paint: Paint, width: Float): List<WrappedLine> {
+    val leading = text.length - text.trimStart().length
     val source = text.trim()
-    if (source.isEmpty()) return listOf("")
+    if (source.isEmpty()) return listOf(WrappedLine("", leading))
 
-    val out = mutableListOf<String>()
+    val out = mutableListOf<WrappedLine>()
     var rest = source
+    var consumed = 0
     while (rest.isNotEmpty()) {
         val fit = paint.breakText(rest, true, width, null)
         if (fit <= 0) {
-            out += rest
+            out += WrappedLine(rest, leading + consumed)
             break
         }
         // Walk back to the last space inside the fit, but only when something
-        // still has to follow it — otherwise the fit is the whole string and
+        // still has to follow it â€” otherwise the fit is the whole string and
         // cutting at the space would drop the final word.
         val space = rest.lastIndexOf(' ', fit - 1)
         val take = if (space > 0 && fit < rest.length) space else fit
         if (take <= 0) {
-            out += rest
+            out += WrappedLine(rest, leading + consumed)
             break
         }
-        out += rest.substring(0, take).trimEnd()
-        rest = rest.substring(take).trimStart()
+        val wrapped = rest.substring(0, take).trimEnd()
+        out += WrappedLine(wrapped, leading + consumed)
+        val remainder = rest.substring(take)
+        val trimmed = remainder.trimStart()
+        consumed += take + (remainder.length - trimmed.length)
+        rest = trimmed
     }
-    return out.filter { it.isNotEmpty() }.ifEmpty { listOf("") }
+    return out.filter { it.text.isNotEmpty() }.ifEmpty { listOf(WrappedLine("", leading)) }
 }
 
-// ── Card geometry ──────────────────────────────────────────────────────────
+// â”€â”€ Card geometry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 private const val CARD_W = 1080
 
 /**
- * 9:16 — a ceiling on the height, not the height itself. The card is grown to
+ * 9:16 â€” a ceiling on the height, not the height itself. The card is grown to
  * its passage and only ever comes out this tall when the passage demands it.
  */
 private const val MAX_CARD_H = 1920f
@@ -624,12 +713,12 @@ private const val GAP_MARKER_OFFSET = 0.18f
  * stepping by a visible amount keeps two cards with adjacent line counts from
  * coming out nearly the same size and reading as a mistake.
  *
- * The last rung doubles as the floor — see [fittestPlan] for why the frame is
+ * The last rung doubles as the floor â€” see [fittestPlan] for why the frame is
  * what gives way under it rather than the type.
  */
 private val FIT_LADDER = floatArrayOf(96f, 88f, 80f, 72f, 64f, 56f, 50f, 44f, 38f, 32f)
 
-// ── The panel's type, as ratios ────────────────────────────────────────────
+// â”€â”€ The panel's type, as ratios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Every number here is one the lyrics panel uses, divided by the size it uses
 // it at so it holds at whatever size the ladder lands on.
 
@@ -647,14 +736,21 @@ private const val SUB_LEAD = 25f / 20f
 private const val SUB_RATIO = 20f / 34f
 private val SUB_COLOR = 0xD9FFFFFF.toInt()
 
-// ── The video's highlight ──────────────────────────────────────────────────
+// â”€â”€ The video's highlight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The handover from one line to the next, and how far the unlit lines sit back. */
 private const val CROSSFADE_MS = 320f
 private const val DIM_LIT = 0.35f
 
-// ── The break's dots ───────────────────────────────────────────────────────
-// The panel lights three dots across an instrumental break — each owning its
+/** How finely a sung line's word sweep is stepped. The clip is
+ * variable-frame-rate, and each step is one more frame the line costs â€”
+ * a couple of dozen across a line reads as fluid for a sweep this size. */
+private const val TEXT_STEPS = 48
+
+// â”€â”€ The break's dots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// â”€â”€ The break's dots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// The panel lights three dots across an instrumental break â€” each owning its
 // third, resting dim, filling bright as its share of the silence runs. The
 // clip carries the same mark, sized against the type it sits under.
 
@@ -667,8 +763,8 @@ private const val GAP_DOTS = 3
 private const val GAP_DOT_REST = 0.25f
 
 /**
- * How finely a break's fill is stepped. The clip is variable-frame-rate — a
- * frame is only submitted when something on it moves — and each step here is
+ * How finely a break's fill is stepped. The clip is variable-frame-rate â€” a
+ * frame is only submitted when something on it moves â€” and each step here is
  * one more frame a break costs. Two dozen across three dots reads as fluid
  * for marks this small and caps a long interlude's bill.
  */
