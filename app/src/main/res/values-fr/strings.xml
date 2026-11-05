@@ -517,6 +517,7 @@
     <string name="biggest_day_note">Votre plus grosse journée était le %1$s, avec %2$s d\'écoute.</string>
     <string name="close_replay">Fermer Replay</string>
     <string name="couldnt_draw_picture">Impossible de créer l\'image</string>
+    <string name="couldnt_render_video">Impossible de créer la vidéo</string>
     <string name="default_replay_holder">Auditeur BeatFlow</string>
     <string name="different_albums">Albums différents</string>
     <string name="genres_pending">Les genres apparaîtront à mesure que votre historique d\'écoute grandit</string>
@@ -525,7 +526,12 @@
     <string name="hours_minutes_short">%1$dh %2$dmin</string>
     <string name="listen_most_around">Vous écoutez surtout vers %1$s.</string>
     <string name="lyrics_share_title">Partager les paroles</string>
+    <string name="lyrics_share_video">Vidéo</string>
+    <string name="lyrics_share_video_description">Les lignes choisies, de la première à la dernière, en vidéo : les mots s’illuminent au fil du chant, avec le son.</string>
+    <string name="lyrics_share_video_progress">Création %1$d %%</string>
+    <string name="lyrics_share_video_silent">L’audio de la chanson était inaccessible, la vidéo a donc été enregistrée sans son.</string>
     <string name="lyrics_share_description">Les lignes que vous avez choisies, mises en page sur une carte avec la pochette.</string>
+    <string name="lyrics_share_photo">Photo</string>
     <string name="lyrics_share_story">Convertir en story</string>
     <string name="lyrics_share_story_revert">Revenir à la carte</string>
     <string name="listening_shape">Votre profil d\'écoute</string>

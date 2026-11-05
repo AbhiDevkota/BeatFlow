@@ -735,6 +735,7 @@
     <string name="biggest_day_note">Your biggest day was %1$s with %2$s of listening.</string>
     <string name="close_replay">Close Replay</string>
     <string name="couldnt_draw_picture">Could not create the picture</string>
+    <string name="couldnt_render_video">Could not create the video</string>
     <string name="default_replay_holder">BeatFlow listener</string>
     <string name="different_albums">Different albums</string>
     <string name="genres_pending">Genres will appear as your listening history grows</string>
@@ -743,7 +744,12 @@
     <string name="hours_minutes_short">%1$dh %2$dm</string>
     <string name="listen_most_around">You listen most around %1$s.</string>
     <string name="lyrics_share_title">Share lyrics</string>
+    <string name="lyrics_share_video">Video</string>
+    <string name="lyrics_share_video_description">The lines you picked, from the first to the last, as a video — the words light up as they are sung, with the sound.</string>
+    <string name="lyrics_share_video_progress">Rendering %1$d%%</string>
+    <string name="lyrics_share_video_silent">The song’s audio was out of reach, so the video was saved without sound.</string>
     <string name="lyrics_share_description">The lines you picked, laid out on a card with the cover.</string>
+    <string name="lyrics_share_photo">Photo</string>
     <string name="lyrics_share_story">Make it a story</string>
     <string name="lyrics_share_story_revert">Back to the card</string>
     <string name="listening_shape">Your listening pattern</string>

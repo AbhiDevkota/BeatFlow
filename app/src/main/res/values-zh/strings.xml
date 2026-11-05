@@ -501,6 +501,7 @@
     <string name="biggest_day_note">你收听最多的一天是 %1$s，共收听了 %2$s。</string>
     <string name="close_replay">关闭 Replay</string>
     <string name="couldnt_draw_picture">无法生成图片</string>
+    <string name="couldnt_render_video">无法创建视频</string>
     <string name="default_replay_holder">BeatFlow 听众</string>
     <string name="different_albums">不同专辑</string>
     <string name="genres_pending">随着收听记录增多，流派信息会逐渐显示</string>
@@ -509,7 +510,12 @@
     <string name="hours_minutes_short">%1$d时%2$d分</string>
     <string name="listen_most_around">你通常在%1$s左右收听最多。</string>
     <string name="lyrics_share_title">分享歌词</string>
+    <string name="lyrics_share_video">视频</string>
+    <string name="lyrics_share_video_description">你选中的歌词从第一行到最后一行做成视频 — 正在唱到的行会亮起，并带上歌曲原声。</string>
+    <string name="lyrics_share_video_progress">正在生成 %1$d%%</string>
+    <string name="lyrics_share_video_silent">无法获取歌曲音频，视频已保存为无声版本。</string>
     <string name="lyrics_share_description">你选中的几行，连同封面排在一张卡片上。</string>
+    <string name="lyrics_share_photo">照片</string>
     <string name="lyrics_share_story">转为快拍尺寸</string>
     <string name="lyrics_share_story_revert">恢复为卡片</string>
     <string name="listening_shape">你的收听规律</string>

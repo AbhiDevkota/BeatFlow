@@ -54,11 +54,19 @@ import org.jetbrains.compose.resources.stringResource
  * null when the panel was showing the original alone.
  * @property isGap A stand-in for the lines skipped between two picked ones,
  * drawn as a centred ellipsis rather than as words.
+ * @property startMs When the line starts being sung, in the song's own clock
+ * with the reader's lyrics offset already folded in — the video's sync, and
+ * nothing the still card reads. Null for a [isGap] marker, which is an
+ * omission rather than a sung thing.
+ * @property endMs When it stops: the next line's stamp, or where the provider
+ * said the line ends. Null alongside [startMs].
  */
 data class LyricsShareLine(
     val text: String,
     val subText: String?,
     val isGap: Boolean = false,
+    val startMs: Long? = null,
+    val endMs: Long? = null,
 )
 
 /**
@@ -99,6 +107,45 @@ const val SHARE_CARD_CHAR_BUDGET = 250
  */
 fun fitsOnCard(taken: Int, text: String?): Boolean =
     taken + (text?.length ?: 0) <= SHARE_CARD_CHAR_BUDGET
+
+/**
+ * When the sung part of a passage begins and ends, on the song's own clock.
+ *
+ * The panel's rule, not the providers': the cursor takes the last line whose
+ * stamp has passed, so a line stays lit until the line *after* it begins —
+ * picked or not, because a line skipped at the pick is still sung in the song.
+ * The last line of the song has nothing to hand over to, so it ends where its
+ * provider said it does, or holds [LAST_LINE_HOLD_MS] when none was given.
+ *
+ * The reader's lyrics offset rides along: the panel compares stamps against
+ * `position - offset` (see [adjustedLyricsPosition]), so `+ offset` here is
+ * what makes the video light a line exactly when the panel would have — the
+ * same correction the reader tuned, applied to the same clocks.
+ */
+fun sungStartMs(line: LyricLine, offsetMs: Int): Long =
+    (line.timeMs + offsetMs).coerceAtLeast(0L)
+
+fun sungEndMs(source: List<LyricLine>, index: Int, offsetMs: Int): Long {
+    val start = sungStartMs(source[index], offsetMs)
+    source.getOrNull(index + 1)?.let { next ->
+        val nextStart = sungStartMs(next, offsetMs)
+        if (nextStart > start) return nextStart
+    }
+    val stated = source[index].sungUntilMs?.let { it + offsetMs }
+    return if (stated != null && stated > start) stated else start + LAST_LINE_HOLD_MS
+}
+
+/** How long a passage's last line stays lit with nothing to hand over to. */
+const val LAST_LINE_HOLD_MS = 4_000L
+
+/** The first and last sung moment across a pick, as the video's two ends. */
+fun spanOf(lines: List<LyricsShareLine>): Pair<Long, Long>? {
+    val timed = lines.filter { it.startMs != null && it.endMs != null }
+    if (timed.isEmpty()) return null
+    val start = timed.minOf { it.startMs!! }
+    val end = timed.maxOf { it.endMs!! }
+    return start to end.coerceAtLeast(start)
+}
 
 /**
  * Whether lines can be put on a card at all here.
@@ -243,6 +290,10 @@ internal fun rememberLyricsPicker(
     val share: () -> Unit = {
         val source = lines.orEmpty()
         val chosen = picks.sorted()
+        // The offset the panel draws with, folded into the stamps once here so
+        // the video and the panel light a line at the same moment — see
+        // [sungStartMs].
+        val offsetMs = PlayerSettings.lyricsOffsetMs.value
         val picked = buildList {
             chosen.forEachIndexed { position, index ->
                 // A jump over unchosen lines is marked on the card, so the
@@ -257,6 +308,8 @@ internal fun rememberLyricsPicker(
                     LyricsShareLine(
                         text = line.text,
                         subText = sub?.takeIf { it.isNotBlank() && it != line.text },
+                        startMs = sungStartMs(line, offsetMs),
+                        endMs = sungEndMs(source, index, offsetMs),
                     ),
                 )
             }

@@ -516,6 +516,7 @@
     <string name="biggest_day_note">आपका सबसे बड़ा दिन %1$s था, जिसमें %2$s सुना गया।</string>
     <string name="close_replay">Replay बंद करें</string>
     <string name="couldnt_draw_picture">तस्वीर नहीं बन सकी</string>
+    <string name="couldnt_render_video">वीडियो नहीं बनाया जा सका</string>
     <string name="default_replay_holder">BeatFlow श्रोता</string>
     <string name="different_albums">अलग-अलग एल्बम</string>
     <string name="genres_pending">आपके सुनने का इतिहास बढ़ने पर शैलियां दिखेंगी</string>
@@ -524,7 +525,12 @@
     <string name="hours_minutes_short">%1$dh %2$dm</string>
     <string name="listen_most_around">आप सबसे ज़्यादा %1$s के आसपास सुनते हैं।</string>
     <string name="lyrics_share_title">गाने के शब्द साझा करें</string>
+    <string name="lyrics_share_video">वीडियो</string>
+    <string name="lyrics_share_video_description">आपकी चुनी हुई पंक्तियाँ, पहली से आख़िरी तक, एक वीडियो के रूप में — गाए जाने पर बोल रोशन होते हैं, ध्वनि के साथ।</string>
+    <string name="lyrics_share_video_progress">बनाया जा रहा है %1$d %%</string>
+    <string name="lyrics_share_video_silent">गाने का ऑडियो नहीं मिला, इसलिए वीडियो बिना ध्वनि के सेव हुआ।</string>
     <string name="lyrics_share_description">आपकी चुनी हुई पंक्तियाँ, कवर के साथ एक कार्ड पर।</string>
+    <string name="lyrics_share_photo">फ़ोटो</string>
     <string name="lyrics_share_story">स्टोरी बनाएँ</string>
     <string name="lyrics_share_story_revert">कार्ड पर वापस जाएँ</string>
     <string name="listening_shape">आपके सुनने का पैटर्न</string>

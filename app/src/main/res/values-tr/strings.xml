@@ -545,6 +545,7 @@
     <string name="biggest_day_note">En yoğun günün %2$s dinlemeyle %1$s oldu.</string>
     <string name="close_replay">Replay\'i Kapat</string>
     <string name="couldnt_draw_picture">Resim oluşturulamadı</string>
+    <string name="couldnt_render_video">Video oluşturulamadı</string>
     <string name="default_replay_holder">BeatFlow dinleyicisi</string>
     <string name="different_albums">Farklı albümler</string>
     <string name="genres_pending">Dinleme geçmişin büyüdükçe türler görünecek</string>
@@ -553,7 +554,12 @@
     <string name="hours_minutes_short">%1$dsa %2$ddk</string>
     <string name="listen_most_around">En çok %1$s civarında dinliyorsun.</string>
     <string name="lyrics_share_title">Şarkı sözlerini paylaş</string>
+    <string name="lyrics_share_video">Video</string>
+    <string name="lyrics_share_video_description">Seçtiğin satırlar, ilkinden sonuna kadar, bir video olarak — söylenen satır aydınlanır, sesiyle birlikte.</string>
+    <string name="lyrics_share_video_progress">Oluşturuluyor %1$d%%</string>
+    <string name="lyrics_share_video_silent">Şarkının sesine erişilemedi, video sessiz kaydedildi.</string>
     <string name="lyrics_share_description">Seçtiğin satırlar, kapakla birlikte bir kart üzerine yerleştirildi.</string>
+    <string name="lyrics_share_photo">Fotoğraf</string>
     <string name="lyrics_share_story">Hikâyeye çevir</string>
     <string name="lyrics_share_story_revert">Karta dön</string>
     <string name="listening_shape">Dinleme örüntün</string>

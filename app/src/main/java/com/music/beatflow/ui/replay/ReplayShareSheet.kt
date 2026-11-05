@@ -212,6 +212,13 @@ internal fun ShareAction(
     saved: Boolean = false,
     /** What it says once [saved]; falls back to [label] when null. */
     savedLabel: String? = null,
+    /**
+     * Still making the thing — the lyrics video takes a few seconds to encode.
+     * The button stops answering so a second tap can't start a second render
+     * behind the first, and shows only the words it is handed — the caller
+     * names the work in progress; nothing spins beside it.
+     */
+    busy: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -227,7 +234,7 @@ internal fun ShareAction(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(background.copy(alpha = if (enabled) 1f else 0.4f))
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled && !busy, onClick = onClick)
             // The sides carried nothing but the label's own advance, so the
             // words sat against the pill's edges; the vertical rhythm is the
             // one the Replay's buttons use.
@@ -238,20 +245,22 @@ internal fun ShareAction(
         // The icon and the word crossfade rather than swap on a frame, so the
         // change reads as the button settling into its new state instead of
         // flickering between two unrelated ones.
-        Crossfade(targetState = saved, label = "shareAction") { isSaved ->
+        Crossfade(targetState = if (saved) 2 else if (busy) 1 else 0, label = "shareAction") { state ->
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = if (isSaved) Icons.Rounded.Check else icon,
-                    contentDescription = null,
-                    tint = foreground,
-                    modifier = Modifier.size(19.dp),
-                )
-                Spacer(Modifier.width(10.dp))
+                if (state != 1) {
+                    Icon(
+                        imageVector = if (state == 2) Icons.Rounded.Check else icon,
+                        contentDescription = null,
+                        tint = foreground,
+                        modifier = Modifier.size(19.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
                 Text(
-                    text = if (isSaved) (savedLabel ?: label) else label,
+                    text = if (state == 2) (savedLabel ?: label) else label,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.W700,
                     color = foreground,
@@ -263,8 +272,8 @@ internal fun ShareAction(
     }
 }
 
-internal fun sendIntent(uri: Uri) = Intent(Intent.ACTION_SEND)
-    .setType(MIME)
+internal fun sendIntent(uri: Uri, mime: String = MIME) = Intent(Intent.ACTION_SEND)
+    .setType(mime)
     .putExtra(Intent.EXTRA_STREAM, uri)
     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
@@ -293,6 +302,14 @@ internal suspend fun cacheForSharing(
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }.getOrNull()
 }
+
+/**
+ * The same hand-off, for a file already written — the lyrics video renders
+ * straight into the shared folder, so this only asks the provider to name it.
+ */
+internal fun cacheUriForSharing(context: Context, file: File): Uri? = runCatching {
+    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}.getOrNull()
 
 /**
  * Saves the poster to the device's pictures, where a gallery will find it.
@@ -331,5 +348,47 @@ internal suspend fun saveToGallery(
     }.getOrDefault(false)
 }
 
+/**
+ * Saves a finished clip into the device's videos, where a gallery will find it.
+ *
+ * The same MediaStore route the picture takes — no permission for a row the app
+ * created from API 29 — under Movies rather than Pictures, and as `video/mp4`,
+ * which is what makes the gallery's player rather than its image viewer open it.
+ *
+ * Returns the row's URI, or null when the write failed. The row is also what a
+ * share hands on: the system's share sheet previews content it can pull a
+ * thumbnail for, which a MediaStore row is and a bare file in the app's cache
+ * is not.
+ */
+internal suspend fun saveVideoToGalleryUri(
+    context: Context,
+    file: File,
+    label: String,
+    prefix: String = "bitchord-replay",
+): Uri? = withContext(Dispatchers.IO) {
+    val name = "$prefix-${label.replace(' ', '-').lowercase(Locale.ROOT)}.mp4"
+    runCatching {
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, name)
+            put(MediaStore.Video.Media.MIME_TYPE, VIDEO_MIME)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(
+                    MediaStore.Video.Media.RELATIVE_PATH,
+                    "${Environment.DIRECTORY_MOVIES}/BeatFlow",
+                )
+            }
+        }
+        val uri = context.contentResolver
+            .insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            ?: error("no row")
+        context.contentResolver.openOutputStream(uri)?.use { out ->
+            file.inputStream().use { it.copyTo(out) }
+        } ?: error("no stream")
+        uri
+    }.getOrNull()
+}
+
 private const val MIME = "image/png"
+/** MP4, which is what makes a gallery's player rather than its viewer open it. */
+internal const val VIDEO_MIME = "video/mp4"
 private const val SHARE_FOLDER = "shared"

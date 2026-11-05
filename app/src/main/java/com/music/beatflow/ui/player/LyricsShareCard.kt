@@ -5,12 +5,16 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.drawable.Drawable
 import com.music.beatflow.ui.replay.Fonts
 import com.music.beatflow.ui.replay.drawArtwork
 import com.music.beatflow.ui.replay.drawBackdrop
 import com.music.beatflow.ui.replay.drawLogo
 import com.music.beatflow.ui.replay.ellipsised
 import com.music.beatflow.ui.replay.loadBitmap
+import com.music.beatflow.ui.replay.loadedLogo
+import com.music.beatflow.ui.replay.paletteOf
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,6 +52,14 @@ import kotlinx.coroutines.withContext
  * last resort — no card ever sets type smaller than it to squeeze a passage
  * in, so a passage too long for the frame lengthens the card instead of being
  * cut, or made small enough to hold a phone at arm's length to read.
+ *
+ * ## The video
+ *
+ * The layout work lives in [LyricsCardScene], which is also what the video
+ * renderer draws with — one frame per step of the song, the same layout at
+ * every one of them, so the clip and the picture cannot disagree about where
+ * anything sits. A scene is built once and drawn many times; only the lyric
+ * highlight moves between frames.
  */
 internal suspend fun renderLyricsShareCard(
     context: Context,
@@ -55,8 +67,41 @@ internal suspend fun renderLyricsShareCard(
     /** Pad out to the full 1080×1920 frame, the passage centred in the room. */
     story: Boolean = false,
 ): Bitmap = withContext(Dispatchers.Default) {
-    val type = Fonts(context)
-    val cover = card.artworkUrl?.let { loadBitmap(context, it) }
+    buildLyricsCardScene(context, card, story).render()
+}
+
+// ── The scene ──────────────────────────────────────────────────────────────
+
+/**
+ * The card, laid out once and drawable at any moment of the song.
+ *
+ * Everything that does not change between two frames of a video — the fonts,
+ * the sleeve, the palette, the fitted type, where every row's baseline sits —
+ * is settled here, at construction. And more than settled: the furniture
+ * (backdrop, the mark and the word, the sleeve and the credit) is *drawn* once
+ * into the base, and every passage row is rasterised once into its own small
+ * bitmap. A frame of video then costs one blit of the base plus one small blit
+ * per row carrying the highlight's alpha — no gradients, no text shaping, no
+ * vector inflation per frame, each of which would be most of what a frame
+ * takes. The row bitmaps keep their text at the same sub-pixel offset it would
+ * have been drawn at directly, so the raster is the one a direct draw makes.
+ *
+ * Drawn as the still it is pixel for pixel what the card has always been.
+ * Drawn at a moment of the song, the line being sung stands full white and
+ * the rest sit back, handing over to each other on a short crossfade — the
+ * panel's own cursor rule (the last line whose stamp has passed), read off
+ * the same stamps the pick carried.
+ */
+internal class LyricsCardScene(
+    context: Context,
+    request: LyricsShareRequest,
+    story: Boolean,
+    /** Resolved sleeve, loaded once for every frame to share. */
+    private val cover: Bitmap?,
+    /** The mark, inflated once — see [loadedLogo]. */
+    private val logo: Drawable?,
+) {
+    private val type: Fonts = Fonts(context)
 
     // ── Sizing ──────────────────────────────────────────────────────────────
     // No room is reserved for the words to sit in: they get their own height,
@@ -64,66 +109,198 @@ internal suspend fun renderLyricsShareCard(
     // barely taller than its own text instead of a 9:16 sheet with a paragraph
     // floating in the middle of it, and the size comes down only as far as the
     // ladder goes — past that the frame gives rather than the type does.
-    val headTop = HEADER_BOTTOM + GAP_ABOVE_BODY
-    val frameRoom = MAX_CARD_H - FOOTER_THUMB - FOOTER_PAD - GAP_BELOW_BODY - headTop
-    val plan = fittestPlan(type, card.lines, frameRoom)
-    // A story is always the whole frame, so the spare room is split above and
-    // below the passage; otherwise the card is only as tall as its words.
-    val spare = if (story) (frameRoom - plan.content).coerceAtLeast(0f) else 0f
-    val bodyTop = headTop + spare / 2
-    // The passage ends where its own rows end, and everything under it — the
-    // gap, the sleeve credit, the foot — hangs off that. Because the card is
-    // measured from the same sum the rows are drawn from, no line can ever
-    // land past the bottom by a rounding error and be replaced by a mark
-    // saying something was left out.
-    val bodyBottom = bodyTop + plan.content
-    val cardH = bodyBottom + spare / 2 + GAP_BELOW_BODY + FOOTER_THUMB + FOOTER_PAD
+    private val headTop = HEADER_BOTTOM + GAP_ABOVE_BODY
+    private val frameRoom = MAX_CARD_H - FOOTER_THUMB - FOOTER_PAD - GAP_BELOW_BODY - headTop
+    private val plan: Plan
+    /** A story is always the whole frame, so the spare room is split above and
+     * below the passage; otherwise the card is only as tall as its words. */
+    private val spare: Float
+    private val bodyTop: Float
 
-    val bitmap = Bitmap.createBitmap(CARD_W, cardH.roundToInt(), Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    drawBackdrop(canvas, cover, 0f, cardH)
+    /** The card's drawn size — the video's frame is exactly this. */
+    val width: Float = CARD_W.toFloat()
+    val height: Float
 
     // ── Header ──────────────────────────────────────────────────────────────
-    // The mark alone, at the top right — the same one the Replay carries, so
-    // two of these cards still read as one family. Nothing else goes above
-    // the passage: the picture is the verse, not a caption for it.
-    val brand = type.heading(46f, 0xE6FFFFFF.toInt()).apply {
+    // The mark and the word, at the top right — the same pair the Replay
+    // carries, so two of these cards still read as one family. Nothing else
+    // goes above the passage: the picture is the verse, not a caption for it.
+    private val brand = type.heading(46f, 0xE6FFFFFF.toInt()).apply {
         textAlign = Paint.Align.RIGHT
     }
-    canvas.drawText(BRAND, CARD_W - CARD_MARGIN, HEADER_BASELINE, brand)
-    drawLogo(
-        canvas,
-        context,
-        CARD_W - CARD_MARGIN - brand.measureText(BRAND) - LOGO_GAP,
-        HEADER_BASELINE,
-        brand,
-    )
+    private val logoRight = CARD_W - CARD_MARGIN - brand.measureText(BRAND) - LOGO_GAP
 
-    // ── The passage ─────────────────────────────────────────────────────────
-    // Every row that exists is drawn: the frame below is measured from
-    // wherever these rows end, so there is never room to be short of and
-    // nothing that has to be cut to make it.
-    var y = bodyTop
-    for (row in plan.rows) {
-        val baseline = y + row.gapBefore - row.paint.ascent() +
-            if (row.isGap) row.paint.textSize * GAP_MARKER_OFFSET else 0f
-        val x = if (row.centered) CARD_W / 2f else CARD_MARGIN
-        canvas.drawText(row.text, x, baseline, row.paint)
-        y += row.gapBefore + row.height
-    }
+    // ── The passage, positioned once ────────────────────────────────────────
+    // Every row keeps the baseline it will be drawn at for the life of the
+    // scene, and the group it belongs to — the picked line it came from — so
+    // the video can dim and light whole lines rather than stray wraps.
+    private val rows: List<Row>
 
     // ── Footer ──────────────────────────────────────────────────────────────
     // Which song this is — which only the backdrop had been saying until now.
-    val thumbY = cardH - FOOTER_PAD - FOOTER_THUMB
-    drawArtwork(canvas, cover, card.song.title, CARD_MARGIN, thumbY, FOOTER_THUMB, false)
-    val textX = CARD_MARGIN + FOOTER_THUMB + 34f
-    val room = CARD_W - CARD_MARGIN - textX
-    val title = type.body(50f, Color.WHITE, bold = true)
-    canvas.drawText(ellipsised(card.song.title, title, room), textX, thumbY + 74f, title)
-    val artist = type.body(42f, 0x99FFFFFF.toInt())
-    canvas.drawText(ellipsised(card.song.artist, artist, room), textX, thumbY + 132f, artist)
+    private val thumbY: Float
+    private val textX = CARD_MARGIN + FOOTER_THUMB + 34f
+    private val room = CARD_W - CARD_MARGIN - textX
+    private val titlePaint = type.body(50f, Color.WHITE, bold = true)
+    private val artistPaint = type.body(42f, 0x99FFFFFF.toInt())
+    private val footerTitle = ellipsised(request.song.title, titlePaint, room)
+    private val footerArtist = ellipsised(request.song.artist, artistPaint, room)
+    private val rawTitle = request.song.title
 
-    bitmap
+    // ── Backdrop ────────────────────────────────────────────────────────────
+    // The palette comes off the sleeve once; the gradients themselves are
+    // drawn once with it, into the base below.
+    private val backdropColors = paletteOf(cover)
+
+    /** Where each sung line starts, in the clock [alphasAt] is handed, and lit. */
+    private val lineStarts: List<Long> = run {
+        val span = spanOf(request.lines) ?: return@run emptyList()
+        val starts = request.lines
+            .filter { !it.isGap && it.startMs != null }
+            .map { it.startMs!! - span.first }
+        // The clip opens on its first line, so that one is lit before the
+        // first frame rather than fading up through it.
+        if (starts.isEmpty()) emptyList() else
+            listOf(starts.first() - CROSSFADE_MS.toLong()) + starts.drop(1)
+    }
+
+    init {
+        plan = fittestPlan(type, request.lines, frameRoom)
+        spare = if (story) (frameRoom - plan.content).coerceAtLeast(0f) else 0f
+        bodyTop = headTop + spare / 2
+        height = bodyTop + plan.content + spare / 2 + GAP_BELOW_BODY + FOOTER_THUMB + FOOTER_PAD
+        rows = plan.rows
+        thumbY = height - FOOTER_PAD - FOOTER_THUMB
+    }
+
+    // ── The rasters ─────────────────────────────────────────────────────────
+    // The furniture once, whole; the words once each. This is the pass that
+    // pays for shaping, gradients and the sleeve — every frame after it blits.
+    private val base: Bitmap
+    private val rowImages: List<RowImage>
+
+    private val baselines: FloatArray = run {
+        val out = FloatArray(plan.rows.size)
+        var y = bodyTop
+        for (i in out.indices) {
+            val row = plan.rows[i]
+            out[i] = y + row.gapBefore - row.paint.ascent() +
+                if (row.isGap) row.paint.textSize * GAP_MARKER_OFFSET else 0f
+            y += row.gapBefore + row.height
+        }
+        out
+    }
+
+    init {
+        base = Bitmap.createBitmap(CARD_W, height.roundToInt(), Bitmap.Config.ARGB_8888)
+        val furniture = Canvas(base)
+        drawBackdrop(furniture, backdropColors, height)
+        furniture.drawText(BRAND, CARD_W - CARD_MARGIN, HEADER_BASELINE, brand)
+        drawLogo(furniture, logo, logoRight, HEADER_BASELINE, brand)
+        drawArtwork(furniture, cover, rawTitle, CARD_MARGIN, thumbY, FOOTER_THUMB, false)
+        furniture.drawText(footerTitle, textX, thumbY + 74f, titlePaint)
+        furniture.drawText(footerArtist, textX, thumbY + 132f, artistPaint)
+        rowImages = plan.rows.mapIndexed { index, row -> rasterise(row, baselines[index]) }
+    }
+
+    /** One passage row, rasterised once and parked where it belongs. */
+    private class RowImage(
+        val bitmap: Bitmap,
+        val x: Float,
+        val y: Float,
+        val group: Int,
+    )
+
+    private fun rasterise(row: Row, baseline: Float): RowImage {
+        val x = if (row.centered) CARD_W / 2f else CARD_MARGIN
+        val bounds = Rect()
+        row.paint.getTextBounds(row.text, 0, row.text.length, bounds)
+        val left = x.toInt()
+        val top = baseline.toInt()
+        val bitmap = Bitmap.createBitmap(bounds.width() + 2, bounds.height() + 2, Bitmap.Config.ARGB_8888)
+        // The fraction of a pixel the row sits at on the card goes into the
+        // bitmap, so what gets blitted is what a direct draw would have made.
+        Canvas(bitmap).drawText(
+            row.text,
+            1f - bounds.left + (x - left),
+            1f - bounds.top + (baseline - top),
+            row.paint,
+        )
+        return RowImage(
+            bitmap,
+            (left + bounds.left - 1).toFloat(),
+            (top + bounds.top - 1).toFloat(),
+            row.group,
+        )
+    }
+
+    /** The still, as one bitmap. */
+    fun render(): Bitmap {
+        val bitmap = Bitmap.createBitmap(CARD_W, height.roundToInt(), Bitmap.Config.ARGB_8888)
+        draw(Canvas(bitmap))
+        return bitmap
+    }
+
+    /** Draws the still — every row at its own colour's full strength. */
+    fun draw(canvas: Canvas) {
+        canvas.drawBitmap(base, 0f, 0f, null)
+        blitRows(canvas, null)
+    }
+
+    /**
+     * How bright every row stands at [t], milliseconds into the clip — one
+     * entry per row, in row order, 0..255. The video's frame loop compares
+     * these frame to frame: while nothing has changed, the frame is a re-post
+     * of the one before it and needs neither a redraw nor an upload.
+     */
+    fun alphasAt(t: Long): IntArray = IntArray(rows.size) { i ->
+        val row = rows[i]
+        // The omission marker never joins the highlight: it marks what is not
+        // there, so it stands as its own colour made it.
+        if (row.group < 0) 255
+        else (255f * weightFor(row.group, t)).roundToInt().coerceIn(0, 255)
+    }
+
+    /** Draws a frame of the clip, the rows held at [alphas] from [alphasAt]. */
+    fun draw(canvas: Canvas, alphas: IntArray) {
+        canvas.drawBitmap(base, 0f, 0f, null)
+        blitRows(canvas, alphas)
+    }
+
+    private val blitPaint = Paint()
+
+    private fun blitRows(canvas: Canvas, alphas: IntArray?) {
+        for (i in rows.indices) {
+            val image = rowImages[i]
+            blitPaint.alpha = alphas?.get(i) ?: 255
+            canvas.drawBitmap(image.bitmap, image.x, image.y, blitPaint)
+        }
+    }
+
+    /**
+     * How far line [group] is lit at [t]: it rises over [CROSSFADE_MS] from its
+     * own start, and is pulled back down over the same window as the line after
+     * it rises — the two crossfading, the way the panel hands one line to the
+     * next. Between them it sits at [DIM_LIT].
+     */
+    private fun weightFor(group: Int, t: Long): Float {
+        if (group >= lineStarts.size || lineStarts.isEmpty()) return 1f
+        val rise = ((t - lineStarts[group]).toFloat() / CROSSFADE_MS).coerceIn(0f, 1f)
+        val next = lineStarts.getOrNull(group + 1)
+        val fall = if (next != null) ((t - next).toFloat() / CROSSFADE_MS).coerceIn(0f, 1f) else 0f
+        return DIM_LIT + (1f - DIM_LIT) * rise * (1f - fall)
+    }
+}
+
+/** Laid out once, drawn many times: the photo's frame and every frame of the video. */
+internal suspend fun buildLyricsCardScene(
+    context: Context,
+    request: LyricsShareRequest,
+    story: Boolean,
+): LyricsCardScene = withContext(Dispatchers.Default) {
+    val cover = request.artworkUrl?.let { loadBitmap(context, it) }
+    val logo = loadedLogo(context)
+    LyricsCardScene(context, request, story, cover, logo)
 }
 
 // ── Fitting ────────────────────────────────────────────────────────────────
@@ -136,6 +313,8 @@ private class Row(
     /** Drawn centred rather than off the left edge — the gap marker. */
     val centered: Boolean = false,
     val isGap: Boolean = false,
+    /** Which picked line this row belongs to, for the video's highlight. */
+    val group: Int = -1,
 )
 
 /** The rows at one size, with everything needed to place them. */
@@ -182,18 +361,21 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
     val secondary = type.heading(subSize, SUB_COLOR).apply { letterSpacing = SUB_TRACKING }
 
     val rows = mutableListOf<Row>()
+    var group = -1
     lines.forEachIndexed { index, line ->
         if (line.isGap) {
             // The skipped lines, as "(...)" — the conventional editorial mark
             // for an omission. Hung off the left edge with the words, smaller
             // and a dim grey. Keep its row compact so the marker follows the
             // preceding lyric closely; the regular gap on the next lyric line
-            // provides the separation below it.
+            // provides the separation below it. Unlit by the video's highlight:
+            // it marks what is not there, so it never stands in for a line.
             val marker = type.body(size * 0.65f, 0x66FFFFFF.toInt())
             val markerHeight = marker.descent() - marker.ascent()
             rows += Row("(...)", marker, markerHeight, 0f, isGap = true)
             return@forEachIndexed
         }
+        group++
         var firstOfLine = true
         fun add(text: String, paint: Paint, height: Float) {
             // One verse line is one paragraph: its first row carries the space
@@ -204,7 +386,7 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
                 firstOfLine && index > 0 -> size * 0.55f
                 else -> 0f
             }
-            rows += Row(text, paint, height, gap)
+            rows += Row(text, paint, height, gap, group = group)
             firstOfLine = false
         }
         wrap(line.text, primary, CARD_CONTENT_W).forEach { add(it, primary, size * LEAD) }
@@ -317,3 +499,9 @@ private const val SUB_LEAD = 25f / 20f
 /** The sub-line against the words above it, and the white it is drawn in. */
 private const val SUB_RATIO = 20f / 34f
 private val SUB_COLOR = 0xD9FFFFFF.toInt()
+
+// ── The video's highlight ──────────────────────────────────────────────────
+
+/** The handover from one line to the next, and how far the unlit lines sit back. */
+private const val CROSSFADE_MS = 320f
+private const val DIM_LIT = 0.35f

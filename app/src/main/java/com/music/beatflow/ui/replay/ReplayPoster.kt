@@ -12,6 +12,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
@@ -301,7 +302,17 @@ internal fun drawBackdrop(
     hue: Float,
     height: Float = POSTER_H.toFloat(),
 ) {
-    val colors = paletteOf(lead).map { rotated(it, hue) }
+    drawBackdrop(canvas, paletteOf(lead).map { rotated(it, hue) }, height)
+}
+
+/**
+ * The backdrop from colours already settled.
+ *
+ * The video card's frame loop draws this: it runs once per frame, and
+ * extracting a palette out of the sleeve each time would be most of what a
+ * frame costs.
+ */
+internal fun drawBackdrop(canvas: Canvas, colors: List<Int>, height: Float) {
     canvas.drawColor(dimmed(colors.first()))
 
     val anchors = listOf(
@@ -705,10 +716,16 @@ private fun drawRuns(
  * as floating above the word — the on-screen lockup centring it in a Row never
  * looks off that way, so neither should this.
  */
-internal fun drawLogo(canvas: Canvas, context: Context, right: Float, baseline: Float, text: Paint) {
-    val logo = runCatching {
-        ResourcesCompat.getDrawable(context.resources, R.drawable.ic_logo, null)
-    }.getOrNull() ?: return
+internal fun drawLogo(canvas: Canvas, context: Context, right: Float, baseline: Float, text: Paint) =
+    drawLogo(canvas, loadedLogo(context), right, baseline, text)
+
+/**
+ * The same, over a drawable already loaded — the video card draws its header
+ * once per frame, and inflating the vector that many times would be most of
+ * what a frame costs.
+ */
+internal fun drawLogo(canvas: Canvas, logo: Drawable?, right: Float, baseline: Float, text: Paint) {
+    logo ?: return
     val left = right - LOGO_W
     val caps = Rect()
     text.getTextBounds("H", 0, 1, caps)
@@ -717,6 +734,11 @@ internal fun drawLogo(canvas: Canvas, context: Context, right: Float, baseline: 
     logo.setBounds(left.toInt(), top.toInt(), (left + LOGO_W).toInt(), (top + LOGO_H).toInt())
     logo.draw(canvas)
 }
+
+/** The mark, inflated once — callers keep the result for as long as they draw. */
+internal fun loadedLogo(context: Context): Drawable? = runCatching {
+    ResourcesCompat.getDrawable(context.resources, R.drawable.ic_logo, null)
+}.getOrNull()
 
 /** Trims [text] to [width], with an ellipsis, the way a single-line row would. */
 internal fun ellipsised(text: String, paint: Paint, width: Float): String {
