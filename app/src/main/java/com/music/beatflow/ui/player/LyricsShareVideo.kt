@@ -297,6 +297,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         activeHandle = GLES20.glGetUniformLocation(program, "uActive")
         positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
         texHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
+        val link = IntArray(1)
+        GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, link, 0)
     }
 
     /**
@@ -360,6 +362,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
      * [reveals] and [actives] drive the word sweep and the active line.
      */
     fun drawFrame(alphas: FloatArray, reveals: FloatArray, actives: BooleanArray, presentationUs: Long) {
+        GLES20.glViewport(0, 0, width, height)
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(program)
@@ -497,9 +500,16 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
             precision mediump float;
             uniform sampler2D uTexture;
             uniform float uAlpha;
+            uniform float uReveal;
+            uniform int uActive;
             varying vec2 vTexCoord;
             void main() {
-                gl_FragColor = texture2D(uTexture, vTexCoord) * uAlpha;
+                vec4 t = texture2D(uTexture, vTexCoord) * uAlpha;
+                if (uActive == 1) {
+                    float dim = 0.35;
+                    t = t * (vTexCoord.x < uReveal ? 1.0 : dim);
+                }
+                gl_FragColor = t;
             }
         """.trimIndent()
 
