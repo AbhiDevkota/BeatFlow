@@ -96,6 +96,7 @@ internal suspend fun renderLyricsShareCard(
         context,
         CARD_W - CARD_MARGIN - brand.measureText(BRAND) - LOGO_GAP,
         HEADER_BASELINE,
+        brand,
     )
 
     // ── The passage ─────────────────────────────────────────────────────────

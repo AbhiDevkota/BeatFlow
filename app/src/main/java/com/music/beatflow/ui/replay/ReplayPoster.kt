@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -411,7 +412,7 @@ private fun drawHeader(
     // card carry it. Without it the one artefact of this app that ends up in
     // somebody else's chat was the only place the logo didn't appear.
     val wordWidth = brand.measureText("BeatFlow")
-    drawLogo(canvas, context, POSTER_W - MARGIN - wordWidth - LOGO_GAP, 132f)
+    drawLogo(canvas, context, POSTER_W - MARGIN - wordWidth - LOGO_GAP, 132f, brand)
 
     val credit = listOfNotNull(
         holder.ifBlank { context.getString(R.string.default_replay_holder) },
@@ -692,19 +693,26 @@ private fun drawRuns(
 }
 
 /**
- * The BitChord mark, baseline-aligned with the word beside it.
+ * The BitChord mark, centred on the word beside it.
  *
  * The same vector the app draws everywhere, tinted and given bounds rather than
  * rasterised to a PNG first — a vector drawable renders into an ordinary canvas
  * on every version this app supports, so there is nothing to be gained by
  * keeping a second copy of the logo around at a fixed size.
+ *
+ * Centred on the cap height of [text] rather than sat on the baseline: the mark
+ * stands taller than the capital letters, and hung from the baseline it reads
+ * as floating above the word — the on-screen lockup centring it in a Row never
+ * looks off that way, so neither should this.
  */
-internal fun drawLogo(canvas: Canvas, context: Context, right: Float, baseline: Float) {
+internal fun drawLogo(canvas: Canvas, context: Context, right: Float, baseline: Float, text: Paint) {
     val logo = runCatching {
         ResourcesCompat.getDrawable(context.resources, R.drawable.ic_logo, null)
     }.getOrNull() ?: return
     val left = right - LOGO_W
-    val top = baseline - LOGO_H
+    val caps = Rect()
+    text.getTextBounds("H", 0, 1, caps)
+    val top = baseline - caps.height() / 2f - LOGO_H / 2f
     logo.setTint(0xE6FFFFFF.toInt())
     logo.setBounds(left.toInt(), top.toInt(), (left + LOGO_W).toInt(), (top + LOGO_H).toInt())
     logo.draw(canvas)
