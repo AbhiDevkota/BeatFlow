@@ -1,4 +1,4 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+﻿// Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
     repositories {
         google()
@@ -8,8 +8,8 @@ buildscript {
          * Overrides the D8/R8 that AGP 8.10.1 bundles (8.10.9). Gradle's conflict
          * resolution picks the higher version, so this is the whole mechanism.
          *
-         * 8.10.x miscompiles `NowPlayingScreen`, which is large enough — 36
-         * parameters, ~5,500 dex instructions, registers past v287 — to hit a
+         * 8.10.x miscompiles `NowPlayingScreen`, which is large enough â€” 36
+         * parameters, ~5,500 dex instructions, registers past v287 â€” to hit a
          * register-allocation bug in debug-mode dexing. Resolving phis at one of
          * the join points emits `const/16 v29, #int 48` over the register already
          * holding the `MeshPalette` from `rememberArtworkColors`, and the
@@ -20,12 +20,12 @@ buildscript {
          *
          * ART's verifier rejects the whole class for that, so the dev build died
          * with a VerifyError the moment the player composed. The JVM bytecode
-         * kotlinc produces is valid — the fault is entirely in the dex lowering,
+         * kotlinc produces is valid â€” the fault is entirely in the dex lowering,
          * and it is fixed as of 8.11.32. 8.13.x is the newest 8.x line, and also
          * the first to read Kotlin 2.3 @Metadata: 8.10.9 caps out at 2.2.0 and
          * warns "malformed kotlin.Metadata" on every class this project compiles.
          *
-         * Only debug dexing is affected — release-mode allocation keeps the
+         * Only debug dexing is affected â€” release-mode allocation keeps the
          * palette in place, which is why prod builds were fine and only dev
          * crashed. Removable once AGP itself bundles something past 8.11.32.
          */
@@ -38,11 +38,11 @@ buildscript {
  * from the phone's own APK (see app/build.gradle.kts), and Android refuses an
  * update whose versionCode is lower than the one installed.
  *
- * No "v" in the name — the in-app updater reads it as a number; the "v" is the
+ * No "v" in the name â€” the in-app updater reads it as a number; the "v" is the
  * release tag's alone.
  */
-extra["bitchordVersionCode"] = 36
-extra["bitchordVersionName"] = "1.9"
+extra["bitchordVersionCode"] = 37
+extra["bitchordVersionName"] = "1.9.1-beta"
 
 /*
  * Bump this by hand before cutting each sideloaded test build ("beta2",
@@ -52,8 +52,8 @@ extra["bitchordVersionName"] = "1.9"
  * still get the update prompt once the matching tag is actually published.
  *
  * Applied to release builds as well as debug ones, and that is the whole
- * point of it. A sideloaded beta is a *release* build — signed with the real
- * key, installed over the real package — so leaving the marker off it is
+ * point of it. A sideloaded beta is a *release* build â€” signed with the real
+ * key, installed over the real package â€” so leaving the marker off it is
  * exactly the case that strands a tester: their build calls itself 1.6.1,
  * the published 1.6.1 then matches it, isNewer() says no, and no prompt ever
  * comes. Blanking this line is the one step that turns a beta into a release,

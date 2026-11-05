@@ -1653,21 +1653,22 @@ fun SettingsScreen(
                         textDecoration = TextDecoration.Underline,
                     ),
                 )
-                withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx/BitChord", linkStyles)) {
+                withLink(LinkAnnotation.Url("https://github.com/AbhiDevkota/BeatFlow", linkStyles)) {
                     append("GitHub")
                 }
                 append("  ")
-                withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx", linkStyles)) {
+                withLink(LinkAnnotation.Url("https://github.com/AbhiDevkota/", linkStyles)) {
                     append("Developer")
                 }
-                append("  ")
-                withLink(LinkAnnotation.Url("https://discord.gg/pDdKfrdHY6", linkStyles)) {
-                    append("Discord")
-                }
-                append("  ")
-                withLink(LinkAnnotation.Url("https://bitchord.kushagrasingh.in/", linkStyles)) {
-                    append("Website")
-                }
+                // TODO: re-add when the website and Discord are live.
+                // append("  ")
+                // withLink(LinkAnnotation.Url("https://discord.gg/...", linkStyles)) {
+                //     append("Discord")
+                // }
+                // append("  ")
+                // withLink(LinkAnnotation.Url("https://...", linkStyles)) {
+                //     append("Website")
+                // }
                 append("\n~YouTube Music & Listen Together Backend")
             },
             style = MaterialTheme.typography.labelSmall,
