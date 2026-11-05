@@ -119,9 +119,7 @@ internal class LyricsCardScene(
 
     /** The card's drawn size — the video's frame is exactly this. */
     val width: Float = CARD_W.toFloat()
-    val height: Float
-
-    // ── Header ──────────────────────────────────────────────────────────────
+    val height: Float    // ── Header ──────────────────────────────────────────────────────────────
     // The mark and the word, at the top right — the same pair the Replay
     // carries, so two of these cards still read as one family. Nothing else
     // goes above the passage: the picture is the verse, not a caption for it.
@@ -134,7 +132,6 @@ internal class LyricsCardScene(
     // Every row keeps the baseline it will be drawn at for the life of the
     // scene, and the group it belongs to — the picked line it came from — so
     // the video can dim and light whole lines rather than stray wraps.
-    private val rows: List<Row>
 
     // ── Footer ──────────────────────────────────────────────────────────────
     // Which song this is — which only the backdrop had been saying until now.
@@ -152,7 +149,7 @@ internal class LyricsCardScene(
     // drawn once with it, into the base below.
     private val backdropColors = paletteOf(cover)
 
-    /** Where each sung line starts, in the clock [alphasAt] is handed, and lit. */
+    /** Where each sung line starts, in the clock [frameAlphas] is handed, and lit. */
     private val lineStarts: List<Long> = run {
         val span = spanOf(request.lines) ?: return@run emptyList()
         val starts = request.lines
@@ -164,12 +161,38 @@ internal class LyricsCardScene(
             listOf(starts.first() - CROSSFADE_MS.toLong()) + starts.drop(1)
     }
 
+    /**
+     * The breaks, on the clip's own clock: a break's dots fill from the end of
+     * the sung line before it to the start of the one after — the stretch the
+     * pick skipped, which is exactly the silence the dots are there to time.
+     * Keyed by the pick entry the gap row came from.
+     */
+    private val gapSpans: Map<Int, Pair<Long, Long>> = run {
+        val span = spanOf(request.lines) ?: return@run emptyMap()
+        val spans = mutableMapOf<Int, Pair<Long, Long>>()
+        var lastEnd = -1L
+        request.lines.forEachIndexed { index, line ->
+            when {
+                line.isGap -> {
+                    val nextStart = request.lines
+                        .drop(index + 1)
+                        .firstOrNull { !it.isGap && it.startMs != null }
+                        ?.startMs
+                    if (lastEnd >= 0 && nextStart != null) {
+                        spans[index] = (lastEnd - span.first) to (nextStart - span.first)
+                    }
+                }
+                line.endMs != null -> lastEnd = line.endMs!!
+            }
+        }
+        spans
+    }
+
     init {
         plan = fittestPlan(type, request.lines, frameRoom)
         spare = if (story) (frameRoom - plan.content).coerceAtLeast(0f) else 0f
         bodyTop = headTop + spare / 2
         height = bodyTop + plan.content + spare / 2 + GAP_BELOW_BODY + FOOTER_THUMB + FOOTER_PAD
-        rows = plan.rows
         thumbY = height - FOOTER_PAD - FOOTER_THUMB
     }
 
@@ -177,7 +200,7 @@ internal class LyricsCardScene(
     // The furniture once, whole; the words once each. This is the pass that
     // pays for shaping, gradients and the sleeve — every frame after it blits.
     private val base: Bitmap
-    private val rowImages: List<RowImage>
+    private val stillRows: List<RowImage>
 
     private val baselines: FloatArray = run {
         val out = FloatArray(plan.rows.size)
@@ -200,7 +223,7 @@ internal class LyricsCardScene(
         drawArtwork(furniture, cover, rawTitle, CARD_MARGIN, thumbY, FOOTER_THUMB, false)
         furniture.drawText(footerTitle, textX, thumbY + 74f, titlePaint)
         furniture.drawText(footerArtist, textX, thumbY + 132f, artistPaint)
-        rowImages = plan.rows.mapIndexed { index, row -> rasterise(row, baselines[index]) }
+        stillRows = plan.rows.mapIndexed { index, row -> rasterise(row, baselines[index]) }
     }
 
     /** One passage row, rasterised once and parked where it belongs. */
@@ -234,6 +257,84 @@ internal class LyricsCardScene(
         )
     }
 
+    // ── The clip's layers ───────────────────────────────────────────────────
+    // The same rows the still blits, minus the "(...)" markers — a break is
+    // not a symbol parked on screen here, it is the panel's three dots
+    // filling across the silence — plus one dot layer per dot.
+
+    /** One thing the clip's frame loop composites. */
+    private class ClipLayer(
+        val bitmap: Bitmap,
+        val x: Float,
+        val y: Float,
+        /** The sung line this row belongs to — the highlight reads it. */
+        val group: Int,
+        /** The break this dot belongs to, and which of its three it is. */
+        val gap: Int = -1,
+        val dot: Int = -1,
+    )
+
+    private val clipLayers: List<ClipLayer>
+    private val dotBitmap: Bitmap
+    /** Each break's span on the clip's clock, in the order its dots were laid. */
+    private val gapSpanList: List<Pair<Long, Long>>
+
+    init {
+        val dotSize = (plan.size * DOT_TO_TYPE).roundToInt().coerceAtLeast(6)
+        dotBitmap = Bitmap.createBitmap(dotSize, dotSize, Bitmap.Config.ARGB_8888)
+        Canvas(dotBitmap).drawCircle(
+            dotSize / 2f,
+            dotSize / 2f,
+            dotSize / 2f - 0.5f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE },
+        )
+        val stride = dotSize + (plan.size * DOT_GAP_TO_TYPE).roundToInt()
+
+        val layers = mutableListOf<ClipLayer>()
+        val spans = mutableListOf<Pair<Long, Long>>()
+        var gapOrdinal = -1
+        plan.rows.forEachIndexed { index, row ->
+            val image = stillRows[index]
+            if (!row.isGap) {
+                layers += ClipLayer(image.bitmap, image.x, image.y, row.group)
+            } else {
+                gapOrdinal++
+                val span = gapSpans[row.lineIndex]
+                if (span == null) {
+                    // A break with no clock either side — unsynced words, or a
+                    // marker at the very edge of the pick — keeps its dots at
+                    // rest, which is all a mark with no time can say.
+                    repeat(GAP_DOTS) { dot ->
+                        layers += ClipLayer(
+                            dotBitmap,
+                            CARD_MARGIN + dot * stride.toFloat(),
+                            baselines[index] - plan.size * 0.65f * 0.30f - dotSize / 2f,
+                            group = -1,
+                            gap = -1,
+                            dot = dot,
+                        )
+                    }
+                } else {
+                    spans += span
+                    // Centred on the marker's own midline, where the "(...)" sat.
+                    val centerY = baselines[index] - plan.size * 0.65f * 0.30f
+                    repeat(GAP_DOTS) { dot ->
+                        layers += ClipLayer(
+                            dotBitmap,
+                            CARD_MARGIN + dot * stride.toFloat(),
+                            centerY - dotSize / 2f,
+                            group = -1,
+                            gap = gapOrdinal,
+                            dot = dot,
+                        )
+                    }
+                }
+            }
+        }
+        clipLayers = layers
+        gapSpanList = spans
+    }
+
     /** The still, as one bitmap. */
     fun render(): Bitmap {
         val bitmap = Bitmap.createBitmap(CARD_W, height.roundToInt(), Bitmap.Config.ARGB_8888)
@@ -244,38 +345,53 @@ internal class LyricsCardScene(
     /** Draws the still — every row at its own colour's full strength. */
     fun draw(canvas: Canvas) {
         canvas.drawBitmap(base, 0f, 0f, null)
-        blitRows(canvas, null)
+        for (image in stillRows) {
+            canvas.drawBitmap(image.bitmap, image.x, image.y, null)
+        }
     }
 
     /**
-     * How bright every row stands at [t], milliseconds into the clip — one
-     * entry per row, in row order, 0..255. The video's frame loop compares
-     * these frame to frame: while nothing has changed, the frame is a re-post
-     * of the one before it and needs neither a redraw nor an upload.
+     * How bright every layer of the clip stands at [t], milliseconds in — one
+     * entry per layer, in layer order, 0..255. Sung rows read the highlight;
+     * a break's dots read its clock, each owning its third and filling across
+     * it, the way the panel lights them. The frame loop compares these frame
+     * to frame: while nothing has changed, the frame is a re-post of the one
+     * before it and needs neither a redraw nor an upload.
      */
-    fun alphasAt(t: Long): IntArray = IntArray(rows.size) { i ->
-        val row = rows[i]
-        // The omission marker never joins the highlight: it marks what is not
-        // there, so it stands as its own colour made it.
-        if (row.group < 0) 255
-        else (255f * weightFor(row.group, t)).roundToInt().coerceIn(0, 255)
+    fun frameAlphas(t: Long): IntArray = IntArray(clipLayers.size) { i ->
+        val layer = clipLayers[i]
+        when {
+            // A sung row: lit by the highlight.
+            layer.gap < 0 && layer.dot < 0 ->
+                (255f * weightFor(layer.group, t)).roundToInt().coerceIn(0, 255)
+            // A dot with no clock either side — it can only rest.
+            layer.gap < 0 -> (GAP_DOT_REST * 255f).roundToInt()
+            else -> {
+                val (start, end) = gapSpanList[layer.gap]
+                val span = (end - start).coerceAtLeast(1L)
+                // Stepped rather than fluid: the clip is variable-frame-rate,
+                // and each step is one more frame the break costs. A dot
+                // filling over a few seconds needs no more than a couple of
+                // dozen.
+                val through = (((t - start).toFloat() / span).coerceIn(0f, 1f) * GAP_STEPS)
+                    .roundToInt() / GAP_STEPS.toFloat()
+                val lit = (through * GAP_DOTS - layer.dot).coerceIn(0f, 1f)
+                ((GAP_DOT_REST + (1f - GAP_DOT_REST) * lit) * 255f).roundToInt()
+            }
+        }
     }
 
-    /** Draws a frame of the clip, the rows held at [alphas] from [alphasAt]. */
+    /** Draws a frame of the clip, the layers held at [alphas] from [frameAlphas]. */
     fun draw(canvas: Canvas, alphas: IntArray) {
         canvas.drawBitmap(base, 0f, 0f, null)
-        blitRows(canvas, alphas)
+        for (i in clipLayers.indices) {
+            val layer = clipLayers[i]
+            blitPaint.alpha = alphas[i].coerceIn(0, 255)
+            canvas.drawBitmap(layer.bitmap, layer.x, layer.y, blitPaint)
+        }
     }
 
     private val blitPaint = Paint()
-
-    private fun blitRows(canvas: Canvas, alphas: IntArray?) {
-        for (i in rows.indices) {
-            val image = rowImages[i]
-            blitPaint.alpha = alphas?.get(i) ?: 255
-            canvas.drawBitmap(image.bitmap, image.x, image.y, blitPaint)
-        }
-    }
 
     /**
      * How far line [group] is lit at [t]: it rises over [CROSSFADE_MS] from its
@@ -315,10 +431,13 @@ private class Row(
     val isGap: Boolean = false,
     /** Which picked line this row belongs to, for the video's highlight. */
     val group: Int = -1,
+    /** Which entry of the pick this row came from — a gap row points at its
+     * own marker, which is how the clip finds the break's clock. */
+    val lineIndex: Int = -1,
 )
 
 /** The rows at one size, with everything needed to place them. */
-private class Plan(val rows: List<Row>, val ascent: Float) {
+private class Plan(val rows: List<Row>, val ascent: Float, val size: Float) {
     /** Distance from the top of the first line to the bottom of the last. */
     val content: Float
         get() = ascent + rows.fold(0f) { total, row -> total + row.gapBefore + row.height }
@@ -365,14 +484,13 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
     lines.forEachIndexed { index, line ->
         if (line.isGap) {
             // The skipped lines, as "(...)" — the conventional editorial mark
-            // for an omission. Hung off the left edge with the words, smaller
-            // and a dim grey. Keep its row compact so the marker follows the
-            // preceding lyric closely; the regular gap on the next lyric line
-            // provides the separation below it. Unlit by the video's highlight:
-            // it marks what is not there, so it never stands in for a line.
+            // for an omission, on the still. The clip replaces it with the
+            // panel's own three dots filling across the break; this row stays
+            // in the layout so the passage's height does not change between
+            // the two.
             val marker = type.body(size * 0.65f, 0x66FFFFFF.toInt())
             val markerHeight = marker.descent() - marker.ascent()
-            rows += Row("(...)", marker, markerHeight, 0f, isGap = true)
+            rows += Row("(...)", marker, markerHeight, 0f, isGap = true, lineIndex = index)
             return@forEachIndexed
         }
         group++
@@ -386,7 +504,7 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
                 firstOfLine && index > 0 -> size * 0.55f
                 else -> 0f
             }
-            rows += Row(text, paint, height, gap, group = group)
+            rows += Row(text, paint, height, gap, group = group, lineIndex = index)
             firstOfLine = false
         }
         wrap(line.text, primary, CARD_CONTENT_W).forEach { add(it, primary, size * LEAD) }
@@ -395,7 +513,7 @@ private fun planAt(type: Fonts, lines: List<LyricsShareLine>, size: Float): Plan
             wrap(sub, secondary, CARD_CONTENT_W).forEach { add(it, secondary, subSize * SUB_LEAD) }
         }
     }
-    return Plan(rows, -primary.ascent())
+    return Plan(rows, -primary.ascent(), size)
 }
 
 // ── Text ───────────────────────────────────────────────────────────────────
@@ -505,3 +623,24 @@ private val SUB_COLOR = 0xD9FFFFFF.toInt()
 /** The handover from one line to the next, and how far the unlit lines sit back. */
 private const val CROSSFADE_MS = 320f
 private const val DIM_LIT = 0.35f
+
+// ── The break's dots ───────────────────────────────────────────────────────
+// The panel lights three dots across an instrumental break — each owning its
+// third, resting dim, filling bright as its share of the silence runs. The
+// clip carries the same mark, sized against the type it sits under.
+
+/** A dot's diameter, and the air between dots, against the lyric's own size. */
+private const val DOT_TO_TYPE = 0.38f
+private const val DOT_GAP_TO_TYPE = 0.16f
+
+/** How many dots a break fills, and how bright a dot rests before its turn. */
+private const val GAP_DOTS = 3
+private const val GAP_DOT_REST = 0.25f
+
+/**
+ * How finely a break's fill is stepped. The clip is variable-frame-rate — a
+ * frame is only submitted when something on it moves — and each step here is
+ * one more frame a break costs. Two dozen across three dots reads as fluid
+ * for marks this small and caps a long interlude's bill.
+ */
+private const val GAP_STEPS = 24

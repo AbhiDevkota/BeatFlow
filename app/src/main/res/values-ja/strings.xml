@@ -501,7 +501,7 @@
     <string name="biggest_day_note">最も聴いた日は%1$sで、%2$sの再生時間でした。</string>
     <string name="close_replay">Replayを閉じる</string>
     <string name="couldnt_draw_picture">画像を作成できませんでした</string>
-    <string name="couldnt_render_video">動画を作成できませんでした</string>
+    <string name="couldnt_render_video">クリップを作成できませんでした</string>
     <string name="default_replay_holder">BeatFlowリスナー</string>
     <string name="different_albums">さまざまなアルバム</string>
     <string name="genres_pending">再生履歴が増えるとジャンルが表示されます</string>
@@ -510,8 +510,8 @@
     <string name="hours_minutes_short">%1$d時間%2$d分</string>
     <string name="listen_most_around">最もよく聴くのは%1$s頃です。</string>
     <string name="lyrics_share_title">歌詞を共有</string>
-    <string name="lyrics_share_video">動画</string>
-    <string name="lyrics_share_video_description">選んだ行を最初から最後まで動画に — 歌われている行がハイライトされ、音も入ります。</string>
+    <string name="lyrics_share_video">クリップ</string>
+    <string name="lyrics_share_video_description">選んだ行を最初から最後までクリップに — 歌われている行がハイライトされ、音も入ります。</string>
     <string name="lyrics_share_video_progress">生成中 %1$d%%</string>
     <string name="lyrics_share_video_silent">曲の音声にアクセスできなかったため、音なしで保存しました。</string>
     <string name="lyrics_share_description">選んだ行を、ジャケットと一緒にカードにレイアウトします。</string>

@@ -501,7 +501,7 @@
     <string name="biggest_day_note">Hari terbesar Anda adalah %1$s dengan %2$s waktu mendengarkan.</string>
     <string name="close_replay">Tutup Replay</string>
     <string name="couldnt_draw_picture">Tidak dapat membuat gambar</string>
-    <string name="couldnt_render_video">Tidak dapat membuat video</string>
+    <string name="couldnt_render_video">Tidak dapat membuat klip</string>
     <string name="default_replay_holder">Pendengar BeatFlow</string>
     <string name="different_albums">Album yang berbeda</string>
     <string name="genres_pending">Genre akan muncul seiring bertambahnya riwayat mendengarkan Anda</string>
@@ -510,10 +510,10 @@
     <string name="hours_minutes_short">%1$dj %2$dm</string>
     <string name="listen_most_around">Anda paling banyak mendengarkan sekitar %1$s.</string>
     <string name="lyrics_share_title">Bagikan lirik</string>
-    <string name="lyrics_share_video">Video</string>
-    <string name="lyrics_share_video_description">Baris yang kamu pilih, dari yang pertama sampai terakhir, sebagai video — kata-kata menyala saat dinyanyikan, dengan suara.</string>
+    <string name="lyrics_share_video">Klip</string>
+    <string name="lyrics_share_video_description">Baris yang kamu pilih, dari yang pertama sampai terakhir, sebagai klip — kata-kata menyala saat dinyanyikan, dengan suara.</string>
     <string name="lyrics_share_video_progress">Merender %1$d %%</string>
-    <string name="lyrics_share_video_silent">Audio lagu tidak dapat diakses, jadi video disimpan tanpa suara.</string>
+    <string name="lyrics_share_video_silent">Audio lagu tidak dapat diakses, jadi klip disimpan tanpa suara.</string>
     <string name="lyrics_share_description">Baris yang kamu pilih, ditata pada kartu bersama sampul.</string>
     <string name="lyrics_share_photo">Foto</string>
     <string name="lyrics_share_story">Jadikan story</string>

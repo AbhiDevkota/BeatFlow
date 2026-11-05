@@ -135,7 +135,7 @@ internal suspend fun renderLyricsShareVideo(
             var lastAlphas: IntArray? = null
             for (frame in 0 until frameCount) {
                 callerContext.ensureActive()
-                val alphas = scene.alphasAt((frame * FRAME_MS).toLong())
+                val alphas = scene.frameAlphas((frame * FRAME_MS).toLong())
                 if (lastAlphas == null || !alphas.contentEquals(lastAlphas) ||
                     frame == frameCount - 1
                 ) {
@@ -150,7 +150,7 @@ internal suspend fun renderLyricsShareVideo(
             // preceded it — across a hold that is seconds, and the clip would
             // linger long after its sound had ended. One more frame a step
             // after the last keeps the tail one frame long, as it should be.
-            scene.draw(frameCanvas, lastAlphas ?: IntArray(0).let { scene.alphasAt(0L) })
+            scene.draw(frameCanvas, lastAlphas ?: scene.frameAlphas(0L))
             encoded.draw(frameBitmap, frameCount * MICROS_PER_FRAME)
             encoded.drain(::collect)
             encoded.finish(::collect)

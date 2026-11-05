@@ -477,7 +477,7 @@
     <string name="biggest_day_note">Twój najlepszy dzień to %1$s z %2$s muzyki.</string>
     <string name="close_replay">Zamknij Replay</string>
     <string name="couldnt_draw_picture">Nie można utworzyć obrazka</string>
-    <string name="couldnt_render_video">Nie udało się utworzyć wideo</string>
+    <string name="couldnt_render_video">Nie udało się utworzyć klipu</string>
     <string name="default_replay_holder">Słuchacz BeatFlow</string>
     <string name="different_albums">Różne albumy</string>
     <string name="genres_pending">Gatunki pojawią się w miarę wzrostu historii słuchania</string>
@@ -486,10 +486,10 @@
     <string name="hours_minutes_short">%1$dh %2$dm</string>
     <string name="listen_most_around">Słuchasz muzyki głównie około %1$s.</string>
     <string name="lyrics_share_title">Udostępnij tekst</string>
-    <string name="lyrics_share_video">Wideo</string>
-    <string name="lyrics_share_video_description">Wybrane wersy od pierwszej do ostatniej jako wideo — śpiewany wers rozświetla się, razem z dźwiękiem.</string>
+    <string name="lyrics_share_video">Klip</string>
+    <string name="lyrics_share_video_description">Wybrane wersy od pierwszej do ostatniej jako klip — śpiewany wers rozświetla się, razem z dźwiękiem.</string>
     <string name="lyrics_share_video_progress">Tworzenie %1$d %%</string>
-    <string name="lyrics_share_video_silent">Dźwięk utworu był poza zasięgiem, więc wideo zapisano bez dźwięku.</string>
+    <string name="lyrics_share_video_silent">Dźwięk utworu był poza zasięgiem, więc klip zapisano bez dźwięku.</string>
     <string name="lyrics_share_description">Wybrane wersy, ułożone na karcie z okładką.</string>
     <string name="lyrics_share_photo">Zdjęcie</string>
     <string name="lyrics_share_story">Zmień na relację</string>

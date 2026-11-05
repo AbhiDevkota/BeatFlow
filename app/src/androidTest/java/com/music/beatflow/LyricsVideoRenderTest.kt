@@ -35,7 +35,8 @@ class LyricsVideoRenderTest {
             artworkUrl = null,
             lines = listOf(
                 LyricsShareLine("झीलाको तिरेमा", null, startMs = 0, endMs = 8_000),
-                LyricsShareLine("काड्ने भए ठिकै हो", null, startMs = 8_000, endMs = 14_000),
+                LyricsShareLine("", null, isGap = true),
+                LyricsShareLine("काड्ने भए ठिकै हो", null, startMs = 11_000, endMs = 14_000),
                 LyricsShareLine("त्यो मायाको कुँै नगर", null, startMs = 14_000, endMs = 22_000),
             ),
         )
