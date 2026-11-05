@@ -88,7 +88,7 @@ internal suspend fun renderLyricsShareVideo(
 ): LyricsVideo? = withContext(Dispatchers.Default) {
     // The frame is the story card: the whole 9:16, the passage centred in it,
     // however short the pick â€” a video has one shape for its whole length.
-    val scene = buildLyricsCardScene(context, request, story = true)
+    val scene = buildLyricsCardScene(context, request, story = true, allowScroll = true)
     val (startMs, endMs) = spanOf(request.lines) ?: return@withContext null
     val spanMs = (endMs - startMs).coerceAtMost(MAX_SPAN_MS).coerceAtLeast(MIN_SPAN_MS)
     val frameCount = (spanMs * FPS / 1000f).roundToInt().coerceAtLeast(1)
@@ -110,7 +110,7 @@ internal suspend fun renderLyricsShareVideo(
             encoded.start()
             // The card goes up to the GPU once, as layers; every frame after
             // is the GPU's to composite.
-            encoded.setLayers(scene.gpuLayers())
+            encoded.setLayers(scene.gpuLayers(), scene.passageTopPx, scene.passageTopPx + scene.passageHeightPx)
             val samples = mutableListOf<Sample>()
             var format: MediaFormat? = null
             fun collect(sample: Sample?, codecFormat: MediaFormat?) {
@@ -141,7 +141,7 @@ internal suspend fun renderLyricsShareVideo(
                         gpuReveals[i + 1] = state.reveals[i]
                         gpuActives[i + 1] = state.actives[i]
                     }
-                    encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, frame * MICROS_PER_FRAME)
+                    encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, -scene.scrollOffset((frame * FRAME_MS).toLong()) * 2f / scene.height, frame * MICROS_PER_FRAME)
                     lastState = state
                 }
                 encoded.drain(::collect)
@@ -157,7 +157,7 @@ internal suspend fun renderLyricsShareVideo(
                 gpuReveals[i + 1] = tail.reveals[i]
                 gpuActives[i + 1] = tail.actives[i]
             }
-            encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, frameCount * MICROS_PER_FRAME)
+            encoded.drawFrame(gpuAlphas, gpuReveals, gpuActives, -scene.scrollOffset(frameCount * FRAME_MS.toLong()) * 2f / scene.height, frameCount * MICROS_PER_FRAME)
             encoded.drain(::collect)
             encoded.finish(::collect)
             if (samples.isEmpty()) return@withContext null
@@ -234,9 +234,12 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
     private var alphaHandle = 0
     private var revealHandle = 0
     private var activeHandle = 0
+    private var scrollHandle = 0
     private var positionHandle = 0
     private var texHandle = 0
     private var layers: List<GpuTexture> = emptyList()
+    private var passageTop: Float = 0f
+    private var passageBottom: Float = 0f
     /** Scratch for the one-time layer uploads, sized to the largest layer. */
     private var pixels: ByteBuffer? = null
     private val bufferInfo = MediaCodec.BufferInfo()
@@ -295,6 +298,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         alphaHandle = GLES20.glGetUniformLocation(program, "uAlpha")
         revealHandle = GLES20.glGetUniformLocation(program, "uReveal")
         activeHandle = GLES20.glGetUniformLocation(program, "uActive")
+        scrollHandle = GLES20.glGetUniformLocation(program, "uScroll")
         positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
         texHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
         val link = IntArray(1)
@@ -305,7 +309,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
      * Uploads the layers once, each to its own texture, and builds each one's
      * quad. After this the frame loop touches no pixels at all.
      */
-    fun setLayers(layers: List<LyricsCardScene.GpuLayer>) {
+    fun setLayers(layers: List<LyricsCardScene.GpuLayer>, passageTop: Float, passageBottom: Float) {
         var maxBytes = 0
         for (layer in layers) {
             maxBytes = maxOf(maxBytes, layer.bitmap.rowBytes * layer.bitmap.height)
@@ -329,6 +333,8 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
             )
             GpuTexture(handles[index], quadFor(layer, bitmap.width, bitmap.height))
         }
+        this.passageTop = passageTop
+        this.passageBottom = passageBottom
         pixels = scratch
     }
 
@@ -361,7 +367,7 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
      * in. [alphas] runs one entry per layer, the furniture first at full;
      * [reveals] and [actives] drive the word sweep and the active line.
      */
-    fun drawFrame(alphas: FloatArray, reveals: FloatArray, actives: BooleanArray, presentationUs: Long) {
+    fun drawFrame(alphas: FloatArray, reveals: FloatArray, actives: BooleanArray, scrollNdc: Float, presentationUs: Long) {
         GLES20.glViewport(0, 0, width, height)
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
@@ -371,13 +377,26 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         // blend is one-and-inverse-source, not source-alpha.
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-        for ((index, layer) in layers.withIndex()) {
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, layer.texture)
+        // The furniture stays put; only the passage moves, and only within its
+        // own window — the scissor keeps a scrolling line from painting over
+        // the header or the footer.
+        GLES20.glUniform1f(scrollHandle, 0f)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, layers[0].texture)
+        GLES20.glUniform1f(alphaHandle, alphas[0])
+        GLES20.glUniform1f(revealHandle, reveals[0])
+        GLES20.glUniform1i(activeHandle, if (actives[0]) 1 else 0)
+        drawQuad(layers[0].quad)
+        GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+        GLES20.glScissor(0, height - passageBottom.toInt(), width, (passageBottom - passageTop).toInt())
+        for (index in 1 until layers.size) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, layers[index].texture)
             GLES20.glUniform1f(alphaHandle, alphas[index])
             GLES20.glUniform1f(revealHandle, reveals[index])
             GLES20.glUniform1i(activeHandle, if (actives[index]) 1 else 0)
-            drawQuad(layer.quad)
+            GLES20.glUniform1f(scrollHandle, scrollNdc)
+            drawQuad(layers[index].quad)
         }
+        GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
         GLES20.glDisable(GLES20.GL_BLEND)
         EGLExt.eglPresentationTimeANDROID(display, eglSurface, presentationUs * 1000L)
         if (!EGL14.eglSwapBuffers(display, eglSurface)) fail("eglSwapBuffers")
@@ -490,9 +509,10 @@ private class GlVideoEncoder(private val width: Int, private val height: Int) {
         val vertex = """
             attribute vec2 aPosition;
             attribute vec2 aTexCoord;
+            uniform float uScroll;
             varying vec2 vTexCoord;
             void main() {
-                gl_Position = vec4(aPosition, 0.0, 1.0);
+                gl_Position = vec4(aPosition.x, aPosition.y + uScroll, 0.0, 1.0);
                 vTexCoord = aTexCoord;
             }
         """.trimIndent()

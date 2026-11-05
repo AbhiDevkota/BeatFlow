@@ -121,7 +121,7 @@ data class LyricsShareRequest(
  * instead: the line is not added, and the bar says why. Nothing already picked
  * is ever dropped.
  */
-const val SHARE_CARD_CHAR_BUDGET = 250
+const val SHARE_CARD_CHAR_BUDGET = 500
 
 /**
  * Whether a line of [text] can still join a card already holding [taken]

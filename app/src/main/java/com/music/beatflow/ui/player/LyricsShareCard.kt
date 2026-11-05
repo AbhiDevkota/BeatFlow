@@ -97,6 +97,7 @@ internal class LyricsCardScene(
     context: Context,
     private val request: LyricsShareRequest,
     story: Boolean,
+    allowScroll: Boolean = false,
     /** Resolved sleeve, loaded once for every frame to share. */
     private val cover: Bitmap?,
     /** The mark, inflated once â€” see [loadedLogo]. */
@@ -120,7 +121,8 @@ internal class LyricsCardScene(
 
     /** The card's drawn size â€” the video's frame is exactly this. */
     val width: Float = CARD_W.toFloat()
-    val height: Float    // â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    val height: Float
+
     // The mark and the word, at the top right â€” the same pair the Replay
     // carries, so two of these cards still read as one family. Nothing else
     // goes above the passage: the picture is the verse, not a caption for it.
@@ -219,12 +221,34 @@ internal class LyricsCardScene(
     }
 
     init {
-        plan = fittestPlan(type, request.lines, frameRoom)
+        plan = fittestPlan(type, request.lines, frameRoom, allowScroll)
         spare = if (story) (frameRoom - plan.content).coerceAtLeast(0f) else 0f
         bodyTop = headTop + spare / 2
         height = bodyTop + plan.content + spare / 2 + GAP_BELOW_BODY + FOOTER_THUMB + FOOTER_PAD
         thumbY = height - FOOTER_PAD - FOOTER_THUMB
     }
+
+    // -- Scrolling --
+    val scrollable: Boolean = allowScroll && plan.content > frameRoom
+    private val passageTop: Float = headTop
+    private val passageHeight: Float = frameRoom
+    private val fullPassageHeight: Float = plan.content
+    private var lastScrollOffset: Float = 0f
+
+    fun scrollOffset(t: Long): Float {
+        if (!scrollable) return 0f
+        val active = activeGroup(t)
+        val target = if (active < 0) 0f else {
+            val rowIdx = plan.rows.indexOfFirst { it.group == active }
+            val y = if (rowIdx >= 0) baselines.getOrElse(rowIdx) { bodyTop } else bodyTop
+            (y - passageHeight / 2f).coerceIn(0f, fullPassageHeight - passageHeight)
+        }
+        lastScrollOffset += (target - lastScrollOffset) * 0.2f
+        return (lastScrollOffset / 4f).toInt() * 4f
+    }
+
+    val passageTopPx: Float get() = passageTop
+    val passageHeightPx: Float get() = passageHeight
 
     // â”€â”€ The rasters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // The furniture once, whole; the words once each. This is the pass that
@@ -469,7 +493,7 @@ internal class LyricsCardScene(
                 actives[i] = layer.group == active
             }
         }
-        return FrameState(alphas, reveals, actives)
+        return FrameState(alphas, reveals, actives, scrollOffset(t))
     }
 
     private fun activeGroup(t: Long): Int {
@@ -480,11 +504,12 @@ internal class LyricsCardScene(
 
     /** The state of every layer of the clip at [t], for the frame loop to
      * compare and composite. */
-    data class FrameState(val alphas: IntArray, val reveals: FloatArray, val actives: BooleanArray) {
+    data class FrameState(val alphas: IntArray, val reveals: FloatArray, val actives: BooleanArray, val scrollOffset: Float = 0f) {
         fun sameAs(other: FrameState?): Boolean = other != null &&
             alphas.contentEquals(other.alphas) &&
             reveals.contentEquals(other.reveals) &&
-            actives.contentEquals(other.actives)
+            actives.contentEquals(other.actives) &&
+            scrollOffset == other.scrollOffset
     }
 
     /**
@@ -508,10 +533,11 @@ internal suspend fun buildLyricsCardScene(
     context: Context,
     request: LyricsShareRequest,
     story: Boolean,
+    allowScroll: Boolean = false,
 ): LyricsCardScene = withContext(Dispatchers.Default) {
     val cover = request.artworkUrl?.let { loadBitmap(context, it) }
     val logo = loadedLogo(context)
-    LyricsCardScene(context, request, story, cover, logo)
+    LyricsCardScene(context, request, story, allowScroll, cover, logo)
 }
 
 // â”€â”€ Fitting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -557,12 +583,14 @@ private fun fittestPlan(
     type: Fonts,
     lines: List<LyricsShareLine>,
     room: Float,
+    allowScroll: Boolean = false,
 ): Plan {
-    for (size in FIT_LADDER) {
+    val ladder = if (allowScroll) SCROLL_LADDER else FIT_LADDER
+    for (size in ladder) {
         val plan = planAt(type, lines, size)
         if (plan.content <= room) return plan
     }
-    return planAt(type, lines, FIT_LADDER.last())
+    return planAt(type, lines, ladder.last())
 }
 
 /**
@@ -715,6 +743,9 @@ private const val GAP_MARKER_OFFSET = 0.18f
  * what gives way under it rather than the type.
  */
 private val FIT_LADDER = floatArrayOf(96f, 88f, 80f, 72f, 64f, 56f, 50f, 44f, 38f, 32f)
+
+/** The sizes tried when the passage is allowed to scroll past the frame. */
+private val SCROLL_LADDER = floatArrayOf(96f, 88f, 80f, 72f, 64f, 56f)
 
 // â”€â”€ The panel's type, as ratios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Every number here is one the lyrics panel uses, divided by the size it uses

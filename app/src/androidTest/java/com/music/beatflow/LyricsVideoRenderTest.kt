@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.music.beatflow.data.model.Song
+import com.music.beatflow.data.lyrics.LyricWord
 import com.music.beatflow.ui.player.LyricsShareLine
 import com.music.beatflow.ui.player.LyricsShareRequest
 import com.music.beatflow.ui.player.buildLyricsCardScene
@@ -23,6 +24,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LyricsVideoRenderTest {
 
+    /** Makes a line from its words, with each word timed across the span. */
+    private fun line(text: String, start: Long, end: Long) = LyricsShareLine(
+        text, null, startMs = start, endMs = end,
+        words = text.split(" ").let { words ->
+            val span = (end - start).toFloat() / words.size.coerceAtLeast(1)
+            words.mapIndexed { i, w ->
+                LyricWord((start + span * i).toLong(), (start + span * (i + 1)).toLong(), w)
+            }
+        },
+    )
+
     @Test
     fun rendersAClipAndDumpsEvidence() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -36,24 +48,19 @@ class LyricsVideoRenderTest {
             song = song,
             artworkUrl = null,
             lines = listOf(
-                LyricsShareLine("Line one of the verse", null, startMs = 0, endMs = 8_000,
-                    words = listOf(com.music.beatflow.data.lyrics.LyricWord(0, 3_000, "Line"),
-                        com.music.beatflow.data.lyrics.LyricWord(3_000, 8_000, "one of the verse"))),
+                line("Line one of the verse", 0, 8_000),
                 LyricsShareLine("", null, isGap = true),
-                LyricsShareLine("Line two of the verse", null, startMs = 11_000, endMs = 14_000,
-                    words = listOf(com.music.beatflow.data.lyrics.LyricWord(11_000, 12_000, "Line"),
-                        com.music.beatflow.data.lyrics.LyricWord(12_000, 12_500, "two"),
-                        com.music.beatflow.data.lyrics.LyricWord(12_500, 13_300, "of the"),
-                        com.music.beatflow.data.lyrics.LyricWord(13_300, 14_000, "verse"))),
-                LyricsShareLine("Line three of the verse", null, startMs = 14_000, endMs = 22_000,
-                    words = listOf(com.music.beatflow.data.lyrics.LyricWord(14_000, 15_000, "Line"),
-                        com.music.beatflow.data.lyrics.LyricWord(15_000, 17_000, "three"),
-                        com.music.beatflow.data.lyrics.LyricWord(17_000, 18_500, "of the"),
-                        com.music.beatflow.data.lyrics.LyricWord(18_500, 22_000, "verse"))),
+                line("Line two of the verse", 11_000, 14_000),
+                line("Line three of the verse", 14_000, 22_000),
+                line("Line four of the verse", 22_000, 30_000),
+                line("Line five of the verse", 30_000, 38_000),
+                line("Line six of the verse", 38_000, 46_000),
+                line("Line seven of the verse", 46_000, 54_000),
+                line("Line eight of the verse", 54_000, 62_000),
             ),
         )
 
-        val still = buildLyricsCardScene(context, request, story = true).render()
+        val still = buildLyricsCardScene(context, request, story = true, allowScroll = true).render()
         saveToGallery(context, still, "diag-still", "diag")
 
         val startedAt = System.currentTimeMillis()
