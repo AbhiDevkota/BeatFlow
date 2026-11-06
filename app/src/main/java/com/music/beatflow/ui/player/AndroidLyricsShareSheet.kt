@@ -30,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,6 +58,7 @@ import com.music.beatflow.ui.haptics.rememberHaptics
 import com.music.beatflow.ui.replay.ShareAction
 import com.music.beatflow.ui.replay.VIDEO_MIME
 import com.music.beatflow.ui.replay.cacheForSharing
+import com.music.beatflow.ui.replay.cacheUriForSharing
 import com.music.beatflow.ui.replay.saveToGallery
 import com.music.beatflow.ui.replay.saveVideoToGalleryUri
 import com.music.beatflow.ui.replay.sendIntent
@@ -81,9 +83,11 @@ import kotlinx.coroutines.launch
  *
  * Photo is the card as it has always been. Video takes the same card through
  * the passage: from the first picked line to the last, the song's own sound
- * underneath, the line being sung lit while the rest sit back. The render is a
- * real encode — a few seconds, reported on the button — and is made once,
- * then saved or shared from the same file.
+ * underneath, the line being sung lit while the rest sit back. Picking Video
+ * renders nothing by itself: the first Save, Story or Share makes the clip —
+ * a real encode, a few seconds, reported on the buttons — and every action
+ * after it reuses the same file. Story and Share hand on the cache copy and
+ * leave no gallery row; Save is the one that keeps the clip.
  */
 @Composable
 internal fun AndroidLyricsShareSheet(
@@ -101,12 +105,12 @@ internal fun AndroidLyricsShareSheet(
     var image by remember(request) { mutableStateOf<Bitmap?>(null) }
     var failed by remember(request) { mutableStateOf(false) }
     var saved by remember(request) { mutableStateOf(false) }
-    /** The clip, once rendered — Save and Share hand off the same file. */
+    /** The clip, once an action has asked for it — every action after reuses it. */
     var clip by remember(request) { mutableStateOf<LyricsVideo?>(null) }
-    /** The clip's row in the gallery, once written — Share reuses it. */
+    /** The clip's row in the gallery, once Save has written it. */
     var galleryUri by remember(request) { mutableStateOf<Uri?>(null) }
     var rendering by remember(request) { mutableStateOf(false) }
-    /** A Save or Share hand-off is in flight — brief, but it disables both. */
+    /** A Save, Story or Share hand-off is in flight — brief, but it disables them all. */
     var working by remember(request) { mutableStateOf(false) }
     var progress by remember(request) { mutableIntStateOf(0) }
 
@@ -123,17 +127,17 @@ internal fun AndroidLyricsShareSheet(
             .getOrNull()
     }
 
-    // Pressing Video starts the render at once — the encode is the slow part,
-    // and it can be running while the reader is still deciding between Save
-    // and Share. Tapping Video again stands it down, back to the photo; the
-    // half-written file is the renderer's own to sweep on the way out.
-    LaunchedEffect(request, video) {
-        if (!video || clip != null || rendering) return@LaunchedEffect
+    // The clip is made by the action that needs it, never by picking Video:
+    // most visits only want to look at the card, and the encode is the slow
+    // part. The file is kept once made — Save, Story and Share all reuse it,
+    // in whatever order the reader presses them.
+    suspend fun renderedClip(): LyricsVideo? {
+        clip?.let { return it }
+        if (!video) return null
         rendering = true
         progress = 0
-        galleryUri = null
-        saved = false
-        try {
+        failed = false
+        return try {
             val made = runCatching {
                 renderLyricsShareVideo(context, request) { progress = (it * 100).toInt() }
             }.getOrNull()
@@ -142,26 +146,33 @@ internal fun AndroidLyricsShareSheet(
             // did not fail. Only one that ran to an answer and came back empty
             // reports itself.
             if (made == null && video) failed = true
+            made
         } finally {
             rendering = false
         }
     }
 
-    // Leaving the mode drops everything the clip was carrying: the reference
-    // to its file, the gallery row it was saved under, the progress it showed.
-    LaunchedEffect(request, video) {
-        if (!video) {
-            clip = null
-            galleryUri = null
-            progress = 0
-        }
-    }
+    // Story and Share hand the clip out of the cache, where the renderer
+    // already wrote it; only a clip Save has put in the gallery travels as
+    // its row. Never both: a cache URI must not masquerade as a saved one.
+    fun clipShareUri(made: LyricsVideo): Uri? =
+        galleryUri ?: cacheUriForSharing(context, made.file)
 
     val photoLabel = stringResource(R.string.lyrics_share_photo)
     val videoLabel = stringResource(R.string.lyrics_share_video)
     val saveLabel = stringResource(R.string.save)
     val savedLabel = stringResource(R.string.saved_bang)
     val progressLabel = stringResource(R.string.lyrics_share_video_progress, progress)
+
+    // The sheet leaves composition on every dismissal — the drag, the scrim,
+    // and the hardware back the host handles itself, without this sheet's
+    // onDismiss. So the cache copy is swept here, whichever way it went:
+    // Story and Share hand it out and leave nothing behind, and Save's gallery
+    // row is its own copy, untouched by this.
+    DisposableEffect(clip) {
+        val file = clip?.file
+        onDispose { file?.delete() }
+    }
 
     PlayerDrawer(
         hazeState = hazeState,
@@ -227,10 +238,11 @@ internal fun AndroidLyricsShareSheet(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
                                     haptics.play(Haptic.Tap)
-                                    // Tapped while it renders: the render is stood
-                                    // down, back to the photo. Tapped again after
-                                    // that: a fresh one starts.
-                                    video = !(video && rendering)
+                                    // A mode toggle like Photo. Tapped while an
+                                    // action is rendering it also stands that
+                                    // action down; the clip the render makes is
+                                    // kept for the next action either way.
+                                    video = !video
                                 },
                             )
                         }
@@ -285,8 +297,8 @@ internal fun AndroidLyricsShareSheet(
                 ) {
                     // The one-tap story: Instagram opens on the media itself
                     // rather than on a chooser, for the picture and the clip
-                    // alike — the clip travels as its gallery row, the picture
-                    // as the cache copy the share already writes.
+                    // alike — the picture is the cache copy the share already
+                    // writes, and the clip renders only when this is pressed.
                     ShareAction(
                         label = stringResource(R.string.lyrics_share_add_to_story),
                         icon = Icons.Rounded.AutoStories,
@@ -296,22 +308,20 @@ internal fun AndroidLyricsShareSheet(
                         onClick = {
                             haptics.play(Haptic.Tap)
                             if (video) {
-                                val made = clip ?: return@ShareAction
                                 scope.launch {
                                     working = true
                                     try {
+                                        val made = renderedClip() ?: return@launch
+                                        // Back on Photo before the encode came
+                                        // back: the action stands down with it.
+                                        // The clip stays for the next action.
+                                        if (!video) return@launch
                                         if (!made.hasAudio) {
                                             PlayerPlatform.host.showMessage(
                                                 context.getString(R.string.lyrics_share_video_silent),
                                             )
                                         }
-                                        val uri = galleryUri ?: saveVideoToGalleryUri(
-                                            context,
-                                            made.file,
-                                            request.song.title,
-                                            CLIP_FILE_PREFIX,
-                                        )
-                                        galleryUri = uri
+                                        val uri = clipShareUri(made)
                                         if (uri == null) {
                                             failed = true
                                         } else {
@@ -381,10 +391,13 @@ internal fun AndroidLyricsShareSheet(
                             onClick = {
                                 haptics.play(Haptic.Tap)
                                 if (video) {
-                                    val made = clip ?: return@ShareAction
                                     scope.launch {
                                         working = true
                                         try {
+                                            val made = renderedClip() ?: return@launch
+                                            // Stands down with the mode, exactly
+                                            // as Story does; the clip is kept.
+                                            if (!video) return@launch
                                             if (!made.hasAudio) {
                                                 PlayerPlatform.host.showMessage(
                                                     context.getString(R.string.lyrics_share_video_silent),
@@ -425,26 +438,21 @@ internal fun AndroidLyricsShareSheet(
                             onClick = {
                                 haptics.play(Haptic.Tap)
                                 if (video) {
-                                    val made = clip ?: return@ShareAction
                                     scope.launch {
                                         working = true
                                         try {
+                                            val made = renderedClip() ?: return@launch
+                                            if (!video) return@launch
                                             if (!made.hasAudio) {
                                                 PlayerPlatform.host.showMessage(
                                                     context.getString(R.string.lyrics_share_video_silent),
                                                 )
                                             }
-                                            // The share hands on the gallery row rather
-                                            // than the cache file: the popup previews
-                                            // content it can pull a thumbnail for, and
-                                            // that is a MediaStore row, not a cache file.
-                                            val uri = galleryUri ?: saveVideoToGalleryUri(
-                                                context,
-                                                made.file,
-                                                request.song.title,
-                                                CLIP_FILE_PREFIX,
-                                            )
-                                            galleryUri = uri
+                                            // Story and Share never write a gallery
+                                            // row: the cache copy is the file the
+                                            // renderer just made, handed out with a
+                                            // read grant that expires with the intent.
+                                            val uri = clipShareUri(made)
                                             if (uri == null) {
                                                 failed = true
                                             } else {

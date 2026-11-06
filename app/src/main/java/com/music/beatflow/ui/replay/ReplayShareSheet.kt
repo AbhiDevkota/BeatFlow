@@ -374,10 +374,9 @@ internal suspend fun saveToGallery(
  * created from API 29 — under Movies rather than Pictures, and as `video/mp4`,
  * which is what makes the gallery's player rather than its image viewer open it.
  *
- * Returns the row's URI, or null when the write failed. The row is also what a
- * share hands on: the system's share sheet previews content it can pull a
- * thumbnail for, which a MediaStore row is and a bare file in the app's cache
- * is not.
+ * Returns the row's URI, or null when the write failed. The copy is independent
+ * of [file], so the transient clip can be deleted afterwards; a share hands out
+ * that cache copy itself, through [cacheUriForSharing], and leaves no row.
  */
 internal suspend fun saveVideoToGalleryUri(
     context: Context,
