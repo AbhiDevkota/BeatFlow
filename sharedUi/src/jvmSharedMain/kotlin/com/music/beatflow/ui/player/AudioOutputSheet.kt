@@ -23,7 +23,7 @@ import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DirectionsCar
-import androidx.compose.material.icons.rounded.Earbuds
+import org.jetbrains.compose.resources.vectorResource
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.PhoneAndroid
@@ -484,13 +484,14 @@ private fun VolumeRow(routeKey: Any) {
     }
 }
 
+@Composable
 private fun iconFor(device: AudioOutputDevice): ImageVector = when (device.kind) {
     AudioOutputKind.PHONE -> Icons.Rounded.PhoneAndroid
     AudioOutputKind.WIRED -> Icons.Rounded.Headphones
     AudioOutputKind.USB -> Icons.Rounded.Usb
     // The same reading the output pill draws — see AudioOutputDevice.form.
     AudioOutputKind.BLUETOOTH -> when (device.form) {
-        BluetoothForm.BUDS -> Icons.Rounded.Earbuds
+        BluetoothForm.BUDS -> vectorResource(Res.drawable.ic_output_buds)
         BluetoothForm.HEADPHONES -> Icons.Rounded.Headphones
         BluetoothForm.SPEAKER -> Icons.Rounded.Speaker
         BluetoothForm.CAR -> Icons.Rounded.DirectionsCar
