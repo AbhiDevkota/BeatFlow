@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +31,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,6 +81,18 @@ internal val DRAWER_SHAPE = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
 internal val DRAWER_MAX_WIDTH = 640.dp
 internal val ROW_SHAPE = RoundedCornerShape(16.dp)
 internal val SCRIM_COLOR = Color.Black.copy(alpha = 0.5f)
+
+/**
+ * The height a drawer's content has to lay itself out in.
+ *
+ * The drawer keeps its content in a vertical scroller, which hands its
+ * children an unbounded height — a sheet that sizes a preview against "what
+ * is left" would otherwise see no limit at all. This is that limit: the
+ * viewport below the grab handle and title, with the drawer's paddings and the
+ * navigation bar already taken out. Infinite until the drawer is measured, and
+ * for content outside one.
+ */
+val LocalPlayerDrawerContentMaxHeight = compositionLocalOf { Dp.Infinity }
 
 /**
  * How much of its own height the drawer has to be dragged before letting go
@@ -239,8 +254,7 @@ fun PlayerDrawer(
                 }
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 10.dp, bottom = 20.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(top = 10.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // The grab handle every sheet here has, and the thing that says the
@@ -263,7 +277,21 @@ fun PlayerDrawer(
                     .fillMaxWidth()
                     .padding(start = 4.dp, bottom = titleGap),
             )
-            content()
+            // The rows scroll under the title rather than with it, and the
+            // viewport is named for whatever inside has to size to the space
+            // left — see [LocalPlayerDrawerContentMaxHeight].
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                CompositionLocalProvider(LocalPlayerDrawerContentMaxHeight provides maxHeight) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        content()
+                    }
+                }
+            }
         }
         }
     }

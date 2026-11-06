@@ -185,6 +185,12 @@ internal fun AndroidLyricsShareSheet(
         // description and the mode choice are measured, the buttons below are
         // measured, and the picture takes exactly what is left — so the Save
         // and Share this sheet exists for are never pushed past the fold.
+        // The drawer's content scroller hands this Box an unbounded height, so
+        // the space the sheet may actually use comes from the drawer itself —
+        // whatever is left below the title and above the navigation bar. That
+        // is what makes the preview shrink on a shorter display rather than
+        // pushing Save and Share under the fold.
+        val heightLimit = LocalPlayerDrawerContentMaxHeight.current
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val density = LocalDensity.current
             val gapPx = with(density) { 12.dp.toPx() }
@@ -193,7 +199,11 @@ internal fun AndroidLyricsShareSheet(
             // Read here, where the scope is direct — inside the column below,
             // the constraints would be an implicit receiver away.
             val drawerWidthPx = constraints.maxWidth
-            val drawerHeightPx = constraints.maxHeight
+            val drawerHeightPx = if (heightLimit.value.isFinite()) {
+                with(density) { heightLimit.toPx() }
+            } else {
+                constraints.maxHeight.toFloat()
+            }
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
