@@ -300,6 +300,24 @@ object AudioRouting {
      */
     private fun nameOf(info: AudioDeviceInfo, kind: Kind): String = when (kind) {
         Kind.PHONE, Kind.WIRED -> ""
+        Kind.BLUETOOTH -> bluetoothDeviceName(info)
+            ?: info.productName?.toString()?.trim().orEmpty()
         else -> info.productName?.toString()?.trim().orEmpty()
+    }
+
+    /**
+     * The name the listener gave the device in Android's Bluetooth settings,
+     * rather than the product name the framework cached when it first connected.
+     * A rename there ("Ultima Boom" -> "Gigga Boss") is otherwise invisible
+     * until the device is forgotten and re-paired, because [AudioDeviceInfo.getProductName]
+     * keeps the original.
+     */
+    private fun bluetoothDeviceName(info: AudioDeviceInfo): String? {
+        val address = info.address
+        if (address.isNullOrBlank() || !BluetoothAdapter.checkBluetoothAddress(address)) return null
+        return runCatching {
+            val adapter = BluetoothAdapter.getDefaultAdapter() ?: return null
+            adapter.getRemoteDevice(address)?.name?.trim()?.takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 }
