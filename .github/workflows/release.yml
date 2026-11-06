@@ -45,8 +45,8 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          VERSION_NAME=$(grep -oP 'bitchordVersionName\s*=\s*"\K[^"]+' build.gradle.kts)
-          VERSION_CODE=$(grep -oP 'bitchordVersionCode\s*=\s*\K[0-9]+' build.gradle.kts)
+          VERSION_NAME=$(grep -oP 'bitchordVersionName[^=]*=\s*"\K[^"]+' build.gradle.kts)
+          VERSION_CODE=$(grep -oP 'bitchordVersionCode[^=]*=\s*\K[0-9]+' build.gradle.kts)
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
