@@ -115,6 +115,8 @@ internal fun rememberAndroidAudioOutputs(): List<AudioOutputDevice> {
             addAction(AudioManager.ACTION_HDMI_AUDIO_PLUG)
             addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
             addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            runCatching { addAction(android.bluetooth.BluetoothDevice.ACTION_ALIAS_CHANGED) }
+            runCatching { addAction(android.bluetooth.BluetoothDevice.ACTION_NAME_CHANGED) }
         }
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)

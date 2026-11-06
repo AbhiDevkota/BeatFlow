@@ -317,7 +317,16 @@ object AudioRouting {
         if (address.isNullOrBlank() || !BluetoothAdapter.checkBluetoothAddress(address)) return null
         return runCatching {
             val adapter = BluetoothAdapter.getDefaultAdapter() ?: return null
-            adapter.getRemoteDevice(address)?.name?.trim()?.takeIf { it.isNotBlank() }
+            val device = adapter.getRemoteDevice(address) ?: return null
+            // A name edited by the listener in Android's Bluetooth settings is
+            // stored as an alias, not as the device's advertised name, so
+            // getName() keeps the original. Prefer the alias when present.
+            val alias = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                device.alias?.trim()?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
+            alias ?: device.name?.trim()?.takeIf { it.isNotBlank() }
         }.getOrNull()
     }
 }
