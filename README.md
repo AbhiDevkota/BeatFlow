@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Banner.png" alt="BeatFlow banner" width="100%" />
+<img src="BeatFlow-Banner.png" alt="BeatFlow banner" width="100%" />
 
 <br/>
 
