@@ -145,6 +145,9 @@ import com.music.beatflow.data.model.SearchFilter
 import com.music.beatflow.data.model.SearchResult
 import com.music.beatflow.data.model.ShelfItem
 import com.music.beatflow.data.model.Song
+import com.music.beatflow.data.model.withoutVideos
+import com.music.beatflow.ui.components.ChoiceAlert
+import com.music.beatflow.ui.player.MixViewRequest
 import com.music.beatflow.data.model.isUnresolvedSpotify
 import com.music.beatflow.data.model.UiState
 import com.music.beatflow.data.model.UserPlaylist
@@ -654,6 +657,9 @@ private fun BeatFlowApp(
     // background at all. Hosting it here also puts the scrim over the tab bar
     // and the mini player, like every other alert in the app.
     var editingSource by remember { mutableStateOf<SourceConfig?>(null) }
+    var choosingSourceQuality by remember { mutableStateOf<SourceConfig?>(null) }
+    /** An addon whose "Outdated addon" line was tapped; see [SourceConfig.needsAddonUpdate]. */
+    var explainingOutdatedAddon by remember { mutableStateOf<SourceConfig?>(null) }
     var confirmJioSaavn by remember { mutableStateOf(false) }
     var confirmBitPerfect by remember { mutableStateOf<BitPerfectMode?>(null) }
     var confirmFixedVolume by remember { mutableStateOf(false) }
@@ -866,6 +872,22 @@ private fun BeatFlowApp(
     )
 
     val homeState by viewModel.home.collectAsStateWithLifecycle()
+    val hideRecents by AppSettings.hideRecents.collectAsStateWithLifecycle()
+    val hideHomeVideos by AppSettings.hideHomeVideos.collectAsStateWithLifecycle()
+    val hideTopPicks by AppSettings.hideTopPicks.collectAsStateWithLifecycle()
+    val hideHomeMoods by AppSettings.hideHomeMoods.collectAsStateWithLifecycle()
+    // Only what Home draws: Top Picks reads the unfiltered feed from the view model.
+    val visibleHomeState = remember(homeState, hideHomeVideos, hideRecents) {
+        val loaded = homeState as? UiState.Success
+        if (loaded != null && (hideHomeVideos || hideRecents)) {
+            var shelves = loaded.data
+            if (hideRecents) shelves = shelves.filterNot { it.title == YtMusicRepository.RECENT_TITLE }
+            if (hideHomeVideos) shelves = shelves.withoutVideos()
+            UiState.Success(shelves)
+        } else {
+            homeState
+        }
+    }
     val homeLoadingMore by viewModel.homeLoadingMore.collectAsStateWithLifecycle()
     val homeRecentlyPlayedLoading by viewModel.homeRecentlyPlayedLoading.collectAsStateWithLifecycle()
     val topPicks by viewModel.topPicks.collectAsStateWithLifecycle()
@@ -2878,6 +2900,8 @@ private fun BeatFlowApp(
         BackHandler(enabled = showLastfmLogin) { showLastfmLogin = false }
         BackHandler(enabled = discordDialog != null) { discordDialog = null }
         BackHandler(enabled = editingSource != null) { editingSource = null }
+        BackHandler(enabled = choosingSourceQuality != null) { choosingSourceQuality = null }
+        BackHandler(enabled = explainingOutdatedAddon != null) { explainingOutdatedAddon = null }
         BackHandler(enabled = editingPartyServer) { editingPartyServer = false }
         BackHandler(enabled = editingSignatureApi) { editingSignatureApi = false }
 
@@ -2888,8 +2912,13 @@ private fun BeatFlowApp(
         // one child it always had and changes nothing.
         //
         // Everything a page's menu floats over, and so what [pageBackdrop]
-        // takes its still of; the menus themselves are drawn outside it.
-        Row(Modifier.fillMaxSize().snapshotBackdropSource(pageBackdrop)) {
+        // takes its still of; the menus themselves are drawn outside it. On the
+        // window's background, which the pages don't paint: see `paintBackdrop`.
+        Row(
+            Modifier
+                .fillMaxSize()
+                .snapshotBackdropSource(pageBackdrop, floor = MaterialTheme.colorScheme.background),
+        ) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 AnimatedContent(
                     // Whatever is on top of the back stack — see [AppNavigator].
@@ -3103,6 +3132,8 @@ private fun BeatFlowApp(
                             SourcesScreen(
                                 contentPadding = listPadding,
                                 onEditSource = { editingSource = it },
+                                onChooseSourceQuality = { choosingSourceQuality = it },
+                                onExplainOutdatedAddon = { explainingOutdatedAddon = it },
                                 onEditWebDav = { showWebDavEditor = true },
                                 onEditSmb = { showSmbEditor = true },
                                 onConfirmJioSaavn = { confirmJioSaavn = true },
@@ -3416,7 +3447,7 @@ private fun BeatFlowApp(
                             )
                         } else when ((destination as? AppDestination.Tab)?.index ?: selectedTab) {
                             TAB_HOME -> HomeScreen(
-                                state = homeState,
+                                state = visibleHomeState,
                                 listState = homeListState,
                                 currentSong = player.song,
                                 isPlaying = player.isPlaying,
@@ -3450,13 +3481,15 @@ private fun BeatFlowApp(
                                 contentPadding = listPadding,
                                 onLoadMore = viewModel::loadMoreHome,
                                 loadingMore = homeLoadingMore,
-                                recentlyPlayedLoading = homeRecentlyPlayedLoading,
+                                recentlyPlayedLoading = homeRecentlyPlayedLoading && !hideRecents,
                                 topPicks = topPicks,
                                 topPicksLoading = topPicksLoading,
                                 listenerName = account?.name,
-                                onTopPickClick = openTopPick,
-                                onMoodClick = playMood,
+                                // Neither shelf is drawn without its callback.
+                                onTopPickClick = openTopPick.takeUnless { hideTopPicks },
+                                onMoodClick = playMood.takeUnless { hideHomeMoods },
                                 onMoodsShowAll = { navigator.push(AppRoute.Moods) },
+                                // Nothing on Home is seen while the greeting covers it.
                                 artworkMotion = artworkMotion,
                                 onTopPickLongPress = { pick ->
                                     pick.browseId?.let { browseId ->
@@ -4485,6 +4518,7 @@ private fun BeatFlowApp(
             // so "Remove from cache" is only offered for a track it holds.
             // Re-asked when the cache changes, which is what drops the row
             // once the track has gone.
+            val automixOn by AppSettings.smartFadeEnabled.collectAsStateWithLifecycle()
             val cacheVersion by AudioCache.contentsChanged.collectAsStateWithLifecycle()
             val inCache by produceState(false, song.videoId, cacheVersion) {
                 value = song.localUri == null &&
@@ -4684,6 +4718,16 @@ private fun BeatFlowApp(
                     {
                         songActions = null
                         showLyricsOffset = true
+                    }
+                } else {
+                    null
+                },
+                // The popup lives in the player, so the menu only has to close
+                // and ask for it; it lays the next transition out on its own.
+                onAutomixOverview = if (fromPlayer && automixOn) {
+                    {
+                        songActions = null
+                        MixViewRequest.open = true
                     }
                 } else {
                     null
@@ -5449,7 +5493,7 @@ private fun BeatFlowApp(
             }
         }
 
-        // ---- Update available (once per launch; held until the welcome is done) ----
+        // ---- Update available (once per launch; held until the welcome and Diwali greeting are done) ----
         if (showUpdateDialog && onboardingComplete) {
             updateNotice?.let { update ->
                 UpdateAvailableDialog(
@@ -6024,6 +6068,35 @@ private fun BeatFlowApp(
                     editingSource = null
                 },
                 scope = scope,
+            )
+        }
+
+        choosingSourceQuality?.let { config ->
+            ChoiceAlert(
+                hazeState = hazeState,
+                title = stringResource(R.string.audio_quality),
+                message = null,
+                options = config.qualityOptions,
+                selected = config.activeQuality,
+                label = { it?.label.orEmpty() },
+                onSelect = { option ->
+                    // Off the stored config, not the one this list opened with:
+                    // a probe may have refreshed it since.
+                    SourceRegistry.config(config.id)?.let {
+                        SourceRegistry.update(it.copy(pickedQuality = option?.value))
+                    }
+                    choosingSourceQuality = null
+                },
+                onDismiss = { choosingSourceQuality = null },
+            )
+        }
+
+        explainingOutdatedAddon?.let { config ->
+            InfoAlert(
+                hazeState = hazeState,
+                title = config.displayName,
+                description = stringResource(R.string.source_needs_update),
+                onDismiss = { explainingOutdatedAddon = null },
             )
         }
 
