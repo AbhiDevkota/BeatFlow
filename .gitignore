@@ -29,6 +29,7 @@ captures/
 *.log
 .DS_Store
 Thumbs.db
+issue/
 
 # Release signing — never commit the key or its passwords
 keystore.properties

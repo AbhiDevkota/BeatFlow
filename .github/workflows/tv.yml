@@ -5,7 +5,7 @@ name: TV
 # one under tv/.
 on:
   push:
-    branches: [main]
+    branches: [prod/install]
     paths:
       - 'tv/**'
       - 'app/**'
@@ -73,7 +73,7 @@ jobs:
       - name: Upload the TV dev APK
         uses: actions/upload-artifact@v4
         with:
-          name: bitchord-tv-dev-debug
+          name: beatflow-tv-dev-debug
           path: tv/build/outputs/apk/dev/debug/*universal*.apk
 
       - name: Upload build reports

@@ -269,7 +269,7 @@ async function lyrics() {
   } catch { /* not JSON */ }
 
   // 13. LRCLIB.
-  const lrclib = { 'User-Agent': 'BitChord (https://github.com/bitchord)' };
+  const lrclib = { 'User-Agent': 'BeatFlow (https://github.com/bitchord)' };
   await capture('lyrics/lrclib-get.json', q('https://lrclib.net/api/get', {
     track_name: t.title, artist_name: t.artist, duration: t.durationSec,
   }), { headers: lrclib });
