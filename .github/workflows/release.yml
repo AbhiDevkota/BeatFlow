@@ -99,7 +99,13 @@ jobs:
           REPO="${{ github.repository }}"
           VN="${{ steps.version.outputs.name }}"
           git fetch --tags origin
-          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          #
+          # The previous read is the newest tag that is purely a number:
+          # prerelease tails are skipped — v1.9.1-beta sorts above v1.9.1 in
+          # version order, but "v1.9.1-beta" is not a version the note should
+          # say "Updated from".
+          #
+          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+(\.[0-9]+)+$' | head -n 1)
           PREV=${PREV_TAG#v}
 
           #
