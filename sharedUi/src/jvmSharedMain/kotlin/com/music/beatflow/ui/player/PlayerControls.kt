@@ -202,8 +202,10 @@ internal val SCRUBBER_LABEL_LIFT = 9.dp
 @Composable
 internal fun PlayerScrubber(
     /**
-     * Where the handle is, read in here so the playhead's tick recomposes the
-     * bar and its two times rather than the player the bar sits in.
+     * Where the handle is, read in here so the playhead's ticking recomposes
+     * the bar and its two times rather than the player the bar sits in. The
+     * tick is a clock's glide — every frame while playing, see
+     * [rememberPositionClock] — and only twice a second when paused.
      */
     shown: () -> Float,
     durationMs: Long,

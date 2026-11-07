@@ -9,12 +9,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableLongState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -202,13 +204,22 @@ internal class PlayerScrub {
      */
     internal var pendingSeek by mutableStateOf<Float?>(null)
 
-    /** Where the handle is drawn. */
-    fun shown(positionMs: Long, durationMs: Long): Float {
-        val fraction = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f
+    /**
+     * Where the song has got to between the player's readings, set by the
+     * frame clock [rememberPlayerScrub] runs — the one the lyrics sweep by, so
+     * the handle glides while the words do instead of stepping in the half
+     * seconds of the readings. Seeded with each reading, so it answers
+     * correctly before the clock has run a frame of its own.
+     */
+    internal var playedMs: MutableLongState = mutableLongStateOf(0L)
+
+    /** Where the handle is drawn, as a share of the bar. */
+    fun shown(durationMs: Long): Float {
+        if (durationMs <= 0) return 0f
         return when {
             scrubbing -> value
             pendingSeek != null -> pendingSeek!!
-            else -> fraction.coerceIn(0f, 1f)
+            else -> (playedMs.longValue.toFloat() / durationMs).coerceIn(0f, 1f)
         }
     }
 
@@ -225,7 +236,12 @@ internal class PlayerScrub {
 }
 
 @Composable
-internal fun rememberPlayerScrub(trackId: String, position: PlaybackPosition, durationMs: Long): PlayerScrub {
+internal fun rememberPlayerScrub(
+    trackId: String,
+    position: PlaybackPosition,
+    durationMs: Long,
+    isPlaying: Boolean,
+): PlayerScrub {
     val scrub = remember { PlayerScrub() }
     var pendingSeek by scrub::pendingSeek
 
@@ -262,7 +278,26 @@ internal fun rememberPlayerScrub(trackId: String, position: PlaybackPosition, du
     }
     LaunchedEffect(trackId) { pendingSeek = null }
 
+    // Between the player's readings the handle glides instead of stepping. A
+    // reading lands twice a second; drawn straight from it, the bar jumped in
+    // visible half-second jumps while the lyrics swept smoothly past
+    // underneath. This is the clock the lyrics run — see [LyricClock], steered
+    // by the readings rather than set by them, so corrections and jumps are
+    // absorbed the same way the words are — pointed at the bar's own raw
+    // reading of the playhead, without the lyrics' offset. [PlayerScrub.shown]
+    // draws from it only when no drag or pending seek holds the handle, so the
+    // glide can never fight either.
+    val playhead = remember(trackId) { ScrubPlayhead(position) }
+    scrub.playedMs = rememberPositionClock(trackId, playhead, isPlaying)
+
     return scrub
+}
+
+/** The bar's readings of the playhead: the raw playhead, held unshifted. */
+private class ScrubPlayhead(private val position: PlaybackPosition) : PlayheadReading {
+    override val positionMs: Long get() = position.positionMs
+    override val sampledAtNanos: Long get() = position.sampledAtNanos
+    override val discontinuity: Long get() = position.seeks.toLong()
 }
 
 /**
