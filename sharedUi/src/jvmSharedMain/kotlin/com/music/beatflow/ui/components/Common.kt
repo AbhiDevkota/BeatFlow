@@ -1029,3 +1029,8 @@ fun PillTextField(
         )
     }
 }
+
+
+object VideoThumbnails {
+    var square by mutableStateOf(false)
+}

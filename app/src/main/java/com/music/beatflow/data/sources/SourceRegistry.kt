@@ -8,7 +8,6 @@ import com.music.beatflow.auth.EncryptedPrefs
 import com.music.beatflow.data.TrackLog
 import com.music.beatflow.data.settings.AppSettings
 import com.music.beatflow.data.settings.permits
-import com.music.beatflow.data.sources.addon.AddonAuth
 import com.music.beatflow.data.sources.addon.AddonClient
 import com.music.beatflow.data.sources.addon.AddonException
 import com.music.beatflow.data.sources.addon.AddonQualityOption
@@ -78,14 +77,6 @@ data class SourceConfig(
     /** Whether this source is shut out right now because it needs an output that isn't connected. */
     val awaitsLosslessOutput: Boolean
         get() = checkValidLossless && !LosslessOutput.capable
-
-    /**
-     * Whether this is an addon known to be out of date: its manifest doesn't
-     * declare `bitchordAuth`, or it has no manifest at all. Not yet knowing
-     * (null) doesn't count. Only flagged, never gated on: see [bitchordAuth].
-     */
-    val needsAddonUpdate: Boolean
-        get() = kind == SourceKind.ADDON && bitchordAuth == false
 
     /** What the manifest last said, without the parts of the config the user set. */
     internal fun withPolicyOf(other: SourceConfig) =
@@ -220,7 +211,7 @@ object SourceRegistry {
      * apply no connection-quality ceiling — see [SourceResolver.forDownload].
      */
     fun active(): List<MusicSource> {
-        val unverified = AddonAuth.standingRefusal() != null
+        val unverified = false
         return enabledConfigs(configs.value)
             // Not in the walk at all while it would be refused anyway: an addon
             // that asked for a lossless output costs nothing — not even a timed

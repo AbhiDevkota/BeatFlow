@@ -413,7 +413,7 @@ class AddonClient(rawBaseUrl: String) {
         const val TIER_HIGH = "HIGH"
         const val TIER_LOW = "LOW"
 
-        private const val QUALITY_KEY = "quality"
+        internal const val QUALITY_KEY = "quality"
 
         /** The spec's immersive-audio hint: `auto` normally, an "off" only for a stereo row picked by hand. */
         private const val ATMOS_KEY = "atmos"

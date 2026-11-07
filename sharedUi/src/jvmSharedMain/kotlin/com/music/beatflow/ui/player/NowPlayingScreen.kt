@@ -1004,9 +1004,11 @@ fun NowPlayingScreen(
     // refreshFrameEveryMs.
     val meshRefreshMs = MESH_REFRESH_MS.takeIf { tintsOffClip }
 
-    val scrub = rememberPlayerScrub(song.videoId, position, durationMs)
-    // Read by the scrubber itself — see [PlayerScrubber.shown].
-    val shown: () -> Float = { scrub.shown(position.positionMs, durationMs) }
+    val scrub = rememberPlayerScrub(song.videoId, position, durationMs, isPlaying)
+    // Read by the scrubber itself. The glide between the player's readings
+    // lives in the scrub — see [rememberPositionClock] — so none of this
+    // scope reads the playhead it runs on.
+    val shown: () -> Float = { scrub.shown(durationMs) }
     // Back restarts the track rather than stepping back once it is a few
     // seconds in. Derived, so this scope hears about the playhead once, when
     // it crosses that point, rather than on every tick.

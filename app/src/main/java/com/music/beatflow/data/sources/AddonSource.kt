@@ -40,7 +40,7 @@ class AddonSource(
     override val displayName: String get() = config.displayName
 
     /** Holds the pick for this instance's life: changing it is an edit, and [SourceRegistry] rebuilds on one. */
-    private val client = AddonClient(config.baseUrl, config.pickedQuality)
+    private val client = AddonClient(config.baseUrl)
 
     /**
      * Rows this addon has recently handed over, by their own track id.
@@ -100,9 +100,6 @@ class AddonSource(
         if ((declared ?: live.bitchordAuth) != true) return true
         return true
     }
-
-    /** The refusal [admitted] last logged a skip for, so a run of skips costs one line. */
-    @Volatile
 
     /**
      * Reads the manifest (the client's cached copy when there is one) and
@@ -165,14 +162,6 @@ class AddonSource(
                 // because otherwise the row reads healthy while every search
                 // fails, and the reason is only in the log. One that doesn't ask
                 // is out of date, which the row flags on its own line, but works.
-                if (manifest.requiresBitChordAuth) client.checkAuth().exceptionOrNull()?.let { failure ->
-                    val reason = failure.message ?: "BitChord couldn't verify this device"
-                    return@fold if (failure is AddonUnavailable) {
-                        SourceHealth.Unreachable(reason)
-                    } else {
-                        SourceHealth.Rejected(reason)
-                    }
-                }
                 SourceHealth.Ok(
                     listOfNotNull(
                         manifest.displayName.takeIf { it.isNotBlank() },

@@ -114,7 +114,6 @@ fun SourcesScreen(
     /** Asks the activity to open an addon's quality list — raised for the same reason as [onEditSource]. */
     onChooseSourceQuality: (SourceConfig) -> Unit,
     /** Asks the activity to explain an addon's "Outdated addon" line — raised for the same reason. */
-    onExplainOutdatedAddon: (SourceConfig) -> Unit,
     /**
      * Asks the activity to open the WebDAV editor — raised for the same
      * reason as [onEditSource]: the frosted alert cannot be drawn from inside
@@ -247,7 +246,6 @@ fun SourcesScreen(
                         awaitingOutput = if (config.enabled && config.awaitsLosslessOutput) losslessOutput else null,
                         // Read off the stored manifest, so it shows before the
                         // probe below answers, and on a server that is down.
-                        needsUpdate = config.needsAddonUpdate,
                         onMetered = metered == true,
                         ceiling = ceiling,
                         // Anything the user configured is theirs to edit or
@@ -255,7 +253,6 @@ fun SourcesScreen(
                         // change, so a tap on them would open an empty editor.
                         onClick = if (config.kind.needsServer) ({ onEditSource(config) }) else null,
                         onChooseQuality = { onChooseSourceQuality(config) },
-                        onExplainOutdated = { onExplainOutdatedAddon(config) },
                         // YouTube gets no switch at all — see
                         // [SourceRegistry.setEnabled] for why one would be a lie.
                         onToggle = if (config.kind == SourceKind.YOUTUBE) {
@@ -771,7 +768,6 @@ private fun SourceRow(
     onClick: (() -> Unit)?,
     onChooseQuality: () -> Unit,
     /** Explains the "Outdated addon" line, which only an addon with [needsUpdate] shows. */
-    onExplainOutdated: () -> Unit,
     /** Null for a source that cannot be switched off, which gets a label instead. */
     onToggle: ((Boolean) -> Unit)?,
     /** On, but skipped by the ceiling the current connection is set to. */
@@ -944,34 +940,6 @@ private fun SourceRow(
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-            }
-            // A caution, not a block: the addon still works, but its developer
-            // should update it. Short here, with the full explanation a tap
-            // away, so it costs the row one line.
-            if (needsUpdate) {
-                Row(
-                    modifier = Modifier
-                        .clickable(
-                            onClickLabel = stringResource(R.string.source_outdated),
-                            onClick = onExplainOutdated,
-                        )
-                        .padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = SfIcons.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = stringResource(R.string.source_outdated),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
                         maxLines = 1,
                     )
                 }
