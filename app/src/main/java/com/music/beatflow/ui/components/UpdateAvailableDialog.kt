@@ -1,11 +1,13 @@
 package com.music.beatflow.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -35,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.halilibo.richtext.markdown.Markdown
 import com.halilibo.richtext.ui.RichTextStyle
 import com.halilibo.richtext.ui.material3.RichText
+import com.music.beatflow.BuildConfig
 import com.music.beatflow.R
 import com.music.beatflow.data.AppUpdateChecker
 import com.music.beatflow.data.settings.AppSettings
@@ -58,6 +63,52 @@ private val DOWNLOAD_ROW_HEIGHT = 4.dp
 
 /** How much of the card's height the release notes are allowed to fill before scrolling. */
 private val NOTES_MAX_HEIGHT = 220.dp
+
+/** The banner art's own shape — it's drawn 2048×768 — so the header never guesses its height. */
+private val BANNER_ASPECT = 2048f / 768f
+
+/**
+ * Which read the running→released bump carries: staying on x.y and stepping
+ * only the patch is a hotfix — v1.9.0 to v1.9.1 — while stepping any other dot
+ * is an Update — v1.8.0 to v1.9.0. The release workflow does the same
+ * arithmetic for the release page's own title, so the card and the page agree.
+ *
+ * The running build may carry a prerelease tail (`1.9.1-beta2` on dev builds);
+ * everything past its first hyphen is outside the arithmetic and is dropped.
+ */
+private fun isHotfix(current: String, target: String): Boolean {
+    fun parts(version: String): List<Int> =
+        version.substringBefore('-').removePrefix("v").split('.')
+            .mapNotNull { it.trim().toIntOrNull() }
+    val before = parts(current)
+    val after = parts(target)
+    return before.size >= 2 && after.size >= 2 &&
+        before[0] == after[0] && before[1] == after[1]
+}
+
+/**
+ * What the card's changelog section shows of the release body. The card draws
+ * the banner, the kind and the from→to line itself, so a structured body — the
+ * kind the release workflow now writes — is cut at its `### Changelog` heading
+ * and everything under it, the bullet list, is taken whole. Bodies from before
+ * the structured format carry no heading to cut at; their headings and the
+ * lines the card now draws itself are filtered out instead, leaving the
+ * readable text underneath.
+ */
+private fun changelogOf(notes: String?): String? {
+    val body = notes ?: return null
+    val headingAt = body.indexOf("### Changelog")
+    if (headingAt >= 0) {
+        return body.substring(headingAt + "### Changelog".length).trim()
+            .takeIf { it.isNotBlank() }
+    }
+    val readable = body.lines().filter { line ->
+        val trimmed = line.trim()
+        !(trimmed.startsWith("<") || trimmed.startsWith("#") ||
+            trimmed.startsWith("**Updated from") || trimmed.startsWith("Updated from"))
+    }
+    return readable.joinToString("\n").trim().takeIf { it.isNotBlank() }
+}
 
 /**
  * Once-per-launch nudge that a newer build is on GitHub Releases — the top
@@ -94,6 +145,16 @@ fun UpdateAvailableDialog(
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val state by AppUpdateChecker.download.collectAsStateWithLifecycle()
     val shape = RoundedCornerShape(ALERT_CORNER)
+    // The bump decides the read, the same arithmetic the release workflow does
+    // for the release page's own title: keeping x.y and stepping the patch is
+    // a hotfix — v1.9.0 to v1.9.1 — and stepping any other dot is an Update.
+    val kind = stringResource(
+        if (isHotfix(BuildConfig.VERSION_NAME, version)) {
+            R.string.update_kind_hotfix
+        } else {
+            R.string.update_kind_update
+        },
+    )
 
     Box(
         modifier = modifier
@@ -132,6 +193,19 @@ fun UpdateAvailableDialog(
                     onClick = {},
                 ),
         ) {
+            // The banner opens the card, drawn at its own shape: it fills the
+            // width and the height follows from the art's ratio. Inset by
+            // nothing — a full-bleed header is what makes it read as art
+            // opening the card, and the card's clip answers for its top
+            // corners.
+            Image(
+                painter = painterResource(R.drawable.beatflow_banner),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(BANNER_ASPECT),
+                contentScale = ContentScale.FillBounds,
+            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -139,7 +213,7 @@ fun UpdateAvailableDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = stringResource(R.string.software_update),
+                    text = kind,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.W600,
@@ -147,17 +221,17 @@ fun UpdateAvailableDialog(
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
                 )
+                // Whence and whither — the body's own "**Updated from …**"
+                // line, drawn by the card: where this build is coming from and
+                // the release it's being offered. The running version's
+                // prerelease tail, which dev builds carry, is left out of the
+                // wording — the release itself carries no tail.
                 Text(
-                    text = when (state) {
-                        is AppUpdateChecker.DownloadState.Downloading ->
-                            stringResource(R.string.update_downloading_body, version)
-                        is AppUpdateChecker.DownloadState.Ready ->
-                            stringResource(R.string.update_ready_body, version)
-                        is AppUpdateChecker.DownloadState.Failed ->
-                            stringResource(R.string.update_failed_body, version)
-                        else ->
-                            stringResource(R.string.update_available_body, version)
-                    },
+                    text = stringResource(
+                        R.string.update_from_to,
+                        BuildConfig.VERSION_NAME.substringBefore('-'),
+                        version,
+                    ),
                     modifier = Modifier.padding(top = 4.dp),
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 13.sp,
@@ -203,12 +277,15 @@ fun UpdateAvailableDialog(
 
                 // The release's own notes, rendered as Markdown rather than
                 // dumped as raw text — GitHub release bodies lean on headings,
-                // bullet lists and bold for the changelog, and those are the
-                // whole point of reading this before installing.
-                if (!notes.isNullOrBlank()) {
+                // bullet lists and bold, and those are the whole point of
+                // reading this before installing. What the card draws itself
+                // is already above; what [changelogOf] hands back is purely
+                // the words that changed.
+                val changelog = changelogOf(notes)
+                if (changelog != null) {
                     AlertRule(modifier = Modifier.padding(top = 12.dp))
                     Text(
-                        text = stringResource(R.string.whats_new),
+                        text = stringResource(R.string.changelog_title),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp),
@@ -232,7 +309,7 @@ fun UpdateAvailableDialog(
                         // default regardless of theme.
                         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
                             RichText(style = RichTextStyle.Default) {
-                                Markdown(notes)
+                                Markdown(changelog)
                             }
                         }
                     }

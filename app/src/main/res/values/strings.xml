@@ -169,6 +169,9 @@
     <string name="update_downloading_body">Downloading BeatFlow %1$s…</string>
     <string name="update_ready_body">BeatFlow %1$s is ready to install.</string>
     <string name="update_failed_body">Couldn’t download BeatFlow %1$s.</string>
+    <string name="update_kind_update">Update</string>
+    <string name="update_kind_hotfix">Hotfix Update</string>
+    <string name="update_from_to">Updated from v%1$s to v%2$s</string>
     <string name="download_now">Download Now</string>
     <string name="install_now">Install Now</string>
     <string name="later">Later</string>
@@ -176,6 +179,7 @@
     <string name="try_again">Try Again</string>
     <string name="open_releases_page">Open Releases Page</string>
     <string name="whats_new">What’s new</string>
+    <string name="changelog_title">Changelog</string>
     <string name="log_copied">Log copied · %1$d lines</string>
     <string name="sign_in_youtube_music">Sign in to YouTube Music</string>
     <string name="choose_a_channel">Choose a channel</string>
