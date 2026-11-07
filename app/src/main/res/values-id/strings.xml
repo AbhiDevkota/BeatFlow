@@ -1270,8 +1270,6 @@
 
 
     <string name="source_needs_lossless_output">Perlu output lossless · gunakan perangkat yang mendukung lossless</string>
-    <string name="source_needs_update">Addon ini sudah usang. Addon masih berfungsi, tetapi minta pengembangnya memperbaruinya dengan mengikuti dokumentasi addon BitChord terbaru.</string>
-    <string name="source_outdated">Addon usang</string>
     <string name="source_needs_lossless_bt_codec">Perlu output lossless · Bluetooth memakai %1$s; gunakan perangkat yang mendukung lossless</string>
     <string name="source_needs_lossless_bt_unknown">Perlu output lossless · codec Bluetooth yang dipakai tidak bisa diketahui</string>
     <string name="source_downloads_on">Unduhan diizinkan</string>
@@ -1453,4 +1451,26 @@
     <string name="bit_perfect_status_inexact">%1$s · tidak persis: sumber ini bukan PCM lossless</string>
     <string name="bit_perfect_status_waiting">Menunggu trek lossless pada output yang didukung</string>
     <string name="bit_perfect_status_unavailable">Tidak tersedia untuk trek ini (%1$s)</string>
+    <string name="update_kind_update">Pembaruan</string>
+    <string name="update_kind_hotfix">Pembaruan perbaikan</string>
+    <string name="update_from_to">Diperbarui dari v%1$s ke v%2$s</string>
+    <string name="changelog_title">Log perubahan</string>
+    <string name="automix_overview">Ringkasan Automix</string>
+    <string name="recognition_cancel">Batal</string>
+    <string name="recognition_tile_hint">Dengo atau nyanyi</string>
+    <string name="quick_tile_listening">Mendengarkan musik</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">Pengenalan lagu</string>
+    <string name="recognition_notification_channel_description">Notifikasi untuk lagu yang dikenali dari widget dan Pengaturan Cepat.</string>
+    <string name="recognition_notification_art_description">Sampul lagu yang dikenali</string>
+    <string name="recognition_notification_label">LAGU DIKENALI</string>
+    <string name="recognition_notification_play_now">Putar sekarang</string>
+    <string name="recognition_notification_add_to_playlist">Tambah ke playlist</string>
+    <string name="auto_play_recognized_song">Putar otomatis lagu yang dikenali</string>
+    <string name="auto_play_recognized_song_subtitle">Putar otomatis lagu setelah dikenali</string>
+    <string name="bluetooth_autoplay">Lanjutkan saat Bluetooth terhubung</string>
+    <string name="bluetooth_autoplay_subtitle">Lanjutkan otomatis pemutaran saat headphone atau speaker Bluetooth terhubung</string>
+    <string name="diwali_title">BitChord mengucapkan Selamat Diwali</string>
+    <string name="diwali_subtitle">Semoga festival cahaya ini memenuhi rumahmu dengan kebahagiaan dan harimu dengan musik.</string>
+    <string name="diwali_cta">Mari rayakan!</string>
 </resources>

@@ -1293,8 +1293,6 @@
 
 
     <string name="source_needs_lossless_output">Braucht eine verlustfreie Ausgabe · nutze ein Gerät, das Lossless unterstützt</string>
-    <string name="source_needs_update">Dieses Add-on ist veraltet. Es funktioniert weiterhin, aber bitte den Entwickler, es nach der aktuellen BitChord-Add-on-Dokumentation zu aktualisieren.</string>
-    <string name="source_outdated">Veraltetes Add-on</string>
     <string name="source_needs_lossless_bt_codec">Braucht eine verlustfreie Ausgabe · Bluetooth nutzt %1$s; nutze ein Gerät, das Lossless unterstützt</string>
     <string name="source_needs_lossless_bt_unknown">Braucht eine verlustfreie Ausgabe · der Bluetooth-Codec ist nicht erkennbar</string>
     <string name="source_downloads_on">Downloads erlaubt</string>
@@ -1476,4 +1474,26 @@
     <string name="bit_perfect_status_inexact">%1$s · nicht exakt: Diese Quelle ist kein verlustfreies PCM</string>
     <string name="bit_perfect_status_waiting">Warte auf einen verlustfreien Titel an einem unterstützten Ausgang</string>
     <string name="bit_perfect_status_unavailable">Für diesen Titel nicht verfügbar (%1$s)</string>
+    <string name="update_kind_update">Aktualisierung</string>
+    <string name="update_kind_hotfix">Hotfix-Aktualisierung</string>
+    <string name="update_from_to">Aktualisiert von v%1$s auf v%2$s</string>
+    <string name="changelog_title">Änderungsprotokoll</string>
+    <string name="automix_overview">Automix-Übersicht</string>
+    <string name="recognition_cancel">Abbrechen</string>
+    <string name="recognition_tile_hint">Summen oder singen</string>
+    <string name="quick_tile_listening">Musik wird erkannt</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">Songerkennung</string>
+    <string name="recognition_notification_channel_description">Benachrichtigungen für erkannte Songs über Widget und Schnelleinstellungen.</string>
+    <string name="recognition_notification_art_description">Cover des erkannten Songs</string>
+    <string name="recognition_notification_label">SONG ERKANNT</string>
+    <string name="recognition_notification_play_now">Jetzt abspielen</string>
+    <string name="recognition_notification_add_to_playlist">Zur Playlist hinzufügen</string>
+    <string name="auto_play_recognized_song">Erkannten Song automatisch abspielen</string>
+    <string name="auto_play_recognized_song_subtitle">Einen Song nach der Erkennung automatisch abspielen</string>
+    <string name="bluetooth_autoplay">Bei Bluetooth-Verbindung fortsetzen</string>
+    <string name="bluetooth_autoplay_subtitle">Wiedergabe automatisch fortsetzen, wenn Bluetooth-Kopfhörer oder -Lautsprecher verbunden werden</string>
+    <string name="diwali_title">BitChord wünscht dir ein frohes Diwali</string>
+    <string name="diwali_subtitle">Möge dieses Lichterfest dein Zuhause mit Freude und deine Tage mit Musik füllen.</string>
+    <string name="diwali_cta">Lasst uns feiern!</string>
 </resources>

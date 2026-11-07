@@ -1271,8 +1271,6 @@
 
 
     <string name="source_needs_lossless_output">ロスレス出力が必要 · ロスレス対応のデバイスを使用してください</string>
-    <string name="source_needs_update">このアドオンは古いバージョンです。引き続き使用できますが、最新のBitChordアドオンドキュメントに沿って更新するよう開発者に依頼してください。</string>
-    <string name="source_outdated">古いアドオン</string>
     <string name="source_needs_lossless_bt_codec">ロスレス出力が必要 · Bluetoothは%1$sです。ロスレス対応のデバイスを使用してください</string>
     <string name="source_needs_lossless_bt_unknown">ロスレス出力が必要 · 使用中のBluetoothコーデックを判別できません</string>
     <string name="source_downloads_on">ダウンロード可</string>
@@ -1454,4 +1452,26 @@
     <string name="bit_perfect_status_inexact">%1$s · 正確ではありません： このソースはロスレス PCM ではありません</string>
     <string name="bit_perfect_status_waiting">対応する出力でロスレスのトラックを待っています</string>
     <string name="bit_perfect_status_unavailable">このトラックでは利用できません（%1$s）</string>
+    <string name="update_kind_update">アップデート</string>
+    <string name="update_kind_hotfix">ホットフィックス アップデート</string>
+    <string name="update_from_to">v%1$s から v%2$s に更新</string>
+    <string name="changelog_title">変更履歴</string>
+    <string name="automix_overview">Automix の概要</string>
+    <string name="recognition_cancel">キャンセル</string>
+    <string name="recognition_tile_hint">ハミングや歌</string>
+    <string name="quick_tile_listening">音楽を聴いています</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">楽曲認識</string>
+    <string name="recognition_notification_channel_description">ウィジェットとクイック設定から認識した楽曲の通知。</string>
+    <string name="recognition_notification_art_description">認識した楽曲のカバー</string>
+    <string name="recognition_notification_label">楽曲を認識しました</string>
+    <string name="recognition_notification_play_now">今すぐ再生</string>
+    <string name="recognition_notification_add_to_playlist">プレイリストに追加</string>
+    <string name="auto_play_recognized_song">認識した楽曲を自動再生</string>
+    <string name="auto_play_recognized_song_subtitle">認識後に楽曲を自動再生します</string>
+    <string name="bluetooth_autoplay">Bluetooth 接続時に再開</string>
+    <string name="bluetooth_autoplay_subtitle">Bluetooth ヘッドフォンやスピーカーの接続時に自動で再生を再開</string>
+    <string name="diwali_title">BitChord は Diwali をお祝いします</string>
+    <string name="diwali_subtitle">この光の祭りが、あなたの家を喜びで、日々を音楽で満たしますように。</string>
+    <string name="diwali_cta">一緒に祝いましょう</string>
 </resources>

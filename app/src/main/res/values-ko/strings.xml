@@ -1155,8 +1155,6 @@
     <string name="card_songs_format">음악 %1$s곡</string>
 
     <string name="source_needs_lossless_output">무손실 출력 필요 · 무손실 지원 기기를 사용하세요</string>
-    <string name="source_needs_update">이 애드온은 오래된 버전입니다. 계속 사용할 수 있지만, 최신 BitChord 애드온 문서에 따라 업데이트하도록 개발자에게 요청하세요.</string>
-    <string name="source_outdated">오래된 애드온</string>
     <string name="source_needs_lossless_bt_codec">무손실 출력 필요 · %1$s 코덱 블루투스가 켜졌습니다. 무손실 지원 기기를 사용하세요</string>
     <string name="source_needs_lossless_bt_unknown">무손실 출력 필요 · 어떤 블루투스 코덱을 사용 중인지 알 수 없습니다</string>
     <string name="source_downloads_on">다운로드 허용</string>
@@ -1314,4 +1312,26 @@
     <string name="bit_perfect_status_inexact">%1$s · 정확하지 않음: 이 소스는 무손실 PCM이 아닙니다</string>
     <string name="bit_perfect_status_waiting">지원되는 출력에서 무손실 트랙을 기다리는 중</string>
     <string name="bit_perfect_status_unavailable">이 트랙에서 사용할 수 없음(%1$s)</string>
+    <string name="update_kind_update">업데이트</string>
+    <string name="update_kind_hotfix">핫픽스 업데이트</string>
+    <string name="update_from_to">v%1$s에서 v%2$s(으)로 업데이트됨</string>
+    <string name="changelog_title">변경 로그</string>
+    <string name="automix_overview">Automix 개요</string>
+    <string name="recognition_cancel">취소</string>
+    <string name="recognition_tile_hint">흥얼거리거나 노래하기</string>
+    <string name="quick_tile_listening">음악을 듣고 있습니다</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">노래 인식</string>
+    <string name="recognition_notification_channel_description">위젯과 빠른 설정에서 인식한 노래에 대한 알림.</string>
+    <string name="recognition_notification_art_description">인식된 노래 커버</string>
+    <string name="recognition_notification_label">노래 인식됨</string>
+    <string name="recognition_notification_play_now">지금 재생</string>
+    <string name="recognition_notification_add_to_playlist">재생목록에 추가</string>
+    <string name="auto_play_recognized_song">인식된 노래 자동 재생</string>
+    <string name="auto_play_recognized_song_subtitle">인식 후 노래를 자동으로 재생</string>
+    <string name="bluetooth_autoplay">Bluetooth 연결 시 재개</string>
+    <string name="bluetooth_autoplay_subtitle">Bluetooth 헤드폰이나 스피커가 연결되면 자동으로 재생 재개</string>
+    <string name="diwali_title">BitChord가 Diwali를 축하합니다</string>
+    <string name="diwali_subtitle">이 빛의 축제가 당신의 집을 기쁨으로, 당신의 날들을 음악으로 가득 채우길 바랍니다.</string>
+    <string name="diwali_cta">함께 축하해요!</string>
 </resources>

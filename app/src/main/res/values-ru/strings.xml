@@ -1325,8 +1325,6 @@
 
 
     <string name="source_needs_lossless_output">Нужен выход без потерь · используйте устройство с поддержкой звука без потерь</string>
-    <string name="source_needs_update">Это дополнение устарело. Оно продолжает работать, но попросите разработчика обновить его по актуальной документации для дополнений BitChord.</string>
-    <string name="source_outdated">Устаревшее дополнение</string>
     <string name="source_needs_lossless_bt_codec">Нужен выход без потерь · Bluetooth работает на %1$s; используйте устройство с поддержкой звука без потерь</string>
     <string name="source_needs_lossless_bt_unknown">Нужен выход без потерь · не удаётся определить используемый Bluetooth-кодек</string>
     <string name="source_downloads_on">Загрузки разрешены</string>
@@ -1508,4 +1506,26 @@
     <string name="bit_perfect_status_inexact">%1$s · неточно: этот источник не является PCM без потерь</string>
     <string name="bit_perfect_status_waiting">Ожидание трека без потерь на поддерживаемом выходе</string>
     <string name="bit_perfect_status_unavailable">Недоступно для этого трека (%1$s)</string>
+    <string name="update_kind_update">Обновление</string>
+    <string name="update_kind_hotfix">Экстренное обновление</string>
+    <string name="update_from_to">Обновлено с v%1$s до v%2$s</string>
+    <string name="changelog_title">Список изменений</string>
+    <string name="automix_overview">Обзор Automix</string>
+    <string name="recognition_cancel">Отмена</string>
+    <string name="recognition_tile_hint">Напевайте или пойте</string>
+    <string name="quick_tile_listening">Поиск музыки</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">Распознавание песен</string>
+    <string name="recognition_notification_channel_description">Уведомления о песнях, распознанных через виджет и быстрые настройки.</string>
+    <string name="recognition_notification_art_description">Обложка распознанной песни</string>
+    <string name="recognition_notification_label">ПЕСНЯ РАСПОЗНАНА</string>
+    <string name="recognition_notification_play_now">Воспроизвести сейчас</string>
+    <string name="recognition_notification_add_to_playlist">Добавить в плейлист</string>
+    <string name="auto_play_recognized_song">Автовоспроизведение распознанной песни</string>
+    <string name="auto_play_recognized_song_subtitle">Автоматически воспроизводить песню после распознавания</string>
+    <string name="bluetooth_autoplay">Возобновить при подключении Bluetooth</string>
+    <string name="bluetooth_autoplay_subtitle">Автоматически возобновлять воспроизведение при подключении Bluetooth-наушников или динамиков</string>
+    <string name="diwali_title">BitChord поздравляет вас с Дивали</string>
+    <string name="diwali_subtitle">Пусть этот праздник огней наполнит ваш дом радостью, а дни — музыкой.</string>
+    <string name="diwali_cta">Давайте отпразднуем!</string>
 </resources>

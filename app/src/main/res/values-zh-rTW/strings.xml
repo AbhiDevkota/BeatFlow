@@ -1270,8 +1270,6 @@
 
 
     <string name="source_needs_lossless_output">需要無損輸出 · 請使用支援無損的裝置</string>
-    <string name="source_needs_update">此附加元件已過時。目前仍可使用，但請要求開發者依照最新的 BitChord 附加元件文件進行更新。</string>
-    <string name="source_outdated">附加元件已過時</string>
     <string name="source_needs_lossless_bt_codec">需要無損輸出 · 藍芽當前為 %1$s；請使用支援無損的裝置</string>
     <string name="source_needs_lossless_bt_unknown">需要無損輸出 · 無法識別正在使用的藍芽編解碼器</string>
     <string name="source_downloads_on">允許下載</string>
@@ -1453,4 +1451,26 @@
     <string name="bit_perfect_status_inexact">%1$s · 不精確：此音源不是無損 PCM</string>
     <string name="bit_perfect_status_waiting">正在等待受支援輸出上的無損曲目</string>
     <string name="bit_perfect_status_unavailable">此曲目無法使用（%1$s）</string>
+    <string name="update_kind_update">更新</string>
+    <string name="update_kind_hotfix">修復更新</string>
+    <string name="update_from_to">已從 v%1$s 更新到 v%2$s</string>
+    <string name="changelog_title">更新日誌</string>
+    <string name="automix_overview">Automix 概覽</string>
+    <string name="recognition_cancel">取消</string>
+    <string name="recognition_tile_hint">哼唱或唱歌</string>
+    <string name="quick_tile_listening">正在聆聽音樂</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">歌曲辨識</string>
+    <string name="recognition_notification_channel_description">來自小工具與快速設定所辨識歌曲的通知。</string>
+    <string name="recognition_notification_art_description">已辨識歌曲封面</string>
+    <string name="recognition_notification_label">已辨識歌曲</string>
+    <string name="recognition_notification_play_now">立即播放</string>
+    <string name="recognition_notification_add_to_playlist">新增至播放列表</string>
+    <string name="auto_play_recognized_song">自動播放辨識的歌曲</string>
+    <string name="auto_play_recognized_song_subtitle">辨識到歌曲後自動播放</string>
+    <string name="bluetooth_autoplay">藍牙連線時恢復播放</string>
+    <string name="bluetooth_autoplay_subtitle">藍牙耳機或喇叭連線時自動恢復播放</string>
+    <string name="diwali_title">BitChord 祝您迪瓦里快樂</string>
+    <string name="diwali_subtitle">願這光明節為您家中帶來歡樂，讓您的日子充滿音樂。</string>
+    <string name="diwali_cta">一起慶祝吧</string>
 </resources>

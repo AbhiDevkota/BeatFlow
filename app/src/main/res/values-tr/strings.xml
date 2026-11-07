@@ -1250,8 +1250,6 @@
 
 
     <string name="source_needs_lossless_output">Kayıpsız çıkış gerekir · kayıpsız sesi destekleyen bir cihaz kullanın</string>
-    <string name="source_needs_update">Bu eklenti güncel değil. Hâlâ çalışıyor, ancak geliştiricisinden en son BitChord eklenti belgelerine göre güncellemesini isteyin.</string>
-    <string name="source_outdated">Güncel olmayan eklenti</string>
     <string name="source_needs_lossless_bt_codec">Kayıpsız çıkış gerekir · Bluetooth %1$s kullanıyor; kayıpsız sesi destekleyen bir cihaz kullanın</string>
     <string name="source_needs_lossless_bt_unknown">Kayıpsız çıkış gerekir · hangi Bluetooth kodeğinin kullanıldığı anlaşılamıyor</string>
     <string name="source_downloads_on">İndirmeye izin veriliyor</string>
@@ -1433,4 +1431,26 @@
     <string name="bit_perfect_status_inexact">%1$s · tam değil: bu kaynak kayıpsız PCM değil</string>
     <string name="bit_perfect_status_waiting">Desteklenen bir çıkışta kayıpsız parça bekleniyor</string>
     <string name="bit_perfect_status_unavailable">Bu parça için kullanılamıyor (%1$s)</string>
+    <string name="update_kind_update">Güncelleme</string>
+    <string name="update_kind_hotfix">Düzeltme güncellemesi</string>
+    <string name="update_from_to">v%1$s sürümünden v%2$s sürümüne güncellendi</string>
+    <string name="changelog_title">Değişiklik günlüğü</string>
+    <string name="automix_overview">Automix özeti</string>
+    <string name="recognition_cancel">İptal</string>
+    <string name="recognition_tile_hint">Mırıldan veya söyle</string>
+    <string name="quick_tile_listening">Müzik dinleniyor</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">Şarkı tanıma</string>
+    <string name="recognition_notification_channel_description">Widget ve Hızlı Ayarlar üzerinden tanınan şarkılar için bildirimler.</string>
+    <string name="recognition_notification_art_description">Tanınan şarkının kapağı</string>
+    <string name="recognition_notification_label">ŞARKI TANINDI</string>
+    <string name="recognition_notification_play_now">Şimdi oynat</string>
+    <string name="recognition_notification_add_to_playlist">Çalma listesine ekle</string>
+    <string name="auto_play_recognized_song">Tanınan şarkıyı otomatik oynat</string>
+    <string name="auto_play_recognized_song_subtitle">Tanındıktan sonra şarkıyı otomatik oynat</string>
+    <string name="bluetooth_autoplay">Bluetooth bağlandığında devam et</string>
+    <string name="bluetooth_autoplay_subtitle">Bluetooth kulaklık veya hoparlör bağlandığında oynatmayı otomatik olarak devam ettir</string>
+    <string name="diwali_title">BitChord size Mutlu Diwali diler</string>
+    <string name="diwali_subtitle">Bu ışık festivali evinizi neşeyle, günlerinizi müzikle doldursun.</string>
+    <string name="diwali_cta">Kutlayalım!</string>
 </resources>

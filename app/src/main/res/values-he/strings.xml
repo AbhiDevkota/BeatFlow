@@ -1298,8 +1298,6 @@
 
 
     <string name="source_needs_lossless_output">דורש פלט ללא אובדן · השתמשו במכשיר שתומך באודיו ללא אובדן</string>
-    <string name="source_needs_update">התוסף הזה אינו מעודכן. הוא עדיין עובד, אבל בקשו מהמפתח לעדכן אותו לפי מסמכי התוספים העדכניים של BitChord.</string>
-    <string name="source_outdated">תוסף לא מעודכן</string>
     <string name="source_needs_lossless_bt_codec">דורש פלט ללא אובדן · ה‑Bluetooth משתמש ב‑%1$s; השתמשו במכשיר שתומך באודיו ללא אובדן</string>
     <string name="source_needs_lossless_bt_unknown">דורש פלט ללא אובדן · לא ניתן לדעת באיזה קודק Bluetooth נעשה שימוש</string>
     <string name="source_downloads_on">הורדות מותרות</string>
@@ -1481,4 +1479,26 @@
     <string name="bit_perfect_status_inexact">%1$s · לא מדויק: המקור הזה אינו PCM ללא אובדן</string>
     <string name="bit_perfect_status_waiting">ממתין לרצועת Lossless ביציאה נתמכת</string>
     <string name="bit_perfect_status_unavailable">לא זמין עבור רצועה זו (%1$s)</string>
+    <string name="update_kind_update">עדכון</string>
+    <string name="update_kind_hotfix">עדכון תיקון</string>
+    <string name="update_from_to">עודכן מ-v%1$s ל-v%2$s</string>
+    <string name="changelog_title">יומן שינויים</string>
+    <string name="automix_overview">סקירת Automix</string>
+    <string name="recognition_cancel">ביטול</string>
+    <string name="recognition_tile_hint">זמזם או שיר</string>
+    <string name="quick_tile_listening">מקשיב למוזיקה</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">זיהוי שיר</string>
+    <string name="recognition_notification_channel_description">התראות על שירים שזוהו מהווידגט וההגדרות המהירות.</string>
+    <string name="recognition_notification_art_description">עטיפת השיר שזוהה</string>
+    <string name="recognition_notification_label">שיר זוהה</string>
+    <string name="recognition_notification_play_now">נגן כעת</string>
+    <string name="recognition_notification_add_to_playlist">הוסף לרשימת השמעה</string>
+    <string name="auto_play_recognized_song">נגן אוטומטית שיר שזוהה</string>
+    <string name="auto_play_recognized_song_subtitle">נגן אוטומטית שיר לאחר זיהויו</string>
+    <string name="bluetooth_autoplay">המשך בחיבור Bluetooth</string>
+    <string name="bluetooth_autoplay_subtitle">המשך אוטומטי של ההשמעה בחיבור אוזניות או רמקולים Bluetooth</string>
+    <string name="diwali_title">BitChord מאחלת לך דיוואלי שמח</string>
+    <string name="diwali_subtitle">יהי רצון שחג האורות ימלא את ביתך בשמחה ואת ימיך במוזיקה.</string>
+    <string name="diwali_cta">הבה נחגוג!</string>
 </resources>

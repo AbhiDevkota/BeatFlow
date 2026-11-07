@@ -1293,8 +1293,6 @@
 
 
     <string name="source_needs_lossless_output">लॉसलेस आउटपुट चाहिए · लॉसलेस सपोर्ट करने वाला डिवाइस इस्तेमाल करें</string>
-    <string name="source_needs_update">यह ऐडऑन पुराना है। यह अभी भी काम करता है, लेकिन इसके डेवलपर से कहें कि वे BitChord के नए ऐडऑन डॉक्स के अनुसार इसे अपडेट करें।</string>
-    <string name="source_outdated">पुराना ऐडऑन</string>
     <string name="source_needs_lossless_bt_codec">लॉसलेस आउटपुट चाहिए · Bluetooth %1$s पर है; लॉसलेस सपोर्ट करने वाला डिवाइस इस्तेमाल करें</string>
     <string name="source_needs_lossless_bt_unknown">लॉसलेस आउटपुट चाहिए · पता नहीं चल रहा कि कौन-सा Bluetooth कोडेक चल रहा है</string>
     <string name="source_downloads_on">डाउनलोड की अनुमति है</string>
@@ -1479,4 +1477,23 @@
     <string name="diwali_title">BitChord की ओर से दीपावली की शुभकामनाएँ</string>
     <string name="diwali_subtitle">रोशनी का यह त्योहार आपके घर को खुशियों से और आपके दिनों को संगीत से भर दे।</string>
     <string name="diwali_cta">चलो जश्न मनाएँ</string>
+    <string name="update_kind_update">अपडेट</string>
+    <string name="update_kind_hotfix">हॉटफ़िक्स अपडेट</string>
+    <string name="update_from_to">v%1$s से v%2$s तक अपडेट किया गया</string>
+    <string name="changelog_title">परिवर्तन सूची</string>
+    <string name="automix_overview">ऑटोमिक्स अवलोकन</string>
+    <string name="recognition_cancel">रद्द करें</string>
+    <string name="recognition_tile_hint">गुनगुनाएँ या गाएँ</string>
+    <string name="quick_tile_listening">संगीत सुन रहा है</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">गाना पहचान</string>
+    <string name="recognition_notification_channel_description">विजेट और त्वरित सेटिंग्स से पहचाने गए गानों की सूचनाएँ।</string>
+    <string name="recognition_notification_art_description">पहचाना गया गाना कवर</string>
+    <string name="recognition_notification_label">गाना पहचाना गया</string>
+    <string name="recognition_notification_play_now">अभी चलाएँ</string>
+    <string name="recognition_notification_add_to_playlist">प्लेलिस्ट में जोड़ें</string>
+    <string name="auto_play_recognized_song">पहचाना गया गाना अपने आप चलाएँ</string>
+    <string name="auto_play_recognized_song_subtitle">पहचान मिलने के बाद गाना अपने आप चलाएँ</string>
+    <string name="bluetooth_autoplay">ब्लूटूथ कनेक्ट होने पर फिर से चलाएँ</string>
+    <string name="bluetooth_autoplay_subtitle">ब्लूटूथ हेडफ़ोन या स्पीकर कनेक्ट होने पर प्लेबैक अपने आप फिर से शुरू करें</string>
 </resources>

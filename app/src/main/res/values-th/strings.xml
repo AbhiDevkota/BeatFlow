@@ -1276,8 +1276,6 @@
 
 
     <string name="source_needs_lossless_output">ต้องใช้เอาต์พุตแบบ lossless · ใช้อุปกรณ์ที่รองรับ lossless</string>
-    <string name="source_needs_update">แอดออนนี้ล้าสมัย ยังใช้งานได้อยู่ แต่โปรดขอให้นักพัฒนาอัปเดตตามเอกสารแอดออน BitChord ล่าสุด</string>
-    <string name="source_outdated">แอดออนล้าสมัย</string>
     <string name="source_needs_lossless_bt_codec">ต้องใช้เอาต์พุตแบบ lossless · Bluetooth ใช้ %1$s อยู่ ใช้อุปกรณ์ที่รองรับ lossless</string>
     <string name="source_needs_lossless_bt_unknown">ต้องใช้เอาต์พุตแบบ lossless · ไม่ทราบว่ากำลังใช้ตัวแปลงสัญญาณ Bluetooth ใด</string>
     <string name="source_downloads_on">อนุญาตให้ดาวน์โหลด</string>
@@ -1459,4 +1457,26 @@
     <string name="bit_perfect_status_inexact">%1$s · ไม่ตรงทุกบิต: แหล่งนี้ไม่ใช่ PCM แบบไม่สูญเสียคุณภาพ</string>
     <string name="bit_perfect_status_waiting">กำลังรอแทร็กแบบไม่สูญเสียคุณภาพบนเอาต์พุตที่รองรับ</string>
     <string name="bit_perfect_status_unavailable">ไม่พร้อมใช้งานสำหรับแทร็กนี้ (%1$s)</string>
+    <string name="update_kind_update">อัปเดต</string>
+    <string name="update_kind_hotfix">อัปเดตแก้ด่วน</string>
+    <string name="update_from_to">อัปเดตจาก v%1$s เป็น v%2$s</string>
+    <string name="changelog_title">บันทึกการเปลี่ยนแปลง</string>
+    <string name="automix_overview">ภาพรวม Automix</string>
+    <string name="recognition_cancel">ยกเลิก</string>
+    <string name="recognition_tile_hint">ฮัมหรือร้อง</string>
+    <string name="quick_tile_listening">กำลังฟังเพลง</string>
+    <string name="quick_tile_recognition_label">BeatFlow Recognize</string>
+    <string name="recognition_notification_channel">การจดจำเพลง</string>
+    <string name="recognition_notification_channel_description">การแจ้งเตือนสำหรับเพลงที่จดจำจากวิดเจ็ตและการตั้งค่าด่วน</string>
+    <string name="recognition_notification_art_description">ปกเพลงที่จดจำ</string>
+    <string name="recognition_notification_label">จดจำเพลงแล้ว</string>
+    <string name="recognition_notification_play_now">เล่นตอนนี้</string>
+    <string name="recognition_notification_add_to_playlist">เพิ่มในเพลย์ลิสต์</string>
+    <string name="auto_play_recognized_song">เล่นเพลงที่จดจำอัตโนมัติ</string>
+    <string name="auto_play_recognized_song_subtitle">เล่นเพลงอัตโนมัติหลังจากจดจำได้</string>
+    <string name="bluetooth_autoplay">เล่นต่อเมื่อเชื่อมต่อ Bluetooth</string>
+    <string name="bluetooth_autoplay_subtitle">เล่นต่ออัตโนมัติเมื่อเชื่อมต่อหูฟังหรือลำโพง Bluetooth</string>
+    <string name="diwali_title">BitChord ขออวยพรให้คุณมีความสุขในเทศกาล Diwali</string>
+    <string name="diwali_subtitle">ขอให้เทศกาลแห่งแสงนี้เต็มบ้านของคุณด้วยความสุขและวันของคุณด้วยเสียงเพลง</string>
+    <string name="diwali_cta">ร่วมเฉลิมฉลอง!</string>
 </resources>
