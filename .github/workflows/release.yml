@@ -94,13 +94,85 @@ jobs:
           name: beatflow-prod-release-signed
           path: release-assets/*
 
+      - name: Compose release notes
+        run: |
+          REPO="${{ github.repository }}"
+          VN="${{ steps.version.outputs.name }}"
+          git fetch --tags origin
+          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          PREV=${PREV_TAG#v}
+
+          #
+          # The bump decides the read: a release that keeps its x.y and only
+          # steps the patch is a hotfix — v1.9.0 to v1.9.1 — and anything that
+          # steps across a dot is an Update — v1.8.0 to v1.9.0. No previous tag
+          # at all is simply the first Update.
+          #
+          if [ -z "$PREV" ]; then
+            KIND="Update"
+          else
+            OLD_MAJ=$(echo "$PREV" | cut -d. -f1)
+            OLD_MIN=$(echo "$PREV" | cut -d. -f2)
+            NEW_MAJ=$(echo "$VN" | cut -d. -f1)
+            NEW_MIN=$(echo "$VN" | cut -d. -f2)
+            if [ "$OLD_MAJ" = "$NEW_MAJ" ] && [ "$OLD_MIN" = "$NEW_MIN" ]; then
+              KIND="Hotfix Update"
+            else
+              KIND="Update"
+            fi
+          fi
+
+          # The banner rides on top of every release note in the card's own
+          # aspect: the repo carries it, and where this checkout happens not
+          # to (a branch from before the README rebrand), it is fetched
+          # straight from the rebranded branch. Riding as a release asset is
+          # what lets the note that ships this very release point at it.
+          if [ ! -f BeatFlow-Banner.png ]; then
+            curl -fsSL "https://raw.githubusercontent.com/${REPO}/update-readme-beatflow/BeatFlow-Banner.png" \
+              -o BeatFlow-Banner.png
+          fi
+          cp BeatFlow-Banner.png release-assets/BeatFlow-Banner.png
+
+          {
+            echo "<p align=\"center\">"
+            echo "  <img alt=\"BeatFlow banner\" src=\"https://github.com/${REPO}/releases/download/v${VN}/BeatFlow-Banner.png\" width=\"100%\" />"
+            echo "</p>"
+            echo
+            echo "## ${KIND}"
+            echo
+            if [ -n "$PREV" ]; then
+              echo "**Updated from \`v${PREV}\` to \`v${VN}\`**"
+            else
+              echo "**The first BeatFlow release: \`v${VN}\`**"
+            fi
+            echo
+            echo "### Changelog"
+            if [ -n "$PREV_TAG" ]; then
+              git log --pretty=format:"%s" "${PREV_TAG}..${{ github.sha }}" | \
+                grep -Ev "^(Merge (pull request|branch|remote))" | \
+                sed -E 's/^[a-zA-Z]+(\([a-zA-Z-]+\))?!?: *//' | \
+                sed 's/^/- /'
+            else
+              git log --pretty=format:"%s" "${{ github.sha }}" | head -n 40 | \
+                sed -E 's/^[a-zA-Z]+(\([a-zA-Z-]+\))?!?: *//' | \
+                sed 's/^/- /'
+            fi
+          } > release_body.md
+
+          # A tag-level push that changed nothing user-facing can leave the
+          # changelog section bare — never publish an empty section.
+          if [ "$(grep -c '^-' release_body.md)" -eq 0 ]; then
+            echo "- Bug fixes and improvements" >> release_body.md
+          fi
+          cat release_body.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.name }}
           name: BeatFlow v${{ steps.version.outputs.name }}
           files: release-assets/*
-          generate_release_notes: true
+          body_path: release_body.md
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
