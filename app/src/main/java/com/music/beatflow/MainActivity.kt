@@ -4197,12 +4197,14 @@ private fun BeatFlowApp(
                             // profile off its album pages too.
                             if (!isReleaseDetail) TopBarAccountButton(
                                 account = account,
-                                onClick = {
-                                    if (signedIn) {
-                                        viewModel.loadChannels()
-                                        showAccountSelector = true
-                                    } else navigator.push(AppRoute.Settings)
-                                },
+                                // The photo is the settings' front door, signed in
+                                // or out: the account lives on the settings' own
+                                // page, and the picker the tap used to open is two
+                                // ways of listing what the page already holds. The
+                                // quick motions stay beside it — a swipe across
+                                // the photo steps the channel, and the account
+                                // page still opens the full picker.
+                                onClick = { navigator.push(AppRoute.Settings) },
                                 onSwipeProfile = { forward -> viewModel.stepProfile(forward) },
                             )
                         }
