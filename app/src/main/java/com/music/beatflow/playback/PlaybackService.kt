@@ -552,6 +552,16 @@ class PlaybackService : MediaLibraryService() {
      */
     private var manuallyPaused = false
 
+    /**
+     * Whether this service instance has actually started audio at least once
+     * since the process came up. Bluetooth auto-play only ever *resumes*
+     * playback; on a cold start after the app was swiped away there is nothing
+     * to resume, so the feature must not kick in just because a device happens
+     * to connect later.
+     */
+    private var hasStartedThisSession = false
+
+
     private val outputDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) {
             // Plugging something in moves the music to it. Always — a choice
@@ -567,7 +577,7 @@ class PlaybackService : MediaLibraryService() {
             }
             if (hasBtAudioSink && com.music.beatflow.data.settings.AppSettings.bluetoothAutoplay.value) {
                 val p = player
-                if (p != null && p.mediaItemCount > 0 && !p.playWhenReady && !manuallyPaused) {
+                if (p != null && hasStartedThisSession && p.mediaItemCount > 0 && !p.playWhenReady && !manuallyPaused) {
                     scope.launch {
                         kotlinx.coroutines.delay(350L)
                         val active = player ?: return@launch
@@ -979,6 +989,7 @@ class PlaybackService : MediaLibraryService() {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (playWhenReady) {
                 manuallyPaused = false
+                hasStartedThisSession = true
             } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
                 manuallyPaused = true
             }
