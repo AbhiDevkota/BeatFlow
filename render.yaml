@@ -1,0 +1,47 @@
+# Render blueprint for BeatFlow — Listen Together (Go backend)
+#
+# Render reads a blueprint from the repository root, and the service's own
+# copy lives in backend/ beside the code. Both flows reach the same server:
+#
+# Blueprint: dashboard → New → Blueprint → pick this repo → Apply.
+# Manual:    dashboard → New → Web Service → connect this repo →
+#            Root Directory backend · Runtime Go ·
+#            Build `go build -o server .` · Start `./server` ·
+#            Health check path `/healthz` · 1 instance.
+#
+# One instance, always: a party lives in the memory of the process holding
+# its WebSockets, so a second instance is a second, disjoint set of parties.
+
+services:
+  - type: web
+    name: beatflow-listen-together
+    runtime: go
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: go build -o server .
+    startCommand: ./server
+    healthCheckPath: /healthz
+    numInstances: 1
+    envVars:
+      - key: JAM_MAX_MEMBERS
+        value: "5"
+      - key: JAM_STATE_HEARTBEAT_MS
+        value: "5000"
+      - key: JAM_MAX_UPCOMING_QUEUE
+        value: "25"
+      - key: JAM_MAX_PARTIES
+        value: "50"
+      - key: JAM_CREATE_RATE_PER_MINUTE
+        value: "2"
+      - key: JAM_CONNECTION_IDLE_MS
+        value: "900000"
+      # Render terminates TLS and supplies the real client IP in
+      # X-Forwarded-For, which the per-IP creation limiter reads.
+      - key: JAM_TRUST_PROXY
+        value: "true"
+      # Invite deep links carry this verbatim. It matches the service's own
+      # name below; if the service is renamed or a custom domain is added,
+      # this has to match.
+      - key: JAM_PUBLIC_ORIGIN
+        value: https://beatflow-listen-together.onrender.com
