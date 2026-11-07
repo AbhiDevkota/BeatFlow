@@ -38,11 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -422,6 +418,10 @@ private fun OutputRow(
 /**
  * The phone's media volume, on the player's own slider rather than Material's.
  *
+ * It draws the card's tweened bar itself — fed [system.level], the card's own
+ * reading — so an outside change lands here as the same glide it does there,
+ * instead of snapping to the new level outright.
+ *
  * Two things move it, and only one of them announces itself. The hardware keys
  * broadcast `VOLUME_CHANGED_ACTION`, which is easy. A *route* change does not:
  * Android keeps one media volume index per output and silently swaps which one
@@ -431,25 +431,22 @@ private fun OutputRow(
  *
  * So [routeKey] — the outputs and the current choice — re-reads it, and re-reads
  * it again a beat later, because the framework swaps the index a moment after
- * the device list changes rather than in the same breath.
+ * the device list changes rather than in the same breath. Each of those
+ * re-reads lands on [system.level], and the glide rides it — once.
  */
 @Composable
 private fun VolumeRow(routeKey: Any) {
     val system = PlayerPlatform.host.volume
-    val systemLevel by system.level.collectAsStateWithLifecycle()
-    var level by remember(system) { mutableFloatStateOf(systemLevel) }
-    var dragging by remember { mutableStateOf(false) }
-
-    // The hardware keys move the system level; follow it, but never over a
-    // finger: the listener's own drag is the one source of truth this must
-    // not fight.
-    LaunchedEffect(systemLevel) {
-        if (!dragging) level = systemLevel
-    }
+    // The player card's own volume bar — see [PlayerVolume] — rather than a
+    // hand-rolled level: a hardware key press or a route's own index arrives
+    // on [system.level] and is tweened into place, and the card's rule — a
+    // drag writes the level through to the system, and nothing tweens over a
+    // finger — holds untouched.
+    val volume = rememberPlayerVolume()
 
     LaunchedEffect(routeKey) {
         repeat(VOLUME_REREADS) {
-            if (!dragging) system.refresh()
+            if (!volume.dragging) system.refresh()
             delay(VOLUME_REREAD_GAP_MS)
         }
     }
@@ -463,20 +460,16 @@ private fun VolumeRow(routeKey: Any) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = if (level > 0f) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
+            imageVector = if (volume.level.value > 0f) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
             contentDescription = null,
             tint = Color.White.copy(alpha = 0.6f),
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(12.dp))
         ThinSlider(
-            value = level,
-            onValueChange = {
-                dragging = true
-                level = it
-                system.set(it)
-            },
-            onValueChangeFinished = { dragging = false },
+            value = volume.level.value,
+            onValueChange = { volume.drag(it) },
+            onValueChangeFinished = { volume.release() },
             idleHeight = 6.dp,
             activeHeight = 10.dp,
             modifier = Modifier.weight(1f),
