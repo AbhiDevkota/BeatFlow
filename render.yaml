@@ -44,4 +44,4 @@ services:
       # name below; if the service is renamed or a custom domain is added,
       # this has to match.
       - key: JAM_PUBLIC_ORIGIN
-        value: https://beatflow-listen-together.onrender.com
+        value: https://beatflow-jam-together.onrender.com
