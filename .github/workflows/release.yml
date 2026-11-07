@@ -15,6 +15,12 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          # The release note walks the commits between tags; the default
+          # shallow clone would leave that range an empty claim, so the
+          # changelog would only ever say "Bug fixes and improvements".
+          # Full history, just for this job.
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
