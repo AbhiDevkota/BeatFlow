@@ -58,6 +58,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.CastConnected
@@ -77,6 +78,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -219,6 +221,10 @@ internal fun PlayerScrubber(
     centerLabel: @Composable BoxScope.() -> Unit = {},
 ) {
     val shown = shown()
+    // The remaining side of the bar listens too: a tap swaps the countdown for
+    // the track's whole length, and another tap swaps it back. The countdown
+    // is the default, and what the label comes back to whenever it is fresh.
+    var showTotalDuration by remember { mutableStateOf(false) }
     // Held as a State and read only inside the bar's draw: the blend republishes
     // every fade tick, and collecting it by value here would recompose the
     // scrubber and its labels thirty times a second for a change only the
@@ -256,9 +262,13 @@ internal fun PlayerScrubber(
                     color = timeColor,
                 )
                 Text(
-                    text = "-" + formatTime(durationMs - (shown * durationMs).toLong()),
+                    text = if (showTotalDuration) formatTime(durationMs)
+                    else "-" + formatTime(durationMs - (shown * durationMs).toLong()),
                     style = MaterialTheme.typography.labelMedium,
                     color = timeColor,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = { showTotalDuration = !showTotalDuration }),
                 )
             }
             // Pinned to the box's own centre rather than squeezed into the gap
@@ -545,7 +555,12 @@ internal fun TransportRow(
 /** ThinSlider's fixed touch target at the volume bar's size: 10dp + 22dp. */
 internal val VOLUME_ROW_HEIGHT = 32.dp
 
-/** The volume bar between its two speaker glyphs. */
+/**
+ * The volume bar between its two speaker glyphs. The left one is a switch as
+ * well as a read — [onMuteToggle] is its tap, mute and unmute, the way every
+ * other player's speaker behaves — and the glyphs track the bar's own level,
+ * so silence is what shows which way it has fallen.
+ */
 @Composable
 internal fun VolumeRow(
     /**
@@ -555,6 +570,7 @@ internal fun VolumeRow(
     value: () -> Float,
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
+    onMuteToggle: () -> Unit,
 ) {
     val chrome = LocalPlayerChrome.current
     Row(
@@ -562,10 +578,14 @@ internal fun VolumeRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.AutoMirrored.Rounded.VolumeDown,
+            imageVector = if (value() > 0f) Icons.AutoMirrored.Rounded.VolumeDown else Icons.AutoMirrored.Rounded.VolumeOff,
             contentDescription = null,
             tint = if (chrome) VibrantChromeInk else chromeWhite(0.5f),
-            modifier = Modifier.size(20.dp).vibrantChrome(chrome),
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onMuteToggle)
+                .vibrantChrome(chrome),
         )
         Spacer(Modifier.width(10.dp))
         ThinSlider(

@@ -420,7 +420,9 @@ private fun OutputRow(
  *
  * It draws the card's tweened bar itself — fed [system.level], the card's own
  * reading — so an outside change lands here as the same glide it does there,
- * instead of snapping to the new level outright.
+ * instead of snapping to the new level outright. The speaker glyph runs the
+ * card's tap too — [PlayerVolume.toggleMute] — mute, and unmute, with the bar
+ * travelling the way it travels for any other outside change.
  *
  * Two things move it, and only one of them announces itself. The hardware keys
  * broadcast `VOLUME_CHANGED_ACTION`, which is easy. A *route* change does not:
@@ -463,7 +465,13 @@ private fun VolumeRow(routeKey: Any) {
             imageVector = if (volume.level.value > 0f) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
             contentDescription = null,
             tint = Color.White.copy(alpha = 0.6f),
-            modifier = Modifier.size(20.dp),
+            // The glyph is a switch as well as a read: tap it and the bar
+            // glides to silence, tap again and it glides back out of what was
+            // noted on the way down — see [PlayerVolume.toggleMute].
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .clickable(onClick = volume::toggleMute),
         )
         Spacer(Modifier.width(12.dp))
         ThinSlider(

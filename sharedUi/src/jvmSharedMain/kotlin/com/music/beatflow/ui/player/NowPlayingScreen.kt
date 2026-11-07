@@ -2250,6 +2250,7 @@ fun NowPlayingScreen(
                                         value = { volume.level.value },
                                         onValueChange = onVolumeChange,
                                         onValueChangeFinished = onVolumeChangeFinished,
+                                        onMuteToggle = volume::toggleMute,
                                     )
                                 }
                             },
@@ -4151,6 +4152,7 @@ fun NowPlayingScreen(
                             value = { volume.level.value },
                             onValueChange = onVolumeChange,
                             onValueChangeFinished = onVolumeChangeFinished,
+                            onMuteToggle = volume::toggleMute,
                         )
                         // The volume slider already has 13dp below its drawn track.
                         // Balance that invisible inset with the caption gap below the icons.

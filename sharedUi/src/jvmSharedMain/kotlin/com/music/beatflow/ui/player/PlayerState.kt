@@ -317,15 +317,47 @@ internal class PlayerVolume(
     var dragging by mutableStateOf(false)
         private set
 
+    /**
+     * Where unmute returns to: the last level above silence anyone heard from
+     * the system — a hardware key, a route swap, the bar's own drag. At
+     * silence with nothing remembered, unmute opens at [UNMUTE_LEVEL].
+     */
+    private var lastAudible = 0f
+
     fun drag(to: Float) {
         dragging = true
         // Follow the finger exactly; only external changes tween.
         scope.launch { level.snapTo(to) }
+        noted(to)
         system.set(to)
     }
 
     fun release() {
         dragging = false
+    }
+
+    /**
+     * The speaker glyph taps for its side of the bar: mute remembers where
+     * the level sits and glides to silence, unmute glides back to whatever
+     * was noted on the way down. Not a drag — [system.set] alone is called,
+     * so both directions travel the same tween any outside change does, and
+     * [dragging] never turns on.
+     */
+    fun toggleMute() {
+        val reported = system.level.value
+        if (reported > 0f) {
+            lastAudible = reported
+            system.set(0f)
+        } else {
+            val back = lastAudible.takeIf { it > 0f } ?: UNMUTE_LEVEL
+            lastAudible = back
+            system.set(back)
+        }
+    }
+
+    /** What the outside reported: above silence it is where unmute returns. */
+    fun noted(level: Float) {
+        if (level > 0f) lastAudible = level
     }
 }
 
@@ -341,6 +373,9 @@ internal fun rememberPlayerVolume(): PlayerVolume {
     // Glide to the level the system reports, but never fight the finger — a
     // drag writes the level, which calls straight back through here.
     LaunchedEffect(systemVolume) {
+        // Whatever the outside reports above silence is where an unmute goes
+        // back to — see [PlayerVolume.toggleMute].
+        volume.noted(systemVolume)
         if (!volume.dragging) {
             volume.level.animateTo(systemVolume, tween(durationMillis = 220, easing = FastOutSlowInEasing))
         }
@@ -348,4 +383,7 @@ internal fun rememberPlayerVolume(): PlayerVolume {
 
     return volume
 }
+
+/** Unmute with nothing remembered: the level the bar opens back up at. */
+private const val UNMUTE_LEVEL = 0.5f
 
