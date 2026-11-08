@@ -238,7 +238,12 @@ export function isDesktopApp(): boolean {
     __TAURI_INTERNALS__?: unknown;
     __TAURI__?: unknown;
   };
-  return Boolean(w.__BEATFLOW_DESKTOP__ || w.__TAURI_INTERNALS__ || w.__TAURI__);
+  return Boolean(
+    w.__BEATFLOW_DESKTOP__ ||
+      w.__TAURI_INTERNALS__ ||
+      w.__TAURI__ ||
+      (typeof window.location !== 'undefined' && window.location.protocol === 'tauri:')
+  );
 }
 
 export function desktopBridge(): Bridge {

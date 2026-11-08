@@ -69,10 +69,12 @@ const SAFELISTED = new Set(['accept', 'accept-language', 'content-language']);
  */
 async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = input instanceof Request ? input : null;
-  const url = new URL(request ? request.url : input.toString());
+  const url = new URL(request ? request.url : input.toString(), window.location.href);
 
   const bridge = getBridge();
-  if (bridge && isDesktopApp() && isInnertubeCall(url)) {
+  const isYtHost = YOUTUBE_HOSTS.has(url.hostname) || url.hostname.endsWith('.youtube.com');
+
+  if (bridge && (isDesktopApp() || isInnertubeCall(url)) && isYtHost && !url.pathname.startsWith('/api/jnn/')) {
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase() as 'GET' | 'POST';
     const headers: Record<string, string> = {};
     new Headers(init?.headers ?? request?.headers).forEach((value, key) => (headers[key] = value));
@@ -93,8 +95,8 @@ async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit):
         status: response.status,
         headers: response.headers,
       });
-    } catch {
-      // Fall through to browser fetch
+    } catch (e) {
+      trackLog.e(`Bridge yt.fetch failed: ${String(e)}`);
     }
   }
 

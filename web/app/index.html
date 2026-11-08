@@ -6,6 +6,46 @@
       // The extension trusts https://bitchord.in only (web/extension/site.config.ts),
       // so www goes there before anything loads, keeping its path and query.
       if (location.hostname === 'www.bitchord.in') location.replace('https://bitchord.in' + location.pathname + location.search + location.hash);
+      (function() {
+        if (typeof window === 'undefined') return;
+        var isTauri = '__TAURI_INTERNALS__' in window || '__TAURI__' in window || window.location.protocol === 'tauri:';
+        if (isTauri) {
+          window.__BEATFLOW_DESKTOP__ = true;
+        }
+        window.__BEATFLOW_CALL__ = function(method, params) {
+          var invoke = (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) ||
+                       (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
+          if (invoke) {
+            return invoke('bridge_call', { method: method, params: params || {} });
+          }
+          return Promise.reject(new Error('Tauri IPC invoke not ready'));
+        };
+        window.addEventListener('message', function(event) {
+          if (!event.data || event.data.channel !== 'bitchord-bridge' || event.data.direction !== 'to-extension') return;
+          var req = event.data;
+          if (window.__BEATFLOW_CALL__) {
+            window.__BEATFLOW_CALL__(req.method, req.params).then(function(result) {
+              window.postMessage({
+                channel: 'bitchord-bridge',
+                protocol: 1,
+                direction: 'from-extension',
+                id: req.id,
+                ok: true,
+                result: result
+              }, '*');
+            }).catch(function(err) {
+              window.postMessage({
+                channel: 'bitchord-bridge',
+                protocol: 1,
+                direction: 'from-extension',
+                id: req.id,
+                ok: false,
+                error: { code: 'unavailable', message: String(err) }
+              }, '*');
+            });
+          }
+        });
+      })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />

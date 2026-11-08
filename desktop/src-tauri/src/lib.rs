@@ -50,19 +50,51 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
 
   let mut req = client().request(method, &params.url);
 
-  // If this is YouTube, add the required origin / referer headers
-  if is_youtube || params.url.contains("youtube.com") || params.url.contains("googlevideo.com") {
+  // Faithful mirroring of web/extension/lib/rules.ts:
+  // 1. /youtubei/ on music.youtube.com gets music.youtube.com origin/referer/x-origin
+  // 2. /youtubei/ on www.youtube.com gets www.youtube.com origin/referer/x-origin
+  // 3. googlevideo.com gets www.youtube.com origin/referer (unless c=VISIONOS)
+  // 4. api/stats gets music.youtube.com origin/referer
+  // 5. sw.js_data, iframe_api, and s/player/* MUST NOT have Origin or X-Origin headers,
+  //    otherwise YouTube returns HTTP 400 Bad Request.
+  let is_yt = is_youtube || params.url.contains("youtube.com") || params.url.contains("googlevideo.com");
+  if params.url.contains("music.youtube.com/youtubei/") {
     req = req
       .header("Origin", "https://music.youtube.com")
       .header("Referer", "https://music.youtube.com/")
       .header("X-Origin", "https://music.youtube.com");
+  } else if params.url.contains("youtube.com/youtubei/") {
+    req = req
+      .header("Origin", "https://www.youtube.com")
+      .header("Referer", "https://www.youtube.com/")
+      .header("X-Origin", "https://www.youtube.com");
+  } else if params.url.contains("googlevideo.com") {
+    if !params.url.contains("c=VISIONOS") {
+      req = req
+        .header("Origin", "https://www.youtube.com")
+        .header("Referer", "https://www.youtube.com/");
+    }
+  } else if params.url.contains("/api/stats/") {
+    req = req
+      .header("Origin", "https://music.youtube.com")
+      .header("Referer", "https://music.youtube.com/");
   }
 
   if let Some(headers) = params.headers {
     for (k, v) in headers {
-      if !k.eq_ignore_ascii_case("host") && !k.eq_ignore_ascii_case("content-length") {
-        req = req.header(k, v);
+      // If this is a YouTube request, drop the page's identity/origin headers
+      // (origin, referer, x-origin, host, content-length) so they don't override or conflict.
+      if k.eq_ignore_ascii_case("host") || k.eq_ignore_ascii_case("content-length") {
+        continue;
       }
+      if is_yt
+        && (k.eq_ignore_ascii_case("origin")
+          || k.eq_ignore_ascii_case("referer")
+          || k.eq_ignore_ascii_case("x-origin"))
+      {
+        continue;
+      }
+      req = req.header(k, v);
     }
   }
 
@@ -81,6 +113,8 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   let resp = req.send().await.map_err(|e| e.to_string())?;
   let final_url = resp.url().to_string();
   let status = resp.status().as_u16();
+
+  println!("[Rust Bridge] HTTP {} {} -> {}", method_str, status, params.url);
 
   let mut resp_headers = HashMap::new();
   for (k, v) in resp.headers().iter() {
@@ -106,6 +140,7 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
 
 #[tauri::command]
 async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
+  println!("[Rust Bridge] IPC bridge_call: {}", method);
   match method.as_str() {
     "ping" => Ok(json!({
       "version": "1.9.2",
