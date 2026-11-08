@@ -117,16 +117,29 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   println!("[Rust Bridge] HTTP {} {} -> {}", method_str, status, params.url);
 
   let mut resp_headers = HashMap::new();
+  let mut content_type = String::new();
   for (k, v) in resp.headers().iter() {
     if let Ok(val) = v.to_str() {
+      if k.as_str().eq_ignore_ascii_case("content-type") {
+        content_type = val.to_string();
+      }
       resp_headers.insert(k.as_str().to_string(), val.to_string());
     }
   }
 
   let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-  let (body_str, body_encoding) = match String::from_utf8(bytes.to_vec()) {
-    Ok(s) => (s, "text".to_string()),
-    Err(_) => (BASE64_STANDARD.encode(&bytes), "base64".to_string()),
+  let is_textual = content_type.contains("json")
+    || content_type.contains("text")
+    || content_type.contains("javascript")
+    || content_type.contains("xml");
+
+  let (body_str, body_encoding) = if is_textual {
+    match String::from_utf8(bytes.to_vec()) {
+      Ok(s) => (s, "text".to_string()),
+      Err(_) => (BASE64_STANDARD.encode(&bytes), "base64".to_string()),
+    }
+  } else {
+    (BASE64_STANDARD.encode(&bytes), "base64".to_string())
   };
 
   Ok(FetchResult {

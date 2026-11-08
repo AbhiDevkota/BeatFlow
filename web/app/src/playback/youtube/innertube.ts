@@ -3,6 +3,7 @@ import { isDesktopApp } from '@bitchord/shared/bridge';
 import { getBridge } from '@/extension/bridge';
 import { ensureYtAuth, identityOf, noteMusicIdentity } from '@/extension/useYtAuth';
 import { trackLog } from '../trackLog';
+import { fastBase64ToUint8Array } from '@/desktop/desktopFetch';
 
 /**
  * The page's YouTube.js instance, created on first use (YouTube.js is large,
@@ -54,7 +55,7 @@ export async function getMusicClient(): Promise<Innertube> {
   return auth?.signedIn ? getSignedInnertube() : getInnertube();
 }
 
-const YOUTUBE_HOSTS = new Set(['music.youtube.com', 'www.youtube.com', 'youtube.com']);
+const YOUTUBE_HOSTS = new Set(['music.youtube.com', 'www.youtube.com', 'youtube.com', 'googlevideo.com']);
 
 /** Headers a page may send without triggering a CORS preflight. */
 const SAFELISTED = new Set(['accept', 'accept-language', 'content-language']);
@@ -72,7 +73,10 @@ async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit):
   const url = new URL(request ? request.url : input.toString(), window.location.href);
 
   const bridge = getBridge();
-  const isYtHost = YOUTUBE_HOSTS.has(url.hostname) || url.hostname.endsWith('.youtube.com');
+  const isYtHost =
+    YOUTUBE_HOSTS.has(url.hostname) ||
+    url.hostname.endsWith('.youtube.com') ||
+    url.hostname.endsWith('.googlevideo.com');
 
   if (bridge && (isDesktopApp() || isInnertubeCall(url)) && isYtHost && !url.pathname.startsWith('/api/jnn/')) {
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase() as 'GET' | 'POST';
@@ -132,7 +136,7 @@ function isInnertubeCall(url: URL): boolean {
 }
 
 function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  return fastBase64ToUint8Array(base64) as Uint8Array<ArrayBuffer>;
 }
 
 /** InnerTube calls through the extension, signed as the chosen channel; the rest as simpleRequestFetch. */
