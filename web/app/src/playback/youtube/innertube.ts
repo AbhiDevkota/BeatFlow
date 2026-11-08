@@ -1,4 +1,5 @@
 import type { Innertube, Types } from 'youtubei.js/web';
+import { isDesktopApp } from '@bitchord/shared/bridge';
 import { getBridge } from '@/extension/bridge';
 import { ensureYtAuth, identityOf, noteMusicIdentity } from '@/extension/useYtAuth';
 import { trackLog } from '../trackLog';
@@ -69,6 +70,33 @@ const SAFELISTED = new Set(['accept', 'accept-language', 'content-language']);
 async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = input instanceof Request ? input : null;
   const url = new URL(request ? request.url : input.toString());
+
+  const bridge = getBridge();
+  if (bridge && isDesktopApp() && isInnertubeCall(url)) {
+    const method = (init?.method ?? request?.method ?? 'GET').toUpperCase() as 'GET' | 'POST';
+    const headers: Record<string, string> = {};
+    new Headers(init?.headers ?? request?.headers).forEach((value, key) => (headers[key] = value));
+    let body = init?.body ?? undefined;
+    if (body === undefined && request && method !== 'GET') {
+      body = await request.text();
+    }
+    if (body != null && typeof body !== 'string') body = await new Response(body).text();
+
+    try {
+      const response = await bridge.call(
+        'yt.fetch',
+        { url: url.toString(), method, headers, ...(typeof body === 'string' && { body }), auth: false },
+        { ...(init?.signal && { signal: init.signal }) },
+      );
+      const payload = response.bodyEncoding === 'base64' ? decodeBase64(response.body) : response.body;
+      return new Response(response.status === 204 || response.status === 304 ? null : payload, {
+        status: response.status,
+        headers: response.headers,
+      });
+    } catch {
+      // Fall through to browser fetch
+    }
+  }
 
   if (!YOUTUBE_HOSTS.has(url.hostname) || url.pathname.startsWith('/api/jnn/')) {
     return fetch(input, init);

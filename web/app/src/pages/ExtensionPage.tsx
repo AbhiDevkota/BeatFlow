@@ -2,7 +2,7 @@ import { ChevronRight } from 'lucide-react';
 import { useState, type ComponentType } from 'react';
 import { FaChrome, FaFirefoxBrowser } from 'react-icons/fa';
 import { SiDiscord, SiSpotify, SiYoutubemusic } from 'react-icons/si';
-import type { Capability } from '@bitchord/shared/bridge';
+import { isDesktopApp, type Capability } from '@bitchord/shared/bridge';
 import { PageHeader } from '@/components/PageHeader';
 import { config } from '@/config';
 import { useExtension, type ExtensionStatus } from '@/extension/useExtension';
@@ -132,12 +132,12 @@ export default function ExtensionPage() {
               {status.state === 'present' && (
                 <>
                   <span className={settingsUi.dot} aria-hidden="true" />
-                  Installed · v{status.extension.info.version}
+                  {isDesktopApp() ? `Desktop Native Host · v${status.extension.info.version}` : `Installed · v${status.extension.info.version}`}
                 </>
               )}
             </span>
           </div>
-          {update.state !== 'unknown' && (
+          {update.state !== 'unknown' && !isDesktopApp() && (
             <div className={settingsUi.row}>
               <span>Latest</span>
               <span className={settingsUi.value}>
@@ -150,8 +150,9 @@ export default function ExtensionPage() {
             <div className={settingsUi.row}>
               <span>Connection</span>
               <span className={settingsUi.value}>
-                {status.extension.bridge.transport === 'external' ? 'Direct' : 'Page relay'} ·{' '}
-                {status.extension.info.browser === 'firefox' ? 'Firefox' : 'Chromium'}
+                {isDesktopApp()
+                  ? 'Native IPC · Windows Desktop'
+                  : `${status.extension.bridge.transport === 'external' ? 'Direct' : 'Page relay'} · ${status.extension.info.browser === 'firefox' ? 'Firefox' : 'Chromium'}`}
               </span>
             </div>
           )}
@@ -188,36 +189,40 @@ export default function ExtensionPage() {
           providers work without it.
         </p>
 
-        <h2 className={settingsUi.sectionHeader}>Get the extension</h2>
-        <section className={settingsUi.group}>
-          {downloads.map(({ browser, title, detail, href, Icon }) => (
-            <a
-              key={browser}
-              className={settingsUi.download}
-              href={href}
-              download
-              onClick={() => setChosen(browser)}
-            >
-              <Icon size={28} className="text-primary" />
-              <span className={settingsUi.downloadText}>
-                <span className={settingsUi.downloadTitle}>{title}</span>
-                <span className={settingsUi.downloadDetail}>
-                  {detail}
-                  {browser === currentBrowser && ' · This browser'}
-                </span>
-              </span>
-              <ChevronRight size={16} strokeWidth={2.4} className={settingsUi.chevron} />
-            </a>
-          ))}
-        </section>
-        {steps ? (
-          <ol className={settingsUi.steps}>
-            {steps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        ) : (
-          <p className={settingsUi.footer}>Pick your browser to download the extension and see how to install it.</p>
+        {!isDesktopApp() && (
+          <>
+            <h2 className={settingsUi.sectionHeader}>Get the extension</h2>
+            <section className={settingsUi.group}>
+              {downloads.map(({ browser, title, detail, href, Icon }) => (
+                <a
+                  key={browser}
+                  className={settingsUi.download}
+                  href={href}
+                  download
+                  onClick={() => setChosen(browser)}
+                >
+                  <Icon size={28} className="text-primary" />
+                  <span className={settingsUi.downloadText}>
+                    <span className={settingsUi.downloadTitle}>{title}</span>
+                    <span className={settingsUi.downloadDetail}>
+                      {detail}
+                      {browser === currentBrowser && ' · This browser'}
+                    </span>
+                  </span>
+                  <ChevronRight size={16} strokeWidth={2.4} className={settingsUi.chevron} />
+                </a>
+              ))}
+            </section>
+            {steps ? (
+              <ol className={settingsUi.steps}>
+                {steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className={settingsUi.footer}>Pick your browser to download the extension and see how to install it.</p>
+            )}
+          </>
         )}
 
         <h2 className={settingsUi.sectionHeader}>Integrations</h2>

@@ -229,6 +229,44 @@ export function relayBridge(target: Window = window): Bridge {
   };
 }
 
+// ---- Desktop / Tauri Host Bridge ------------------------------------------
+
+export function isDesktopApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w = window as unknown as {
+    __BEATFLOW_DESKTOP__?: boolean;
+    __TAURI_INTERNALS__?: unknown;
+    __TAURI__?: unknown;
+  };
+  return Boolean(w.__BEATFLOW_DESKTOP__ || w.__TAURI_INTERNALS__ || w.__TAURI__);
+}
+
+export function desktopBridge(): Bridge {
+  return {
+    transport: 'relay',
+    async call(method, params, options) {
+      if (typeof window !== 'undefined') {
+        const w = window as unknown as {
+          __BEATFLOW_CALL__?: (method: string, params: unknown) => Promise<unknown>;
+          __TAURI_INTERNALS__?: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+          __TAURI__?: { core?: { invoke: (cmd: string, args: unknown) => Promise<unknown> } };
+        };
+        if (typeof w.__BEATFLOW_CALL__ === 'function') {
+          return (await w.__BEATFLOW_CALL__(method, params)) as any;
+        }
+        const invoke = w.__TAURI_INTERNALS__?.invoke ?? w.__TAURI__?.core?.invoke;
+        if (invoke) {
+          return (await invoke('bridge_call', { method, params: params ?? {} })) as any;
+        }
+      }
+      return relayBridge(window).call(method, params, options);
+    },
+    subscribe(listener) {
+      return relayBridge(window).subscribe(listener);
+    },
+  };
+}
+
 // ---- Detection ----------------------------------------------------------------
 
 export interface DetectedExtension {
@@ -244,10 +282,20 @@ export interface DetectOptions {
 }
 
 /**
- * Finds the extension by pinging it: the external transport first when Chrome
- * exposes one, then the relay. Resolves `null` when nothing answers.
+ * Finds the extension by pinging it: the desktop host first when running in Tauri/desktop,
+ * then external Chromium transport, then the relay. Resolves `null` when nothing answers.
  */
 export async function detectExtension(options: DetectOptions = {}): Promise<DetectedExtension | null> {
+  if (isDesktopApp()) {
+    const bridge = desktopBridge();
+    try {
+      const info = await bridge.call('ping', {}, { timeoutMs: options.timeoutMs ?? 2000 });
+      return { bridge, info };
+    } catch {
+      // Fallback to standard detection if direct call failed
+    }
+  }
+
   const timeoutMs = options.timeoutMs ?? 1500;
   const candidates: Bridge[] = [];
   const external = options.chromiumExtensionId ? externalBridge(options.chromiumExtensionId) : null;

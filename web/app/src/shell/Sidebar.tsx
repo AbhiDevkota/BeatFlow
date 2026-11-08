@@ -21,6 +21,7 @@ import { useLibraryPlaylists, useSignedIn } from '@/data/music/queries';
 import { useSpotifyPlaylists } from '@/data/spotify/queries';
 import { useExtensionUpdate } from '@/extension/useExtensionUpdate';
 import { useSpotifySignedIn } from '@/extension/useSpotifyAuth';
+import { isDesktopApp } from '@bitchord/shared/bridge';
 import { useUi } from '@/state/ui';
 import { AccountButton } from './AccountButton';
 
@@ -168,8 +169,8 @@ export function Sidebar() {
             <span className={icon}>
               <MdOutlineExtension size={18} />
             </span>
-            <span className={navLabel}>BeatFlow Extension</span>
-            {update.state === 'available' && (
+            <span className={navLabel}>{isDesktopApp() ? 'Desktop Engine' : 'BeatFlow Extension'}</span>
+            {update.state === 'available' && !isDesktopApp() && (
               <span className="ml-auto rounded-[10px] bg-key px-[7px] py-0.5 type-subhead-emphasized text-white" title={`Version ${update.latest.version} is available`}>
                 Update
               </span>

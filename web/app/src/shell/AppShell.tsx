@@ -8,7 +8,7 @@ import { Outlet } from 'react-router';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { config } from '@/config';
 import { useExtension } from '@/extension/useExtension';
-import { isMobileBrowser } from '@/lib/platform';
+import { isDesktopApp, isMobileBrowser } from '@/lib/platform';
 import { useUi } from '@/state/ui';
 import { useKeyboardShortcuts } from './useKeyboardShortcuts';
 import { Banner, bannerButtonClass } from './Banner';
@@ -18,6 +18,7 @@ import { SidePanel } from './SidePanel';
 import { Sidebar } from './Sidebar';
 
 const mobile = isMobileBrowser();
+const desktop = isDesktopApp();
 
 // It carries am-lyrics; loaded the first time it opens, as the side panel's lyrics are.
 const FullScreenPlayer = lazy(() => import('./FullScreenPlayer').then((m) => ({ default: m.FullScreenPlayer })));
@@ -56,7 +57,7 @@ export function AppShell() {
         }
       />
     );
-  } else if (extension.state === 'missing' && !bannerDismissed) {
+  } else if (!desktop && extension.state === 'missing' && !bannerDismissed) {
     banner = (
       <Banner
         title="Play YouTube Music with the BeatFlow extension."
