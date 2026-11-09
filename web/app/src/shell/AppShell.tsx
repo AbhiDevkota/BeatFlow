@@ -78,13 +78,13 @@ export function AppShell() {
       <div className="relative min-h-0 overflow-hidden">
         <Sidebar />
         <MobileTopBar />
-        {/* The page scrolls under the fixed sidebar and the floating player. */}
+        {/* The page scrolls under the fixed sidebar and the floating player. Background tint extends under sidebar glass. */}
         <main
           id="scrollable-page"
-          className="absolute inset-0 overflow-x-hidden overflow-y-auto pl-(--web-navigation-width) [scrollbar-gutter:stable] data-tint:bg-(--page-tint) data-tint:transition-[background-color] data-tint:duration-300 data-tint:ease-in max-sm:pt-(--mobile-top-bar-height) max-sm:pl-0"
+          className="absolute inset-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable] data-tint:bg-(--page-tint) data-tint:transition-[background-color] data-tint:duration-300 data-tint:ease-in"
         >
-          {/* Clears the floating pill: its height, its offset, and some air. */}
-          <div className="min-h-full pb-[calc(var(--player-pill-height)+var(--player-bottom-offset)+40px)]">
+          {/* Clears the floating pill: its height, its offset, and some air. Indents content past the fixed translucent sidebar. */}
+          <div className="min-h-full pl-(--web-navigation-width) pb-[calc(var(--player-pill-height)+var(--player-bottom-offset)+40px)] max-sm:pt-(--mobile-top-bar-height) max-sm:pl-0">
             <Outlet />
           </div>
         </main>

@@ -4,7 +4,7 @@ import { playList, shuffleList } from '@/components/music/play';
 import { Shelves } from '@/components/music/ShelfView';
 import { LoadError, NeedsExtension } from '@/components/music/States';
 import { TrackList } from '@/components/music/TrackList';
-import { useAlbumMotion } from '@/data/apple/motionArt';
+import { useAppleAlbumDetails } from '@/data/apple/motionArt';
 import { useAlbum, useYouTubeReady } from '@/data/music/queries';
 import { useArtworkColor } from '@/lib/artworkColor';
 import { usePageTint } from '@/lib/usePageTint';
@@ -16,15 +16,17 @@ export default function AlbumPage() {
   const id = decodeURIComponent(useParams().id ?? '');
   const { missing } = useYouTubeReady();
   const album = useAlbum(id);
-  usePageTint(useArtworkColor(album.data?.thumbnail));
-  const motion = useAlbumMotion(album.data?.title, album.data?.artists.map((a) => a.name).join(', '));
+  const artists = album.data ? album.data.artists.map((a) => a.name).join(', ') : '';
+  const apple = useAppleAlbumDetails(album.data?.title, artists);
+  const fallbackTint = useArtworkColor(album.data?.thumbnail);
+  usePageTint(apple?.colors ?? fallbackTint);
+  const motion = apple?.motion ?? null;
 
   if (missing) return <NeedsExtension />;
   if (album.isError) return <LoadError error={album.error} onRetry={() => void album.refetch()} />;
   if (!album.data) return <AlbumSkeleton />;
 
   const data = album.data;
-  const artists = data.artists.map((a) => a.name).join(', ');
   const tracks = data.tracks;
   // Album tracks carry no artist or artwork of their own; the queue credits the album's.
   const context = {

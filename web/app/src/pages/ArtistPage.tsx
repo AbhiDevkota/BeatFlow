@@ -31,6 +31,7 @@ function ArtistName({ name, apple }: { name: string; apple: AppleArtistArt | nul
   return (
     <h1
       className="type-header-emphasized text-[clamp(34px,5vw,64px)] leading-[1.05] [text-shadow:0_2px_20px_#00000059] data-logo:w-full data-logo:[text-shadow:none]"
+      style={!logoShown && apple?.accent ? { color: apple.accent } : undefined}
       data-logo={logoShown || undefined}
     >
       {!logoShown && name}
@@ -67,7 +68,15 @@ export default function ArtistPage() {
   const appleUngranted = useUngrantedAppleOrigins();
   const motionAllowed = useMotionAllowed();
   const tint = useMemo<ArtworkColor | null>(
-    () => (apple ? { background: apple.background, dark: luminance(apple.background) < 0.6 } : null),
+    () =>
+      apple
+        ? {
+            background: apple.background,
+            accent: apple.accent,
+            keyColor: apple.keyColor,
+            dark: luminance(apple.background) < 0.6,
+          }
+        : null,
     [apple],
   );
   usePageTint(tint);

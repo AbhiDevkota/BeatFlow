@@ -4,11 +4,22 @@ import { persist } from 'zustand/middleware';
 import { metered, useReducedMotion } from '@/data/spotify/canvas';
 import { lyricsGet, onGranted, urlWith } from '@/lyrics/http';
 import { queryClient } from '@/lib/queryClient';
+import { adjustColorForDarkLayout, hexToRgb, type ArtworkColor } from '@/lib/artworkColor';
 import { obj, parse, str, type Json } from './artistPage';
 import { albumIdOf, isCompilation, matches, motionUrls, normalizeForMatch, ranked, songTerm, type AppleMotion } from './motion';
 import { appleWebToken } from './webToken';
 
 export type { AppleMotion };
+
+export interface AppleAlbumDetails {
+  motion: AppleMotion | null;
+  colors: ArtworkColor | null;
+}
+
+export interface ApplePlaylistDetails {
+  motion: AppleMotion | null;
+  colors: ArtworkColor | null;
+}
 
 /** What this page takes from Apple Music: the artist header, and the animated sleeves. */
 export const useAppleSettings = create<{
@@ -83,24 +94,43 @@ export async function fetchTrackMotion(title: string, artist: string, album: str
   return null;
 }
 
-/** The motion artwork for a release (AppleMusicCanvas.searchAlbum): albums carry it inline. */
-export async function fetchAlbumMotion(album: string, artist: string): Promise<AppleMotion | null> {
+/** The album details (motion sleeve + exact official Apple artwork colors). */
+export async function fetchAlbumDetails(album: string, artist: string): Promise<AppleAlbumDetails | null> {
   const term = album.toLowerCase().includes(artist.toLowerCase()) ? album : `${artist} ${album}`;
   const root = await catalog('search', { term, types: 'albums', limit: 10, extend: 'editorialVideo' });
   for (const record of ranked(hitsOf(root, 'albums'), album, artist, album, true)) {
     const attributes = obj(record.attributes);
     const name = str(attributes?.name);
     if (!attributes || isCompilation(name)) continue;
+    if (!matches({ title: name, artist: str(attributes.artistName) || null, album: name }, album, artist, album)) continue;
+
     const motion = motionUrls(attributes.editorialVideo);
-    if (motion && matches({ title: name, artist: str(attributes.artistName) || null, album: name }, album, artist, album)) return motion;
+    const artwork = obj(attributes.artwork);
+    const rawBg = str(artwork?.bgColor);
+    const textColor1 = str(artwork?.textColor1);
+    const colors: ArtworkColor | null = rawBg
+      ? {
+          background: adjustColorForDarkLayout(hexToRgb(rawBg)),
+          dark: true,
+          accent: textColor1 ? `#${textColor1.replace('#', '')}` : null,
+        }
+      : null;
+
+    return { motion, colors };
   }
   return null;
 }
 
-/** The motion artwork for an editorial playlist (Apple Music's curated playlists carry motion inline). */
-export async function fetchPlaylistMotion(title: string): Promise<AppleMotion | null> {
+/** The motion artwork for a release (AppleMusicCanvas.searchAlbum): albums carry it inline. */
+export async function fetchAlbumMotion(album: string, artist: string): Promise<AppleMotion | null> {
+  const details = await fetchAlbumDetails(album, artist);
+  return details?.motion ?? null;
+}
+
+/** The playlist details (motion sleeve + exact official Apple artwork colors). */
+export async function fetchPlaylistDetails(title: string): Promise<ApplePlaylistDetails | null> {
   const want = normalizeForMatch(title);
-  const searchSf = async (sf: string): Promise<AppleMotion | null> => {
+  const searchSf = async (sf: string): Promise<ApplePlaylistDetails | null> => {
     try {
       const token = await appleWebToken();
       if (!token) return null;
@@ -116,7 +146,17 @@ export async function fetchPlaylistMotion(title: string): Promise<AppleMotion | 
         if (!attributes || !name) continue;
         if (normalizeForMatch(name) !== want) continue;
         const motion = motionUrls(attributes.editorialVideo);
-        if (motion) return motion;
+        const artwork = obj(attributes.artwork);
+        const rawBg = str(artwork?.bgColor);
+        const textColor1 = str(artwork?.textColor1);
+        const colors: ArtworkColor | null = rawBg
+          ? {
+              background: adjustColorForDarkLayout(hexToRgb(rawBg)),
+              dark: true,
+              accent: textColor1 ? `#${textColor1.replace('#', '')}` : null,
+            }
+          : null;
+        return { motion, colors };
       }
     } catch {
       // Ignored
@@ -130,6 +170,12 @@ export async function fetchPlaylistMotion(title: string): Promise<AppleMotion | 
     return searchSf('us');
   }
   return null;
+}
+
+/** The motion artwork for an editorial playlist (Apple Music's curated playlists carry motion inline). */
+export async function fetchPlaylistMotion(title: string): Promise<AppleMotion | null> {
+  const details = await fetchPlaylistDetails(title);
+  return details?.motion ?? null;
 }
 
 // Apple's hosts are optional extension permissions: once allowed, the lookups they refused run again.
@@ -168,6 +214,17 @@ export function useAlbumMotion(album: string | null | undefined, artist: string 
   return allowed ? (query.data ?? null) : null;
 }
 
+/** Apple Music details for an album page (animated cover + exact artwork colors); null until found. */
+export function useAppleAlbumDetails(album: string | null | undefined, artist: string | null | undefined): AppleAlbumDetails | null {
+  const query = useQuery({
+    queryKey: ['apple', 'album-details', album ?? '', artist ?? ''],
+    queryFn: () => fetchAlbumDetails(album!, artist!),
+    enabled: !!album?.trim() && !!artist?.trim(),
+    ...QUERY,
+  });
+  return query.data ?? null;
+}
+
 /** Apple's animated cover for a playlist page; null until (and unless) one is found. */
 export function usePlaylistMotion(title: string | null | undefined) {
   const allowed = useMotionAllowed();
@@ -178,4 +235,15 @@ export function usePlaylistMotion(title: string | null | undefined) {
     ...QUERY,
   });
   return allowed ? (query.data ?? null) : null;
+}
+
+/** Apple Music details for a playlist page (animated cover + exact artwork colors); null until found. */
+export function useApplePlaylistDetails(title: string | null | undefined): ApplePlaylistDetails | null {
+  const query = useQuery({
+    queryKey: ['apple', 'playlist-details', title ?? ''],
+    queryFn: () => fetchPlaylistDetails(title!),
+    enabled: !!title?.trim(),
+    ...QUERY,
+  });
+  return query.data ?? null;
 }

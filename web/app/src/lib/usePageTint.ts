@@ -12,9 +12,13 @@ export function usePageTint(color: ArtworkColor | null) {
     const page = document.getElementById('scrollable-page');
     if (!page || !color) return;
     page.style.setProperty('--page-tint', color.background);
+    if (color.accent) page.style.setProperty('--page-accent', color.accent);
+    if (color.keyColor) page.style.setProperty('--page-key', color.keyColor);
     page.dataset.tint = color.dark ? 'dark' : 'light';
     return () => {
       page.style.removeProperty('--page-tint');
+      page.style.removeProperty('--page-accent');
+      page.style.removeProperty('--page-key');
       delete page.dataset.tint;
     };
   }, [color]);
