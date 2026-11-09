@@ -96,7 +96,7 @@ function Transport() {
         </button>
       </div>
 
-      <div className="flex flex-1 max-w-[calc(100%-88px)] items-center justify-between px-1">
+      <div className="flex flex-1 max-w-[calc(100%-clamp(116px,35%,160px))] items-center justify-between px-1">
         <div className="grid size-12 place-items-center">
           <button className={skip} disabled={!hasTrack} aria-label="Previous" onClick={previous}>
             <BackwardIcon size={38} />
@@ -154,7 +154,7 @@ function PlayerVolumeBar() {
       <div className="size-9 shrink-0" aria-hidden="true" />
 
       {/* Center volume section: aligned under Previous and Next */}
-      <div className="flex flex-1 max-w-[calc(100%-88px)] items-center gap-3 px-1">
+      <div className="flex flex-1 max-w-[calc(100%-clamp(116px,35%,160px))] items-center gap-3 px-1">
         <div className="grid size-12 place-items-center">
           <button
             type="button"
