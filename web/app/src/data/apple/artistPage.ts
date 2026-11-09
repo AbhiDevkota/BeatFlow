@@ -16,6 +16,8 @@ export interface AppleArtistArt {
   logoUrl: string | null;
   /** Width over height, so the logo can be sized before it decodes. */
   logoAspect: number;
+  /** Looping HLS motion artwork video for the hero, or null if none. */
+  videoUrl: string | null;
   /** Apple's `bgColor` for the photograph: what the page is tinted with. */
   background: string;
   /** Apple's `textColor1`. */
@@ -100,15 +102,26 @@ export function parseArtistPage(html: string): AppleArtistArt | null {
   const logoH = num(logo?.height);
   const logoUrl = logo && logoW && logoH ? fill(logo.url, LOGO_WIDTH, Math.round((LOGO_WIDTH * logoH) / logoW), 'png') : null;
 
-  const background = hex(hero.bgColor);
+  const va = obj(obj(header.videoArtwork)?.dictionary);
+  const clip = obj(va?.motionArtistSquare1x1) ?? obj(va?.motionArtistSquare) ?? obj(va?.motionArtistWide21x9);
+  const clipVideo = clip ? str(clip.video || clip.videoUrl || clip.hlsUrl || clip.url) : '';
+  const videoUrl = clipVideo.startsWith('http') ? clipVideo : null;
+
+  // The clip is a different picture from the still, with its own colours
+  // — the page has to match whichever one is on screen.
+  const previewFrame = obj(clip?.previewFrame);
+  const colours = videoUrl && previewFrame ? previewFrame : hero;
+
+  const background = hex(colours.bgColor) ?? hex(hero.bgColor);
   if (!background) return null;
   return {
     heroUrl,
     heroAspect: heroW / heroH,
     logoUrl,
     logoAspect: logoUrl ? logoW / logoH : 1,
+    videoUrl,
     background,
-    accent: hex(hero.textColor1) ?? background,
+    accent: hex(colours.textColor1) ?? hex(hero.textColor1) ?? background,
     keyColor: hex(header.keyColor),
   };
 }

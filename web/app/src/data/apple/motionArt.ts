@@ -136,7 +136,7 @@ export async function fetchPlaylistMotion(title: string): Promise<AppleMotion | 
 onGranted(() => void queryClient.invalidateQueries({ queryKey: ['apple', 'motion'] }));
 
 /** Whether a clip may be looked up and shown at all: the setting on, motion allowed, not metered. */
-function useMotionAllowed(): boolean {
+export function useMotionAllowed(): boolean {
   const enabled = useAppleSettings((s) => s.motion);
   const still = useReducedMotion();
   return enabled && !still && !metered();

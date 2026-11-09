@@ -23,10 +23,31 @@ describe('parseArtistPage', () => {
       heroAspect: 4,
       logoUrl: 'https://is1-ssl.mzstatic.com/image/thumb/logo/1000x250bb.png',
       logoAspect: 4,
+      videoUrl: null,
       background: '#1a2b3c',
       accent: '#f0e0d0',
       keyColor: '#fa2d48',
     });
+  });
+
+  it('reads the looping video artwork and uses its previewFrame colours', () => {
+    const art = parseArtistPage(
+      page({
+        artistLogo: null,
+        artwork: { dictionary: hero },
+        videoArtwork: {
+          dictionary: {
+            motionArtistSquare1x1: {
+              video: 'https://mvod.itunes.apple.com/artist.m3u8',
+              previewFrame: { bgColor: '0c1e2e', textColor1: 'b3c5ec' },
+            },
+          },
+        },
+      }),
+    );
+    expect(art?.videoUrl).toBe('https://mvod.itunes.apple.com/artist.m3u8');
+    expect(art?.background).toBe('#0c1e2e');
+    expect(art?.accent).toBe('#b3c5ec');
   });
 
   it('keeps the photo for an artist with no logo and no key colour', () => {

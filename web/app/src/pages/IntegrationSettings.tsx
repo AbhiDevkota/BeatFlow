@@ -55,7 +55,7 @@ export function AppleMusicToggles() {
       />
       <Toggle
         label="Animated Artwork"
-        detail="Apple Music’s moving covers in the full-screen player and on album pages. Not on metered connections or with reduced motion."
+        detail="Apple Music’s moving covers in the full-screen player, on album, playlist and artist pages. Not on metered connections or with reduced motion."
         checked={motion}
         onChange={setMotion}
       />

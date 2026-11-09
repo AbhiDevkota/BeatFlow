@@ -6,7 +6,9 @@ import { browseHref } from '@/components/music/links';
 import { playList } from '@/components/music/play';
 import { Shelves, TrackShelf } from '@/components/music/ShelfView';
 import { LoadError, NeedsExtension } from '@/components/music/States';
+import { MotionArtwork } from '@/components/music/MotionArtwork';
 import { requestAppleAccess, useAppleArtistArt, useUngrantedAppleOrigins, type AppleArtistArt } from '@/data/apple/artistArt';
+import { useMotionAllowed } from '@/data/apple/motionArt';
 import { useArtist, useYouTubeReady } from '@/data/music/queries';
 import type { ArtworkColor } from '@/lib/artworkColor';
 import { usePageTint } from '@/lib/usePageTint';
@@ -63,6 +65,7 @@ export default function ArtistPage() {
   const artist = useArtist(id);
   const apple = useAppleArtistArt(artist.data?.name);
   const appleUngranted = useUngrantedAppleOrigins();
+  const motionAllowed = useMotionAllowed();
   const tint = useMemo<ArtworkColor | null>(
     () => (apple ? { background: apple.background, dark: luminance(apple.background) < 0.6 } : null),
     [apple],
@@ -90,6 +93,14 @@ export default function ArtistPage() {
               alt=""
               decoding="async"
               onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
+            />
+          )}
+          {/* Apple's looping motion artwork video, replacing the photo when present. */}
+          {motionAllowed && apple?.videoUrl && (
+            <MotionArtwork
+              key={apple.videoUrl}
+              motion={{ url: apple.videoUrl, fallbackUrl: null }}
+              className="absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
             />
           )}
         </div>
