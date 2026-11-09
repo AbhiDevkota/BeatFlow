@@ -1,6 +1,6 @@
 // Registers <am-lyrics>.
 import '@uimaxbai/am-lyrics/am-lyrics.js';
-import { Check, ChevronDown, Loader2, Minus, Settings2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ListMusic, Loader2, Minus, MoreHorizontal, Settings2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useCanvas } from '@/data/spotify/canvas';
 import { getBridge } from '@/extension/bridge';
@@ -86,6 +86,33 @@ const FULL_SIZE =
   ' --am-lyrics-line-height: 1.2; --am-lyrics-line-spacing: calc(var(--bitchord-lyric-size, 34px) * 0.7);' +
   ' --lyrics-scroll-padding-top: 30%; --am-lyrics-inline-padding: 0px; }';
 
+/** Removes am-lyrics' internal lyrics download controls (format dropdown and download button). */
+const HIDE_DOWNLOAD = '.download-controls { display: none !important; }';
+
+/**
+ * Moves translate and pronounce (romanization) buttons to the downside, centered,
+ * as a floating glass pill that smoothly appears on mouse hover and hides otherwise.
+ */
+const DOWNSIDE_CONTROLS =
+  ':host { transform: translateZ(0) !important; }' +
+  ' .lyrics-header { display: flex !important; position: fixed !important; inset: auto auto 24px 50% !important;' +
+  ' transform: translateX(-50%) !important; z-index: 20 !important; width: auto !important; height: auto !important;' +
+  ' padding: 0 !important; margin: 0 !important; opacity: 0 !important; pointer-events: none !important;' +
+  ' transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important; }' +
+  ' :host(:hover) .lyrics-header, :host(:focus-within) .lyrics-header, .lyrics-container:hover .lyrics-header {' +
+  ' opacity: 1 !important; pointer-events: auto !important; }' +
+  ' .header-controls { display: flex !important; align-items: center !important; gap: 6px !important;' +
+  ' padding: 4px 8px !important; border-radius: 9999px !important; background: rgba(24, 24, 27, 0.72) !important;' +
+  ' backdrop-filter: blur(24px) saturate(200%) !important; -webkit-backdrop-filter: blur(24px) saturate(200%) !important;' +
+  ' border: 0.5px solid rgba(255, 255, 255, 0.16) !important; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36) !important; }' +
+  ' .header-controls .download-button { width: 34px !important; height: 34px !important; border-radius: 50% !important;' +
+  ' color: rgba(255, 255, 255, 0.65) !important; background: transparent !important; display: inline-flex !important;' +
+  ' align-items: center !important; justify-content: center !important; cursor: pointer !important;' +
+  ' transition: color 0.15s ease, background 0.15s ease, transform 0.12s ease !important; }' +
+  ' .header-controls .download-button:hover { color: #ffffff !important; background: rgba(255, 255, 255, 0.16) !important;' +
+  ' transform: scale(1.05) !important; }' +
+  ' .header-controls .download-button.active { color: #ffffff !important; background: rgba(255, 255, 255, 0.28) !important; }';
+
 /**
  * am-lyrics, exactly as it is, fed our TTML and a steered clock (prompt §10.2).
  * The clock reads the media time each frame, stamps the reading with when it
@@ -125,7 +152,7 @@ function LyricsView({ ttml, full }: { ttml: string; full: boolean }) {
       const root = el.shadowRoot;
       if (!root) return;
       const sheet = new CSSStyleSheet();
-      sheet.replaceSync(HIDE_FOOTER + FAR_LINES + FULL_SIZE);
+      sheet.replaceSync(HIDE_FOOTER + FAR_LINES + FULL_SIZE + HIDE_DOWNLOAD + DOWNSIDE_CONTROLS);
       root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
       // The full-screen column fades its top edge, but am-lyrics' toolbar
       // (romanize, translate, download) sits at the top of the same scroller
@@ -236,16 +263,25 @@ function useUngranted(): string[] {
 
 const NO_STATES: Partial<Record<LyricsSourceId, SourceState>> = {};
 
-/** The provider picker: which provider these lyrics are from, and the others' answers for this track. */
+/** The provider picker: three-dot menu with drilldown to providers and settings. */
 function ProviderPicker({ current, full }: { current: LyricsSourceId | null; full: boolean }) {
   const videoId = usePlayer((s) => s.nowPlaying?.videoId ?? '');
   const states = useLyricsUi((s) => s.states[videoId]) ?? NO_STATES;
   const picked = useLyricsUi((s) => s.picked[videoId]);
   const pick = useLyricsUi((s) => s.pick);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [menuView, setMenuView] = useState<'main' | 'providers'>('main');
   const [settings, setSettings] = useState(false);
-  const close = useCallback(() => setAnchor(null), []);
-  const label = current ? sourceById(current)?.label : 'Lyrics';
+  const close = useCallback(() => {
+    setAnchor(null);
+    setMenuView('main');
+  }, []);
+
+  const currentLabel = picked
+    ? sourceById(picked)?.label
+    : current
+      ? sourceById(current)?.label
+      : 'Best available';
 
   return (
     // In full screen the picker sits quietly above the lines, shown on hover.
@@ -256,51 +292,90 @@ function ProviderPicker({ current, full }: { current: LyricsSourceId | null; ful
           : 'flex items-center justify-between px-4 pt-4 pb-1'
       }
     >
+      <span className={full ? 'type-callout-emphasized text-secondary' : 'type-title-3 font-semibold text-primary'}>
+        Lyrics
+      </span>
       <button
-        className="inline-flex items-center gap-1 rounded-[8px] px-2 py-1 type-callout-emphasized text-secondary hover:bg-quinary"
+        className="grid size-7 place-items-center rounded-[8px] text-secondary hover:bg-quinary hover:text-primary transition-colors"
+        aria-label="Lyrics options"
         aria-haspopup="menu"
-        onClick={(e) => setAnchor(e.currentTarget)}
+        onClick={(e) => {
+          setMenuView('main');
+          setAnchor(e.currentTarget);
+        }}
       >
-        <span>{label}</span>
-        <ChevronDown size={14} />
-      </button>
-      <button
-        className="grid size-7 place-items-center rounded-[8px] text-secondary hover:bg-quinary"
-        aria-label="Lyric settings"
-        onClick={() => setSettings(true)}
-      >
-        <Settings2 size={16} />
+        <MoreHorizontal size={18} />
       </button>
       {anchor && (
-        <Menu anchor={anchor} placement="below-end" onClose={close} label="Lyrics provider">
-          <MenuItem checked={!picked} onSelect={() => (close(), pick(videoId, null))}>
-            Best available
-          </MenuItem>
-          <MenuSeparator />
-          <MenuHeader>Providers</MenuHeader>
-          {enabledSources().map((id) => {
-            const state = states[id];
-            return (
-              <MenuItem
-                key={id}
-                checked={picked === id}
-                trailing={
-                  state === 'pending' ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : state === 'found' ? (
-                    <Check size={13} />
-                  ) : state === 'missing' ? (
-                    <Minus size={13} />
-                  ) : undefined
-                }
-                onSelect={() => (close(), pick(videoId, id))}
-              >
-                {sourceById(id)?.label}
+        <Menu anchor={anchor} placement="below-end" onClose={close} label="Lyrics menu">
+          {menuView === 'providers' ? (
+            <>
+              <MenuItem icon={<ChevronLeft size={14} />} onSelect={() => setMenuView('main')}>
+                Back
               </MenuItem>
-            );
-          })}
-          <MenuSeparator />
-          <MenuItem onSelect={() => (close(), setSettings(true))}>Lyric Settings…</MenuItem>
+              <MenuSeparator />
+              <MenuHeader>Lyrics Providers</MenuHeader>
+              <MenuItem
+                checked={!picked}
+                onSelect={() => {
+                  close();
+                  pick(videoId, null);
+                }}
+              >
+                Best available
+              </MenuItem>
+              <MenuSeparator />
+              {enabledSources().map((id) => {
+                const state = states[id];
+                return (
+                  <MenuItem
+                    key={id}
+                    checked={picked === id}
+                    trailing={
+                      state === 'pending' ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : state === 'found' ? (
+                        <Check size={13} />
+                      ) : state === 'missing' ? (
+                        <Minus size={13} />
+                      ) : undefined
+                    }
+                    onSelect={() => {
+                      close();
+                      pick(videoId, id);
+                    }}
+                  >
+                    {sourceById(id)?.label}
+                  </MenuItem>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <MenuItem
+                icon={<ListMusic size={15} />}
+                trailing={
+                  <span className="flex items-center gap-1 text-tertiary">
+                    <span className="text-xs truncate max-w-[90px]">{currentLabel}</span>
+                    <ChevronRight size={14} />
+                  </span>
+                }
+                onSelect={() => setMenuView('providers')}
+              >
+                Lyrics Provider
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem
+                icon={<Settings2 size={15} />}
+                onSelect={() => {
+                  close();
+                  setSettings(true);
+                }}
+              >
+                Lyric Settings…
+              </MenuItem>
+            </>
+          )}
         </Menu>
       )}
       {settings && <LyricsSettings onClose={() => setSettings(false)} />}
