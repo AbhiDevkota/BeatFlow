@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { GRID, meshPalette, type Rgb } from '@/lib/meshPalette';
+import { sizedArtwork } from '@/lib/artwork';
 
 /*
  * The 2D fallback's banding is broken up by a still film of grain (bg-grain).
  * The WebGL mesh dithers itself, finer and per frame, so it goes without.
  */
 const backdrop =
-  'absolute inset-0 -z-1 overflow-hidden bg-[#343438] data-fallback:after:absolute data-fallback:after:inset-0 data-fallback:after:bg-grain data-fallback:after:opacity-6';
+  'absolute inset-0 -z-1 overflow-hidden bg-[#141416] data-fallback:after:absolute data-fallback:after:inset-0 data-fallback:after:bg-grain data-fallback:after:opacity-4';
 
 const FRAME_MS = 1000 / 30;
 const FADE_MS = 1200;
-/** Before the artwork is read, and when it can't be: a neutral dark grey. */
-const FALLBACK: Rgb[] = Array.from({ length: GRID * GRID }, () => [52, 52, 56]);
+/** Before the artwork is read, and when it can't be: a neutral dark tone matching Android. */
+const FALLBACK: Rgb[] = Array.from({ length: GRID * GRID }, () => [28, 28, 32]);
 
 const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 function useReducedMotion(): boolean {
@@ -106,7 +107,7 @@ void main() {
 }`;
 
 function webglRenderer(canvas: HTMLCanvasElement): Renderer | null {
-  const gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: false, powerPreference: 'low-power' });
+  const gl = canvas.getContext('webgl', { alpha: true, antialias: false, depth: false, powerPreference: 'low-power' });
   if (!gl) return null;
   const shader = (type: number, source: string) => {
     const s = gl.createShader(type)!;
@@ -170,13 +171,13 @@ const SMALL_WIDTH = 64;
 const SMALL_HEIGHT = 40;
 const css = ([r, g, b]: Rgb, a: number) => `rgb(${r | 0} ${g | 0} ${b | 0} / ${a})`;
 function canvasRenderer(canvas: HTMLCanvasElement): Renderer | null {
-  const context = canvas.getContext('2d', { alpha: false });
+  const context = canvas.getContext('2d', { alpha: true });
   if (!context) return null;
   canvas.width = SMALL_WIDTH;
   canvas.height = SMALL_HEIGHT;
   return {
     draw(cells, seconds) {
-      context.fillStyle = css(average(cells), 1);
+      context.fillStyle = css(average(cells), 0.7);
       context.fillRect(0, 0, SMALL_WIDTH, SMALL_HEIGHT);
       const side = Math.max(SMALL_WIDTH, SMALL_HEIGHT);
       blobsAt(seconds).forEach(([bx, by, reach], i) => {
@@ -184,8 +185,8 @@ function canvasRenderer(canvas: HTMLCanvasElement): Renderer | null {
         const y = by * SMALL_HEIGHT;
         const color = cells[i]!;
         const gradient = context.createRadialGradient(x, y, 0, x, y, reach * side);
-        gradient.addColorStop(0, css(color, 0.9));
-        gradient.addColorStop(0.55, css(color, 0.35));
+        gradient.addColorStop(0, css(color, 0.85));
+        gradient.addColorStop(0.55, css(color, 0.3));
         gradient.addColorStop(1, css(color, 0));
         context.fillStyle = gradient;
         context.fillRect(0, 0, SMALL_WIDTH, SMALL_HEIGHT);
@@ -196,10 +197,10 @@ function canvasRenderer(canvas: HTMLCanvasElement): Renderer | null {
 }
 
 /**
- * The full-screen player's background: the artwork's colours as a slowly
- * drifting mesh gradient (report §7, "the artwork, blurred and animated").
- * It moves only while the music plays and motion is allowed, cross-fades to
- * each new track's colours, and draws nothing while the tab is hidden.
+ * The full-screen player's glass background matching Android BeatFlow and Apple Music:
+ * 1. An edge-to-edge heavily blurred artwork layer (FullArtworkBlurBackdrop) crossfading between songs.
+ * 2. An animated WebGL/Canvas mesh gradient with floating color blobs layered in screen blend mode.
+ * 3. A depth glass vignette overlay ensuring text and controls pop with razor-sharp contrast.
  */
 export function MeshBackdrop({ artworkUrl, playing }: { artworkUrl: string | null; playing: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -210,6 +211,23 @@ export function MeshBackdrop({ artworkUrl, playing }: { artworkUrl: string | nul
   const [fallback, setFallback] = useState(false);
   // Kept outside React: the frame loop reads and writes these.
   const state = useRef({ from: FALLBACK, to: FALLBACK, fadeStart: -Infinity, seconds: 0, wake: () => {} });
+
+  // Crossfade between track artworks matching Android's FullArtworkBlurBackdrop
+  const [currentUrl, setCurrentUrl] = useState(artworkUrl);
+  const [prevUrl, setPrevUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (artworkUrl && artworkUrl !== currentUrl) {
+      setPrevUrl(currentUrl);
+      setCurrentUrl(artworkUrl);
+      const timer = setTimeout(() => {
+        setPrevUrl(null);
+      }, 1400);
+      return () => clearTimeout(timer);
+    } else if (artworkUrl && !currentUrl) {
+      setCurrentUrl(artworkUrl);
+    }
+  }, [artworkUrl, currentUrl]);
 
   useEffect(() => {
     if (!artworkUrl) return;
@@ -284,8 +302,38 @@ export function MeshBackdrop({ artworkUrl, playing }: { artworkUrl: string | nul
 
   return (
     <div className={backdrop} aria-hidden="true" data-fallback={fallback || undefined}>
-      {/* Drawn at the screen's size by WebGL; the 2D fallback is a 64×40 canvas stretched. */}
-      <canvas key={`${generation}-${fallback}`} ref={canvas} className="absolute inset-0 size-full" />
+      {/* 1. Android-style Full Artwork Blur Layer (edge-to-edge frosted glass) */}
+      {prevUrl && (
+        <img
+          key={`blur-prev-${prevUrl}`}
+          src={sizedArtwork(prevUrl, 600)}
+          alt=""
+          referrerPolicy="no-referrer"
+          decoding="async"
+          className="absolute -inset-12 size-[calc(100%+96px)] object-cover filter blur-[76px] saturate-[1.85] brightness-[0.62] opacity-0 transition-opacity duration-1000 ease-out pointer-events-none select-none"
+        />
+      )}
+      {currentUrl && (
+        <img
+          key={`blur-curr-${currentUrl}`}
+          src={sizedArtwork(currentUrl, 600)}
+          alt=""
+          referrerPolicy="no-referrer"
+          decoding="async"
+          className="absolute -inset-12 size-[calc(100%+96px)] object-cover filter blur-[76px] saturate-[1.85] brightness-[0.62] opacity-85 transition-opacity duration-1000 ease-in pointer-events-none select-none"
+        />
+      )}
+
+      {/* 2. WebGL / Canvas Mesh Gradient (Fluid ambient color blooms layered on top) */}
+      <canvas
+        key={`${generation}-${fallback}`}
+        ref={canvas}
+        className="absolute inset-0 size-full mix-blend-screen opacity-70"
+      />
+
+      {/* 3. Frosted Glass Vignette & Depth Overlay for laptop/screen precision */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.12)_0%,rgba(0,0,0,0.58)_100%)] pointer-events-none" />
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/45 via-black/15 to-transparent pointer-events-none" />
     </div>
   );
 }

@@ -325,16 +325,18 @@
   &::before {
     z-index: -1;
     background-color: var(--playerBackground);
-    backdrop-filter: saturate(2.2) blur(16px);
-    box-shadow: 0 10px 40px var(--glassMaterialShadowColor);
+    backdrop-filter: saturate(2.4) blur(28px) contrast(1.05);
+    box-shadow:
+      0 14px 44px -4px var(--glassMaterialShadowColor),
+      0 4px 16px -2px rgba(0, 0, 0, 0.18);
   }
 
   &::after {
     box-shadow:
-      inset 0.5px 0.5px 0 var(--glassMaterialInnerStroke),
-      inset 0.5px -0.5px 0 var(--glassMaterialInnerStroke),
-      inset -0.5px 0.5px 0 var(--glassMaterialInnerStroke),
-      inset -0.5px -0.5px 0 var(--glassMaterialInnerStroke);
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+      inset 0 -0.5px 0 0 rgba(0, 0, 0, 0.25),
+      inset 0.5px 0 0 rgba(255, 255, 255, 0.12),
+      inset -0.5px 0 0 rgba(255, 255, 255, 0.12);
     opacity: var(--glassMaterialInnerStrokeAlpha);
   }
 }

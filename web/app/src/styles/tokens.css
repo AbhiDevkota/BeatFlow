@@ -143,8 +143,8 @@
 
   --navSidebarBG: #3c3c4308;
   --navSidebarSelectedState: #3c3c431a;
-  --playerBackground: #ffffffe0;
-  --miniPlayerBackground: #ffffffe6;
+  --playerBackground: #ffffffba;
+  --miniPlayerBackground: #ffffffba;
   --playerBackgroundFallback: #fffffff7;
   --tracklistHoverColor: #0000000f;
   --tracklistAltRowColor: #00000004;
@@ -241,8 +241,8 @@
     --opaqueShelfBG: #2b2b2b;
     --footerBg: #323232;
     --genericJoeColor: #323232;
-    --playerBackground: #2d2d2de0;
-    --miniPlayerBackground: #252525e6;
+    --playerBackground: #222226b8;
+    --miniPlayerBackground: #222226b8;
     --playerBackgroundFallback: #2d2d2df7;
     --searchBarBorderColor: #ffffff26;
     --segmentedControlBG: #7676803d;
@@ -314,8 +314,8 @@
   --opaqueShelfBG: #2b2b2b;
   --footerBg: #323232;
   --genericJoeColor: #323232;
-  --playerBackground: #2d2d2de0;
-  --miniPlayerBackground: #252525e6;
+  --playerBackground: #222226b8;
+  --miniPlayerBackground: #222226b8;
   --playerBackgroundFallback: #2d2d2df7;
   --searchBarBorderColor: #ffffff26;
   --segmentedControlBG: #7676803d;
@@ -397,8 +397,8 @@
 
   --navSidebarBG: #3c3c4308;
   --navSidebarSelectedState: #3c3c431a;
-  --playerBackground: #ffffffe0;
-  --miniPlayerBackground: #ffffffe6;
+  --playerBackground: #ffffffba;
+  --miniPlayerBackground: #ffffffba;
   --playerBackgroundFallback: #fffffff7;
   --tracklistHoverColor: #0000000f;
   --tracklistAltRowColor: #00000004;
