@@ -184,7 +184,34 @@ export type TopPickKind =
   | 'DISCOVERY_STATION'
   | 'MOOD'
   | 'LATEST_RELEASE'
-  | 'FEATURED_ARTIST';
+  | 'FEATURED_ARTIST'
+  | 'ARTIST_AND_SIMILAR';
+
+export interface CollagePalette {
+  top: string;
+  bottom: string;
+  eyebrow: string;
+}
+
+/** Vivid backdrops matching Android BeatFlow, one per artist. */
+export const COLLAGE_PALETTES: readonly CollagePalette[] = [
+  { top: '#8F3F00', bottom: '#FF6A0F', eyebrow: '#FFC48A' },
+  { top: '#2D8A20', bottom: '#4FD22C', eyebrow: '#CBFFA3' },
+  { top: '#173E9E', bottom: '#2F7BFF', eyebrow: '#C0D8FF' },
+  { top: '#4A1E99', bottom: '#8A4BFF', eyebrow: '#DCC8FF' },
+  { top: '#0B6E6E', bottom: '#14B8A6', eyebrow: '#B5FFF3' },
+  { top: '#8E1426', bottom: '#F0364F', eyebrow: '#FFC4CC' },
+];
+
+export function getCollagePalette(name: string): CollagePalette {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % COLLAGE_PALETTES.length;
+  return COLLAGE_PALETTES[index]!;
+}
 
 export interface TopPickItem {
   id: string;
@@ -318,13 +345,14 @@ export function buildTopPicks({
     const firstShelfItem = shelves?.[0]?.items?.[0];
 
     if (topArtistEntry) {
+      const palette = getCollagePalette(topArtistEntry.name);
       picks.push({
         id: `top-pick-artist-${topArtistEntry.name}`,
         kind: 'FEATURED_ARTIST',
         title: `${topArtistEntry.name} & Similar`,
         subtitle: topArtistEntry.track.title,
         eyebrow: `FEATURING ${topArtistEntry.name.toUpperCase()}`,
-        eyebrowColor: 'rgba(255, 255, 255, 0.72)',
+        eyebrowColor: palette.eyebrow,
         thumbnail: topArtistEntry.track.thumbnail,
         browseId: topArtistEntry.id,
         target: {

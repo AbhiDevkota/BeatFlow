@@ -50,6 +50,20 @@
   --animate-eq-bar-2: eq-2 0.85s ease-in-out 0.15s infinite alternate;
   --animate-eq-bar-3: eq-3 0.7s ease-in-out 0.3s infinite alternate;
 
+  /* Station and Mood animations matching Android BeatFlow */
+  --animate-station-breath: station-breath 8s ease-in-out infinite alternate;
+  --animate-shard-drift-1: shard-drift-1 12s ease-in-out infinite alternate;
+  --animate-shard-drift-2: shard-drift-2 10s ease-in-out infinite alternate;
+  --animate-mood-bolt: mood-bolt 3s ease-in-out infinite;
+  --animate-mood-sway-1: mood-sway-1 4.5s ease-in-out infinite alternate;
+  --animate-mood-sway-2: mood-sway-2 5.5s ease-in-out 0.5s infinite alternate;
+  --animate-mood-sway-3: mood-sway-3 5s ease-in-out 1s infinite alternate;
+  --animate-mood-star: mood-star 4s ease-in-out infinite alternate;
+  --animate-mood-focus: mood-focus 3.6s ease-in-out infinite;
+  --animate-mood-heartbreak: mood-heartbreak 2.7s linear infinite;
+  --animate-mood-love: mood-love 1.7s ease-in-out infinite;
+  --animate-mood-spiral: mood-spiral 3.7s ease-in-out infinite alternate;
+
   @keyframes menu-in {
     from {
       opacity: 0;
@@ -116,6 +130,63 @@
   @keyframes eq-3 {
     0% { transform: scaleY(0.4); }
     100% { transform: scaleY(0.95); }
+  }
+
+  /* Station and Mood keyframes */
+  @keyframes station-breath {
+    0% { transform: scaleX(0.95) translateX(-2%); }
+    100% { transform: scaleX(1.05) translateX(2%); }
+  }
+  @keyframes shard-drift-1 {
+    0% { transform: rotate(0deg) scale(1); }
+    100% { transform: rotate(3deg) scale(1.03); }
+  }
+  @keyframes shard-drift-2 {
+    0% { transform: rotate(0deg) scale(1); }
+    100% { transform: rotate(-3deg) scale(1.04); }
+  }
+  @keyframes mood-bolt {
+    0%, 100% { transform: scale(1); opacity: 0.95; }
+    50% { transform: scale(1.06); opacity: 1; filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.7)); }
+    52% { transform: scale(1.02); opacity: 0.9; }
+    56% { transform: scale(1.07); opacity: 1; filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.8)); }
+    60% { transform: scale(1); opacity: 0.95; filter: none; }
+  }
+  @keyframes mood-sway-1 {
+    0% { transform: rotate(-4.5deg); }
+    100% { transform: rotate(4.5deg); }
+  }
+  @keyframes mood-sway-2 {
+    0% { transform: rotate(3.5deg); }
+    100% { transform: rotate(-3.5deg); }
+  }
+  @keyframes mood-sway-3 {
+    0% { transform: rotate(-2.5deg); }
+    100% { transform: rotate(2.5deg); }
+  }
+  @keyframes mood-star {
+    0% { transform: rotate(-8deg) scale(0.92); }
+    50% { transform: rotate(0deg) scale(1.06); }
+    100% { transform: rotate(8deg) scale(0.95); }
+  }
+  @keyframes mood-focus {
+    0%, 100% { transform: scale(0.94); opacity: 0.8; }
+    50% { transform: scale(1.05); opacity: 1; }
+  }
+  @keyframes mood-heartbreak {
+    0% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -30; }
+  }
+  @keyframes mood-love {
+    0%, 100% { transform: scale(1); }
+    14% { transform: scale(1.09); }
+    26% { transform: scale(1); }
+    40% { transform: scale(1.06); }
+    56% { transform: scale(1); }
+  }
+  @keyframes mood-spiral {
+    0% { transform: scale(0.95) rotate(-2deg); opacity: 0.88; }
+    100% { transform: scale(1.05) rotate(2deg); opacity: 1; }
   }
 }
 

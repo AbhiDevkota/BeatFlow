@@ -101,7 +101,7 @@ export function FindYourMoodShelf() {
                 </div>
 
                 {/* Title below tile */}
-                <span className="mt-2 text-sm font-semibold text-primary truncate group-hover/mood:underline">
+                <span className="mt-2 text-sm font-semibold text-primary truncate">
                   {mood.title}
                 </span>
               </div>

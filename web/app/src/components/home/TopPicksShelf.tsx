@@ -2,11 +2,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { LogoMark } from '@/components/icons/LogoMark';
-import { PlayIcon } from '@/components/icons/Transport';
 import { shelfHeader, shelfSection } from '@/components/shelf';
 import type { TopPickItem } from '@/lib/homeLayout';
 import { playTrack } from '@/components/music/play';
-import { DiscoveryStationArt, MoodEmblem, PersonalStationArt } from './TopPickArtwork';
+import { CardPhotoArt, DiscoveryStationArt, MoodEmblem, PersonalStationArt } from './TopPickArtwork';
 
 interface TopPicksShelfProps {
   picks: TopPickItem[];
@@ -133,26 +132,11 @@ export function TopPicksShelf({ picks }: TopPicksShelfProps) {
                       <MoodEmblem
                         moodKey={pick.mood.key}
                         strokeColor={pick.mood.stroke}
-                        className="w-32 h-32 opacity-90 transition-transform duration-300 group-hover/card:scale-105"
+                        className="w-32 h-32 opacity-90"
                       />
                     </div>
                   ) : (
-                    <div className="relative w-full h-full bg-surface-secondary">
-                      {pick.thumbnail && (
-                        <>
-                          <img
-                            src={pick.thumbnail}
-                            alt=""
-                            className="absolute bottom-0 inset-x-0 w-full h-1/2 object-cover filter blur-xl opacity-70"
-                          />
-                          <img
-                            src={pick.thumbnail}
-                            alt=""
-                            className="w-full aspect-square object-cover"
-                          />
-                        </>
-                      )}
-                    </div>
+                    <CardPhotoArt pick={pick} />
                   )}
                 </div>
 
@@ -162,13 +146,6 @@ export function TopPicksShelf({ picks }: TopPicksShelfProps) {
                 {/* BeatFlow Logo Badge (Top-Right) */}
                 <div className="absolute top-3 right-3 z-2 size-6 grid place-items-center rounded-full bg-black/30 backdrop-blur-md text-white/90">
                   <LogoMark size={14} />
-                </div>
-
-                {/* Hover Play Platter (Center) */}
-                <div className="pointer-events-none absolute inset-0 z-2 grid place-items-center opacity-0 transition-opacity duration-150 group-hover/card:opacity-100">
-                  <div className="grid size-12 place-items-center rounded-full bg-white/95 text-black shadow-lg backdrop-blur-md transition-transform group-hover/card:scale-105">
-                    <PlayIcon size={22} />
-                  </div>
                 </div>
 
                 {/* Caption (Bottom) */}
