@@ -21,6 +21,7 @@ import { MotionArtwork } from '@/components/music/MotionArtwork';
 import { VideoSurface } from '@/components/music/VideoSurface';
 import { useTrackMotion } from '@/data/apple/motionArt';
 import { sizedArtwork } from '@/lib/artwork';
+import { isDesktopApp } from '@/lib/platform';
 import { usePlayer } from '@/state/player';
 import { useUi } from '@/state/ui';
 import { useHasVideo, useVideo } from '@/state/video';
@@ -257,11 +258,21 @@ export function FullScreenPlayer() {
       </button>
       {/* The music video's quality, just inside the full-screen button. */}
       {video && (
-        <VideoQuality className={`absolute top-[18px] z-1${hidden}${document.fullscreenEnabled ? ' right-15' : ' right-5'}`} />
+        <VideoQuality
+          className={`absolute top-[18px] z-1${hidden}${
+            document.fullscreenEnabled
+              ? isDesktopApp()
+                ? ' right-46'
+                : ' right-15'
+              : isDesktopApp()
+                ? ' right-36'
+                : ' right-5'
+          }`}
+        />
       )}
       {document.fullscreenEnabled && (
         <button
-          className={`${corner} top-4 right-5`}
+          className={`${corner} top-4 ${isDesktopApp() ? 'right-36' : 'right-5'}`}
           aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
           onClick={toggleBrowserFullScreen}
         >

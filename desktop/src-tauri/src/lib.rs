@@ -277,13 +277,70 @@ const DESKTOP_BRIDGE_INIT: &str = r#"
       });
     }
   });
+
+  window.__BEATFLOW_WINDOW__ = {
+    minimize: function() {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        return window.__TAURI_INTERNALS__.invoke('window_minimize');
+      }
+    },
+    toggleMaximize: function() {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        return window.__TAURI_INTERNALS__.invoke('window_toggle_maximize');
+      }
+    },
+    close: function() {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        return window.__TAURI_INTERNALS__.invoke('window_close');
+      }
+    },
+    isMaximized: function() {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        return window.__TAURI_INTERNALS__.invoke('window_is_maximized');
+      }
+      return Promise.resolve(false);
+    }
+  };
 })();
 "#;
+
+#[tauri::command]
+fn window_minimize(window: tauri::Window) -> Result<(), String> {
+  window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_toggle_maximize(window: tauri::Window) -> Result<bool, String> {
+  let is_max = window.is_maximized().map_err(|e| e.to_string())?;
+  if is_max {
+    window.unmaximize().map_err(|e| e.to_string())?;
+    Ok(false)
+  } else {
+    window.maximize().map_err(|e| e.to_string())?;
+    Ok(true)
+  }
+}
+
+#[tauri::command]
+fn window_close(window: tauri::Window) -> Result<(), String> {
+  window.close().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
+  window.is_maximized().map_err(|e| e.to_string())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![bridge_call])
+    .invoke_handler(tauri::generate_handler![
+      bridge_call,
+      window_minimize,
+      window_toggle_maximize,
+      window_close,
+      window_is_maximized,
+    ])
     .on_page_load(|window, _payload| {
       let _ = window.eval(DESKTOP_BRIDGE_INIT);
     })
