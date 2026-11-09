@@ -140,9 +140,22 @@ function discordText(status: DiscordStatus): string {
   return `${user.name} · on`;
 }
 
-export function Toggle({ label, detail, checked, onChange }: { label: string; detail?: string; checked: boolean; onChange: (on: boolean) => void }) {
+export function Toggle({
+  label,
+  detail,
+  checked,
+  onChange,
+  icon,
+}: {
+  label: string;
+  detail?: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  icon?: import('react').ReactNode;
+}) {
   return (
-    <label className={settingsUi.controlRow}>
+    <label className={icon ? settingsUi.controlRowWithIcon : settingsUi.controlRow}>
+      {icon && <span className={settingsUi.rowIcon}>{icon}</span>}
       <span className={settingsUi.rowText}>
         <span>{label}</span>
         {detail && <span className={settingsUi.rowDetail}>{detail}</span>}

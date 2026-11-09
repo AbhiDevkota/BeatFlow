@@ -1,24 +1,41 @@
 import {
+  BarChart2,
   ChevronLeft,
   ChevronRight,
+  Cpu,
+  ExternalLink,
+  EyeOff,
+  Film,
   HardDrive,
+  History,
   Info,
+  Layers,
   Monitor,
   Moon,
+  Music,
   Palette,
   PlayCircle,
   Quote,
+  Radio,
   Search,
-  Sliders,
-  Sun,
-  Users,
-  X,
-  ExternalLink,
+  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
+  Sun,
+  SunMoon,
+  Tag,
+  Trash2,
+  Type,
+  Users,
+  Volume2,
+  VolumeX,
+  Waves,
+  X,
+  Zap,
 } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { MdOutlineExtension } from 'react-icons/md';
-import { SiDiscord, SiGithub, SiSpotify, SiYoutubemusic } from 'react-icons/si';
+import { SiApplemusic, SiDiscord, SiGithub, SiSpotify, SiYoutubemusic } from 'react-icons/si';
 import { PageHeader } from '@/components/PageHeader';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { Select } from '@/components/Select';
@@ -32,7 +49,7 @@ import { useHistorySettings } from '@/playback/historyReporting';
 import { isDesktopApp } from '@/lib/platform';
 import { queryClient } from '@/lib/queryClient';
 import { useTheme } from '@/lib/theme';
-import { useContentSettings, type StreamingQuality } from '@/lib/contentSettings';
+import { useContentSettings, type AppFontFamily, type StreamingQuality } from '@/lib/contentSettings';
 import { CROSSFADE_CHOICES, usePlayer } from '@/state/player';
 import {
   AppleMusicIntegration,
@@ -52,7 +69,6 @@ interface CategoryMeta {
   title: string;
   subtitle: string;
   icon: ComponentType<{ size?: number; className?: string }>;
-  color: string;
   badge?: string;
 }
 
@@ -60,65 +76,40 @@ const CATEGORIES: CategoryMeta[] = [
   {
     key: 'playback',
     title: 'Playback',
-    subtitle: 'AutoPlay, crossfade, automix, nerd stats',
+    subtitle: 'AutoPlay, crossfade, automix, volume leveling, nerd stats',
     icon: PlayCircle,
-    color: '#ff3b30',
   },
   {
     key: 'appearance',
     title: 'Appearance',
-    subtitle: 'Theme mode, animated covers & artist headers',
-    icon: Palette,
-    color: '#af52de',
+    subtitle: 'Theme mode, font selection, animated artwork, tinting',
+    icon: SunMoon,
   },
   {
     key: 'content',
     title: 'Content & Audio',
-    subtitle: 'Streaming quality, direct source streaming, metadata',
-    icon: Sliders,
-    color: '#ff9500',
+    subtitle: 'Streaming quality, direct source, studio cuts, history',
+    icon: SlidersHorizontal,
   },
   {
     key: 'lyrics',
     title: 'Lyrics',
     subtitle: 'Sources, syllable sync timing, Spotify canvas',
     icon: Quote,
-    color: '#f5a623',
   },
   {
     key: 'storage',
     title: 'Storage & Cache',
-    subtitle: 'Cached media, offline data, cleanup',
+    subtitle: 'Cached media, offline assets, cache cleanup',
     icon: HardDrive,
-    color: '#30b0c7',
   },
   {
     key: 'about',
     title: 'About',
-    subtitle: 'Version, architecture, open source repository',
+    subtitle: 'Build version, architecture, open source repository',
     icon: Info,
-    color: '#8e8e93',
   },
 ];
-
-/** Coloured squircle icon container matching Apple Music / BeatFlow mobile. */
-function Squircle({
-  Icon,
-  color,
-  ink = '#ffffff',
-  size = 17,
-}: {
-  Icon: ComponentType<{ size?: number; className?: string }>;
-  color: string;
-  ink?: string;
-  size?: number;
-}) {
-  return (
-    <span className={settingsUi.squircle} style={{ backgroundColor: color, color: ink }}>
-      <Icon size={size} />
-    </span>
-  );
-}
 
 /** An integration row that opens a page of its own. */
 function LinkRow({ to, icon, title, value }: { to: string; icon?: ReactNode; title: string; value?: string | null }) {
@@ -144,12 +135,11 @@ function youtubeText(auth: ReturnType<typeof useYtAuth>): string {
 }
 
 /**
- * Settings Page: Reimagined after BeatFlow mobile's SettingsSheet with:
+ * Settings Page: Reimagined after BeatFlow Android SettingsSheet.kt with:
+ * - Minimal monochrome vector icons (no heavy colored squircle boxes)
  * - Real-time keyword search across all settings
- * - Modern squircle icons and category cards
- * - Drill-down subview navigation with "← Settings" back button
- * - Segmented theme switcher (Dark / Light / System)
- * - Cache cleanup & storage metrics
+ * - Drill-down category navigation with "← Settings" back button
+ * - Extended settings: theme switcher, font selection, loudness normalization, skip silence, studio cuts, cache management
  */
 export default function SettingsPage() {
   const extension = useExtension();
@@ -172,8 +162,25 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { artistArt, motion, setArtistArt, setMotion } = useAppleSettings();
 
-  // Content & Audio
-  const { streamingQuality, directSource, setStreamingQuality, setDirectSource } = useContentSettings();
+  // Content & Audio settings
+  const {
+    streamingQuality,
+    directSource,
+    loudnessNormalization,
+    skipSilence,
+    preferAudioCuts,
+    fontFamily,
+    dynamicTint,
+    reduceAnimation,
+    setStreamingQuality,
+    setDirectSource,
+    setLoudnessNormalization,
+    setSkipSilence,
+    setPreferAudioCuts,
+    setFontFamily,
+    setDynamicTint,
+    setReduceAnimation,
+  } = useContentSettings();
 
   // Dialogs & Navigation
   const [lyricsModal, setLyricsModal] = useState(false);
@@ -237,47 +244,52 @@ export default function SettingsPage() {
   const searching = searchQuery.trim().length > 0;
   const q = searchQuery.toLowerCase().trim();
 
-  // Render individual sections
+  // Render Account & Integrations card (minimal monochrome vectors)
   const renderAccountGroup = () => (
     <section className={settingsUi.group}>
       <div className={settingsUi.integration}>
-        <Squircle Icon={SiYoutubemusic} color="#ffffff" ink="#ff0033" />
+        <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
         <span className={settingsUi.integrationName}>YouTube Music</span>
         <span className={settingsUi.value}>{youtubeText(yt)}</span>
       </div>
       <div className={settingsUi.integration}>
-        <Squircle Icon={SiSpotify} color="#1ed760" />
+        <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
         <span className={settingsUi.integrationName}>Spotify</span>
         {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
       </div>
       {present && discordAvailable && (
-        <LinkRow to="/settings/discord" icon={<Squircle Icon={SiDiscord} color="#5865f2" />} title="Discord" value={discordText} />
+        <LinkRow to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
       )}
       <LinkRow
         to="/extension"
-        icon={<Squircle Icon={MdOutlineExtension} color="#636366" />}
+        icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
         title={desktop ? 'Desktop Native Engine' : 'BeatFlow Extension'}
         value={extensionVersion ? extensionVersion : (desktop ? 'Embedded Host' : 'Not installed')}
       />
       <LinkRow
         to="/settings/listen-together"
-        icon={<Squircle Icon={Users} color="#fa2d48" />}
+        icon={<Users size={22} className="text-[#fa2d48] flex-shrink-0" />}
         title="Listen Together"
         value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
       />
     </section>
   );
 
+  // Playback group
   const renderPlaybackGroup = () => (
     <>
       <section className={settingsUi.group}>
         <Toggle
+          icon={<PlayCircle size={20} />}
           label="AutoPlay"
           detail="When the queue ends, continue playing similar songs automatically."
           checked={autoplay}
           onChange={setAutoplay}
         />
-        <label className={settingsUi.controlRow}>
+        <label className={settingsUi.controlRowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <Waves size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Crossfade</span>
             <span className={settingsUi.rowDetail}>Smoothly transition between consecutive tracks</span>
@@ -296,7 +308,10 @@ export default function SettingsPage() {
           />
         </label>
         {automix && (
-          <label className={settingsUi.controlRow}>
+          <label className={settingsUi.controlRowWithIcon}>
+            <span className={settingsUi.rowIcon}>
+              <Sparkles size={20} />
+            </span>
             <span className={settingsUi.rowText}>
               <span>Blend Length</span>
               <span className={settingsUi.rowDetail}>Maximum number of bars blended over beat matching</span>
@@ -310,8 +325,23 @@ export default function SettingsPage() {
           </label>
         )}
         <Toggle
+          icon={<Volume2 size={20} />}
+          label="Loudness Normalization"
+          detail="Normalizes audio output volume across different tracks to -14 LUFS."
+          checked={loudnessNormalization}
+          onChange={setLoudnessNormalization}
+        />
+        <Toggle
+          icon={<VolumeX size={20} />}
+          label="Skip Silence"
+          detail="Automatically skips silent intros, outros, and long pauses."
+          checked={skipSilence}
+          onChange={setSkipSilence}
+        />
+        <Toggle
+          icon={<BarChart2 size={20} />}
           label="Show Stats for Nerds"
-          detail="Codec, bitrate and sample rate under the artist in the full-screen player, and what Automix is doing."
+          detail="Codec, bitrate and sample rate under the artist in full-screen player, and Automix state."
           checked={showNerdStats}
           onChange={setShowNerdStats}
         />
@@ -325,10 +355,14 @@ export default function SettingsPage() {
     </>
   );
 
+  // Appearance group
   const renderAppearanceGroup = () => (
     <>
       <section className={settingsUi.group}>
-        <div className={settingsUi.row}>
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <SunMoon size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Theme Mode</span>
             <span className={settingsUi.rowDetail}>Select application visual theme</span>
@@ -360,29 +394,83 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <Type size={20} />
+          </span>
+          <span className={settingsUi.rowText}>
+            <span>App Typeface</span>
+            <span className={settingsUi.rowDetail}>Font typography used across the interface</span>
+          </span>
+          <div className={settingsUi.segmentedControl}>
+            <button
+              type="button"
+              className={`${settingsUi.segmentedButton} ${fontFamily === 'dm-sans' ? settingsUi.segmentedActive : settingsUi.segmentedInactive}`}
+              onClick={() => setFontFamily('dm-sans')}
+            >
+              <span>DM Sans</span>
+            </button>
+            <button
+              type="button"
+              className={`${settingsUi.segmentedButton} ${fontFamily === 'sf-pro' ? settingsUi.segmentedActive : settingsUi.segmentedInactive}`}
+              onClick={() => setFontFamily('sf-pro')}
+            >
+              <span>SF Pro</span>
+            </button>
+            <button
+              type="button"
+              className={`${settingsUi.segmentedButton} ${fontFamily === 'system' ? settingsUi.segmentedActive : settingsUi.segmentedInactive}`}
+              onClick={() => setFontFamily('system')}
+            >
+              <span>System</span>
+            </button>
+          </div>
+        </div>
+
         <Toggle
+          icon={<Film size={20} />}
           label="Animated Artwork"
           detail="Apple Music’s moving video covers in the full-screen player, albums, and playlists."
           checked={motion}
           onChange={setMotion}
         />
         <Toggle
+          icon={<Sparkles size={20} />}
           label="Artist Header Art"
           detail="Artist pages feature Apple Music’s high-resolution photography, logos, and ambient video banners."
           checked={artistArt}
           onChange={setArtistArt}
         />
+        <Toggle
+          icon={<Palette size={20} />}
+          label="Dynamic Artwork Tint"
+          detail="Adapts background and player labels to match dominant album artwork colors."
+          checked={dynamicTint}
+          onChange={setDynamicTint}
+        />
+        <Toggle
+          icon={<EyeOff size={20} />}
+          label="Reduce Motion"
+          detail="Disables decorative animations and transitions for performance and power saving."
+          checked={reduceAnimation}
+          onChange={setReduceAnimation}
+        />
       </section>
       <p className={settingsUi.footer}>
-        Animated artwork is automatically optimized and honors system battery saver and reduced motion preferences.
+        Animated artwork is automatically paused when battery saver or reduced motion is active.
       </p>
     </>
   );
 
+  // Content & Audio group
   const renderContentGroup = () => (
     <>
       <section className={settingsUi.group}>
-        <label className={settingsUi.controlRow}>
+        <label className={settingsUi.controlRowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <Radio size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Streaming Quality</span>
             <span className={settingsUi.rowDetail}>Preferred audio quality ceiling for playback</span>
@@ -399,12 +487,21 @@ export default function SettingsPage() {
           />
         </label>
         <Toggle
+          icon={<Zap size={20} />}
           label="Direct Source Streaming"
-          detail="Stream audio streams directly from verified edge CDN sources where available."
+          detail="Stream audio directly from verified edge CDN sources where available."
           checked={directSource}
           onChange={setDirectSource}
         />
         <Toggle
+          icon={<Music size={20} />}
+          label="Prefer Studio Audio Cuts"
+          detail="Always prioritize studio album releases over music video uploads and live cuts."
+          checked={preferAudioCuts}
+          onChange={setPreferAudioCuts}
+        />
+        <Toggle
+          icon={<History size={20} />}
           label="Share Listening Activity to YouTube"
           detail={
             !ytStatsCapable
@@ -414,7 +511,8 @@ export default function SettingsPage() {
           checked={shareHistory}
           onChange={setShareHistory}
         />
-        <div className={settingsUi.integrationPlain}>
+        <div className={settingsUi.integration}>
+          <SiApplemusic size={22} className="text-[#fa2d48] flex-shrink-0" />
           <span className={settingsUi.integrationName}>Apple Music Metadata Access</span>
           {present ? <AppleMusicIntegration /> : <span className={settingsUi.value}>Needs host access</span>}
         </div>
@@ -423,26 +521,30 @@ export default function SettingsPage() {
     </>
   );
 
+  // Lyrics group
   const renderLyricsGroup = () => (
     <>
       <section className={settingsUi.group}>
-        <button className={`${settingsUi.integrationPlain} ${settingsUi.linkRow}`} onClick={() => setLyricsModal(true)}>
+        <button className={`${settingsUi.integration} ${settingsUi.linkRow}`} onClick={() => setLyricsModal(true)}>
+          <Quote size={22} className="text-secondary flex-shrink-0" />
           <span className={settingsUi.integrationName}>Lyric Sources</span>
           <span className={settingsUi.value}>
             Order, sources, syllable timing
             <ChevronRight size={16} />
           </span>
         </button>
-        <div className={settingsUi.integrationPlain}>
+        <div className={settingsUi.integration}>
+          <Sparkles size={22} className="text-green flex-shrink-0" />
           <span className={settingsUi.integrationName}>Syllable-by-Syllable Sync</span>
           <span className={settingsUi.value}>
             <span className="inline-flex items-center gap-1 text-green font-medium">
-              <Sparkles size={14} /> Active
+              Supported & Active
             </span>
           </span>
         </div>
         <CanvasToggle />
-        <div className={settingsUi.integrationPlain}>
+        <div className={settingsUi.integration}>
+          <ShieldCheck size={22} className="text-secondary flex-shrink-0" />
           <span className={settingsUi.integrationName}>Lyric Sources Access</span>
           {present ? <LyricSourcesAccess /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
         </div>
@@ -453,17 +555,24 @@ export default function SettingsPage() {
     </>
   );
 
+  // Storage & Cache group
   const renderStorageGroup = () => (
     <>
       <section className={settingsUi.group}>
-        <div className={settingsUi.row}>
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <HardDrive size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Local Cache Storage</span>
             <span className={settingsUi.rowDetail}>Estimated disk storage used by artwork, audio cuts, and queries</span>
           </span>
           <span className={settingsUi.value}>{storageEstimate ?? 'Calculating…'}</span>
         </div>
-        <div className={settingsUi.row}>
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <Trash2 size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Clear Cache</span>
             <span className={settingsUi.rowDetail}>Free up temporary storage and refresh cached assets</span>
@@ -478,27 +587,40 @@ export default function SettingsPage() {
           </button>
         </div>
       </section>
+      <p className={settingsUi.footer}>
+        Offline media, cached artist motion banners and lyric tokens are automatically evicted when space is low.
+      </p>
     </>
   );
 
+  // About group
   const renderAboutGroup = () => (
     <>
       <section className={settingsUi.group}>
-        <div className={settingsUi.row}>
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <Layers size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Application</span>
             <span className={settingsUi.rowDetail}>BeatFlow modern Apple Music client</span>
           </span>
           <span className={settingsUi.value}>{desktop ? 'Desktop App' : 'Web App'}</span>
         </div>
-        <div className={settingsUi.row}>
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <Tag size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Version</span>
             <span className={settingsUi.rowDetail}>Client build version</span>
           </span>
           <span className={settingsUi.value}>{desktop ? 'v0.1.0' : 'v1.0.0'}</span>
         </div>
-        <div className={settingsUi.row}>
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <Cpu size={20} />
+          </span>
           <span className={settingsUi.rowText}>
             <span>Engine</span>
             <span className={settingsUi.rowDetail}>Backend media & playback engine</span>
@@ -511,11 +633,14 @@ export default function SettingsPage() {
           href="https://github.com/Devk-Abhi/Musicooo"
           target="_blank"
           rel="noopener noreferrer"
-          className={`${settingsUi.categoryRow} hover:bg-quaternary`}
+          className={`${settingsUi.categoryRow} hover:bg-quaternary/40`}
         >
           <div className={settingsUi.categoryLeft}>
-            <Squircle Icon={SiGithub} color="#24292e" />
-            <span className={settingsUi.categoryTitle}>GitHub Repository</span>
+            <SiGithub size={22} className="text-secondary group-hover:text-primary transition-colors flex-shrink-0" />
+            <div className="flex flex-col text-start">
+              <span className={settingsUi.categoryTitle}>GitHub Repository</span>
+              <span className={settingsUi.categorySubtitle}>Source code, issues and releases</span>
+            </div>
           </div>
           <div className={settingsUi.categoryRight}>
             <ExternalLink size={16} />
@@ -544,7 +669,7 @@ export default function SettingsPage() {
     // Account & Integrations
     check('YouTube Music', ['youtube', 'google', 'account', 'sign in', 'auth'], (
       <div key="yt" className={settingsUi.integration}>
-        <Squircle Icon={SiYoutubemusic} color="#ffffff" ink="#ff0033" />
+        <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
         <span className={settingsUi.integrationName}>YouTube Music</span>
         <span className={settingsUi.value}>{youtubeText(yt)}</span>
       </div>
@@ -552,21 +677,21 @@ export default function SettingsPage() {
 
     check('Spotify', ['spotify', 'canvas', 'sync', 'library'], (
       <div key="spot" className={settingsUi.integration}>
-        <Squircle Icon={SiSpotify} color="#1ed760" />
+        <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
         <span className={settingsUi.integrationName}>Spotify</span>
         {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
       </div>
     ), 'content');
 
     check('Discord Presence', ['discord', 'rich presence', 'activity', 'rpc'], (
-      <LinkRow key="dc" to="/settings/discord" icon={<Squircle Icon={SiDiscord} color="#5865f2" />} title="Discord" value={discordText} />
+      <LinkRow key="dc" to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
     ), 'content');
 
     check(desktop ? 'Desktop Engine' : 'BeatFlow Extension', ['extension', 'engine', 'host', 'native', 'desktop'], (
       <LinkRow
         key="ext"
         to="/extension"
-        icon={<Squircle Icon={MdOutlineExtension} color="#636366" />}
+        icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
         title={desktop ? 'Desktop Native Engine' : 'BeatFlow Extension'}
         value={extensionVersion ? extensionVersion : (desktop ? 'Embedded Host' : 'Not installed')}
       />
@@ -576,7 +701,7 @@ export default function SettingsPage() {
       <LinkRow
         key="party"
         to="/settings/listen-together"
-        icon={<Squircle Icon={Users} color="#fa2d48" />}
+        icon={<Users size={22} className="text-[#fa2d48] flex-shrink-0" />}
         title="Listen Together"
         value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
       />
@@ -586,6 +711,7 @@ export default function SettingsPage() {
     check('AutoPlay', ['autoplay', 'queue', 'recommendations', 'similar'], (
       <Toggle
         key="autoplay"
+        icon={<PlayCircle size={20} />}
         label="AutoPlay"
         detail="When the queue ends, continue playing similar songs automatically."
         checked={autoplay}
@@ -594,7 +720,10 @@ export default function SettingsPage() {
     ), 'playback');
 
     check('Crossfade', ['crossfade', 'gapless', 'fade', 'mix', 'transition', 'automix'], (
-      <label key="crossfade" className={settingsUi.controlRow}>
+      <label key="crossfade" className={settingsUi.controlRowWithIcon}>
+        <span className={settingsUi.rowIcon}>
+          <Waves size={20} />
+        </span>
         <span className={settingsUi.rowText}>
           <span>Crossfade</span>
           <span className={settingsUi.rowDetail}>Smoothly transition between consecutive tracks</span>
@@ -614,11 +743,34 @@ export default function SettingsPage() {
       </label>
     ), 'playback');
 
+    check('Loudness Normalization', ['volume', 'loudness', 'normalize', 'replaygain', 'lufs', 'leveling'], (
+      <Toggle
+        key="loudness"
+        icon={<Volume2 size={20} />}
+        label="Loudness Normalization"
+        detail="Normalizes audio output volume across different tracks to -14 LUFS standard."
+        checked={loudnessNormalization}
+        onChange={setLoudnessNormalization}
+      />
+    ), 'playback');
+
+    check('Skip Silence', ['silence', 'skip silence', 'gapless', 'quiet', 'pause'], (
+      <Toggle
+        key="silence"
+        icon={<VolumeX size={20} />}
+        label="Skip Silence"
+        detail="Automatically skips silent intros, outros, and long pauses."
+        checked={skipSilence}
+        onChange={setSkipSilence}
+      />
+    ), 'playback');
+
     check('Stats for Nerds', ['nerd', 'stats', 'bitrate', 'codec', 'sample rate', 'info'], (
       <Toggle
         key="nerd"
+        icon={<BarChart2 size={20} />}
         label="Show Stats for Nerds"
-        detail="Codec, bitrate and sample rate under the artist in the full-screen player, and what Automix is doing."
+        detail="Codec, bitrate and sample rate under the artist in full-screen player, and Automix state."
         checked={showNerdStats}
         onChange={setShowNerdStats}
       />
@@ -626,7 +778,10 @@ export default function SettingsPage() {
 
     // Appearance
     check('Theme Mode', ['theme', 'dark', 'light', 'system', 'mode', 'color', 'appearance'], (
-      <div key="theme" className={settingsUi.row}>
+      <div key="theme" className={settingsUi.rowWithIcon}>
+        <span className={settingsUi.rowIcon}>
+          <SunMoon size={20} />
+        </span>
         <span className={settingsUi.rowText}>
           <span>Theme Mode</span>
           <span className={settingsUi.rowDetail}>Select application visual theme</span>
@@ -660,9 +815,45 @@ export default function SettingsPage() {
       </div>
     ), 'appearance');
 
+    check('App Typeface', ['font', 'typeface', 'typography', 'sf pro', 'dm sans', 'system'], (
+      <div key="font" className={settingsUi.rowWithIcon}>
+        <span className={settingsUi.rowIcon}>
+          <Type size={20} />
+        </span>
+        <span className={settingsUi.rowText}>
+          <span>App Typeface</span>
+          <span className={settingsUi.rowDetail}>Font typography used across the interface</span>
+        </span>
+        <div className={settingsUi.segmentedControl}>
+          <button
+            type="button"
+            className={`${settingsUi.segmentedButton} ${fontFamily === 'dm-sans' ? settingsUi.segmentedActive : settingsUi.segmentedInactive}`}
+            onClick={() => setFontFamily('dm-sans')}
+          >
+            <span>DM Sans</span>
+          </button>
+          <button
+            type="button"
+            className={`${settingsUi.segmentedButton} ${fontFamily === 'sf-pro' ? settingsUi.segmentedActive : settingsUi.segmentedInactive}`}
+            onClick={() => setFontFamily('sf-pro')}
+          >
+            <span>SF Pro</span>
+          </button>
+          <button
+            type="button"
+            className={`${settingsUi.segmentedButton} ${fontFamily === 'system' ? settingsUi.segmentedActive : settingsUi.segmentedInactive}`}
+            onClick={() => setFontFamily('system')}
+          >
+            <span>System</span>
+          </button>
+        </div>
+      </div>
+    ), 'appearance');
+
     check('Animated Artwork', ['animated artwork', 'motion', 'video cover', 'moving artwork'], (
       <Toggle
         key="motion"
+        icon={<Film size={20} />}
         label="Animated Artwork"
         detail="Apple Music’s moving video covers in the full-screen player, albums, and playlists."
         checked={motion}
@@ -673,6 +864,7 @@ export default function SettingsPage() {
     check('Artist Header Art', ['artist art', 'header', 'banner', 'apple music photo'], (
       <Toggle
         key="artistArt"
+        icon={<Sparkles size={20} />}
         label="Artist Header Art"
         detail="Artist pages feature Apple Music’s high-resolution photography, logos, and ambient video banners."
         checked={artistArt}
@@ -680,9 +872,34 @@ export default function SettingsPage() {
       />
     ), 'appearance');
 
+    check('Dynamic Artwork Tint', ['tint', 'color', 'background', 'accent', 'palette'], (
+      <Toggle
+        key="tint"
+        icon={<Palette size={20} />}
+        label="Dynamic Artwork Tint"
+        detail="Adapts background and player labels to match dominant album artwork colors."
+        checked={dynamicTint}
+        onChange={setDynamicTint}
+      />
+    ), 'appearance');
+
+    check('Reduce Motion', ['reduce motion', 'animation', 'performance', 'battery'], (
+      <Toggle
+        key="reduceMotion"
+        icon={<EyeOff size={20} />}
+        label="Reduce Motion"
+        detail="Disables decorative animations and transitions for performance and power saving."
+        checked={reduceAnimation}
+        onChange={setReduceAnimation}
+      />
+    ), 'appearance');
+
     // Content
     check('Streaming Quality', ['quality', 'bitrate', 'audio quality', 'high', 'audio format'], (
-      <label key="quality" className={settingsUi.controlRow}>
+      <label key="quality" className={settingsUi.controlRowWithIcon}>
+        <span className={settingsUi.rowIcon}>
+          <Radio size={20} />
+        </span>
         <span className={settingsUi.rowText}>
           <span>Streaming Quality</span>
           <span className={settingsUi.rowDetail}>Preferred audio quality ceiling for playback</span>
@@ -703,16 +920,29 @@ export default function SettingsPage() {
     check('Direct Source Streaming', ['direct source', 'cdn', 'lossless', 'stream'], (
       <Toggle
         key="direct"
+        icon={<Zap size={20} />}
         label="Direct Source Streaming"
-        detail="Stream audio streams directly from verified edge CDN sources where available."
+        detail="Stream audio directly from verified edge CDN sources where available."
         checked={directSource}
         onChange={setDirectSource}
+      />
+    ), 'content');
+
+    check('Prefer Studio Audio Cuts', ['studio', 'cuts', 'audio only', 'music only', 'video'], (
+      <Toggle
+        key="preferAudio"
+        icon={<Music size={20} />}
+        label="Prefer Studio Audio Cuts"
+        detail="Always prioritize studio album releases over music video uploads and live cuts."
+        checked={preferAudioCuts}
+        onChange={setPreferAudioCuts}
       />
     ), 'content');
 
     check('Share Listening Activity', ['share history', 'scrobble', 'recommendations', 'history'], (
       <Toggle
         key="history"
+        icon={<History size={20} />}
         label="Share Listening Activity to YouTube"
         detail="Songs you play here go to your YouTube Music history and shape its recommendations."
         checked={shareHistory}
@@ -722,7 +952,8 @@ export default function SettingsPage() {
 
     // Lyrics
     check('Lyric Sources', ['lyrics', 'words', 'subtitles', 'sources', 'kugou', 'musixmatch', 'lrclib'], (
-      <button key="lyr-src" className={`${settingsUi.integrationPlain} ${settingsUi.linkRow}`} onClick={() => setLyricsModal(true)}>
+      <button key="lyr-src" className={`${settingsUi.integration} ${settingsUi.linkRow}`} onClick={() => setLyricsModal(true)}>
+        <Quote size={22} className="text-secondary flex-shrink-0" />
         <span className={settingsUi.integrationName}>Lyric Sources</span>
         <span className={settingsUi.value}>
           Order, sources, syllable timing
@@ -737,7 +968,10 @@ export default function SettingsPage() {
 
     // Storage
     check('Storage & Cache', ['cache', 'storage', 'clear cache', 'temp', 'offline'], (
-      <div key="storage-clear" className={settingsUi.row}>
+      <div key="storage-clear" className={settingsUi.rowWithIcon}>
+        <span className={settingsUi.rowIcon}>
+          <HardDrive size={20} />
+        </span>
         <span className={settingsUi.rowText}>
           <span>Clear Cache ({storageEstimate ?? 'Estimating…'})</span>
           <span className={settingsUi.rowDetail}>Free up temporary storage and refresh cached assets</span>
@@ -755,7 +989,10 @@ export default function SettingsPage() {
 
     // About
     check('About & Version', ['about', 'version', 'github', 'architecture', 'credits'], (
-      <div key="about-ver" className={settingsUi.row}>
+      <div key="about-ver" className={settingsUi.rowWithIcon}>
+        <span className={settingsUi.rowIcon}>
+          <Layers size={20} />
+        </span>
         <span className={settingsUi.rowText}>
           <span>BeatFlow {desktop ? 'Desktop' : 'Web'}</span>
           <span className={settingsUi.rowDetail}>Client build version</span>
@@ -783,18 +1020,30 @@ export default function SettingsPage() {
     crossfadeSec,
     setAutomix,
     setCrossfade,
+    loudnessNormalization,
+    setLoudnessNormalization,
+    skipSilence,
+    setSkipSilence,
     showNerdStats,
     setShowNerdStats,
     theme,
     setTheme,
+    fontFamily,
+    setFontFamily,
     motion,
     setMotion,
     artistArt,
     setArtistArt,
+    dynamicTint,
+    setDynamicTint,
+    reduceAnimation,
+    setReduceAnimation,
     streamingQuality,
     setStreamingQuality,
     directSource,
     setDirectSource,
+    preferAudioCuts,
+    setPreferAudioCuts,
     shareHistory,
     setShareHistory,
     storageEstimate,
@@ -818,7 +1067,7 @@ export default function SettingsPage() {
           </button>
         )}
 
-        {/* Search Bar matching mobile SettingsSheet */}
+        {/* Search Bar matching Android SettingsSheet */}
         <div className={settingsUi.searchContainer}>
           <Search size={16} className="text-secondary flex-shrink-0" />
           <input
@@ -869,7 +1118,7 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Main View: Account & Integrations + Category Cards */}
+        {/* Main View: Account & Integrations + Minimal Category Cards */}
         {!searching && !activeCategory && (
           <div>
             <h2 className={settingsUi.sectionHeader}>Account & Integrations</h2>
@@ -887,10 +1136,10 @@ export default function SettingsPage() {
                     onClick={() => setActiveCategory(cat.key)}
                   >
                     <div className={settingsUi.categoryLeft}>
-                      <Squircle Icon={IconComponent} color={cat.color} />
-                      <div className="flex flex-col text-start">
+                      <IconComponent size={22} className={settingsUi.minimalIcon} />
+                      <div className="flex flex-col text-start min-w-0">
                         <span className={settingsUi.categoryTitle}>{cat.title}</span>
-                        <span className="type-callout text-secondary truncate max-w-[340px]">
+                        <span className={settingsUi.categorySubtitle}>
                           {cat.subtitle}
                         </span>
                       </div>
