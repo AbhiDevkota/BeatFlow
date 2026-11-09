@@ -1,4 +1,4 @@
-import { Maximize, Minimize, X } from 'lucide-react';
+import { Maximize, Minimize, VolumeX, X } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 import {
@@ -80,7 +80,7 @@ const transportButton =
 const toggle = `${transportButton} size-9 text-tertiary aria-pressed:text-primary`;
 const skip = `${transportButton} size-12 text-primary`;
 
-/** Shuffle, previous, play/pause, next, repeat. No volume: the pill keeps that. */
+/** Shuffle, previous, play/pause, next, repeat matching outer artwork/scrubber alignment. */
 function Transport() {
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
   const playing = usePlayer((s) => s.status === 'playing' || s.status === 'buffering');
@@ -90,76 +90,134 @@ function Transport() {
   const { togglePlay, next, previous, toggleShuffle, cycleRepeat } = usePlayer.getState();
 
   return (
-    <div className="mx-auto mt-[clamp(8px,1.6vh,16px)] mb-0 flex h-13 w-[min(100%,315px)] items-center justify-between">
-      <button className={toggle} aria-label="Shuffle" aria-pressed={shuffle} onClick={toggleShuffle}>
-        <ShuffleIcon size={30} />
-      </button>
-      <button className={skip} disabled={!hasTrack} aria-label="Previous" onClick={previous}>
-        <BackwardIcon size={40} />
-      </button>
-      <button className={`${transportButton} size-14 text-primary`} disabled={!hasTrack} aria-label={playing ? 'Pause' : 'Play'} onClick={togglePlay}>
-        {playing ? <PauseIcon size={48} /> : <PlayIcon size={48} />}
-      </button>
-      <button className={skip} disabled={!hasTrack || !hasNext} aria-label="Next" onClick={next}>
-        <ForwardIcon size={40} />
-      </button>
-      <button
-        className={toggle}
-        aria-label={repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat'}
-        aria-pressed={repeat !== 'off'}
-        onClick={cycleRepeat}
-      >
-        {repeat === 'one' ? <RepeatOneIcon size={30} /> : <RepeatIcon size={30} />}
-      </button>
+    <div className="mt-[clamp(10px,1.8vh,18px)] flex h-14 w-full items-center justify-between">
+      <div className="grid size-9 place-items-center">
+        <button className={toggle} aria-label="Shuffle" aria-pressed={shuffle} onClick={toggleShuffle}>
+          <ShuffleIcon size={26} />
+        </button>
+      </div>
+
+      <div className="flex flex-1 max-w-[calc(100%-88px)] items-center justify-between px-1">
+        <div className="grid size-12 place-items-center">
+          <button className={skip} disabled={!hasTrack} aria-label="Previous" onClick={previous}>
+            <BackwardIcon size={38} />
+          </button>
+        </div>
+
+        <button className={`${transportButton} size-14 text-primary`} disabled={!hasTrack} aria-label={playing ? 'Pause' : 'Play'} onClick={togglePlay}>
+          {playing ? <PauseIcon size={46} /> : <PlayIcon size={46} />}
+        </button>
+
+        <div className="grid size-12 place-items-center">
+          <button className={skip} disabled={!hasTrack || !hasNext} aria-label="Next" onClick={next}>
+            <ForwardIcon size={38} />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid size-9 place-items-center">
+        <button
+          className={toggle}
+          aria-label={repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat'}
+          aria-pressed={repeat !== 'off'}
+          onClick={cycleRepeat}
+        >
+          {repeat === 'one' ? <RepeatOneIcon size={26} /> : <RepeatIcon size={26} />}
+        </button>
+      </div>
     </div>
   );
 }
 
-/** Android-style horizontal volume bar matching NowPlayingScreen.kt */
+/** Android-style horizontal volume bar aligned with Previous and Next controls */
 function PlayerVolumeBar() {
   const volume = usePlayer((s) => s.volume);
   const muted = usePlayer((s) => s.muted);
   const setVolume = usePlayer((s) => s.setVolume);
   const toggleMute = usePlayer((s) => s.toggleMute);
   const level = muted ? 0 : volume;
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const stop = () => setIsDragging(false);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    return () => {
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+  }, [isDragging]);
 
   return (
-    <div className="mx-auto mt-[clamp(8px,1.6vh,16px)] flex h-8 w-[min(100%,315px)] items-center gap-3">
-      <button
-        type="button"
-        className="grid size-7 place-items-center rounded-full text-white/50 transition-colors hover:text-white"
-        aria-label={muted ? 'Unmute' : 'Mute'}
-        onClick={toggleMute}
-      >
-        <VolumeIcon level={level === 0 ? 0 : 0.25} size={18} />
-      </button>
+    <div className="mt-[clamp(10px,1.8vh,18px)] flex h-8 w-full items-center justify-between">
+      {/* Left spacer matching shuffle (size-9) */}
+      <div className="size-9 shrink-0" aria-hidden="true" />
 
-      <div className="group/vol relative flex h-4 flex-1 items-center">
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={level}
-          aria-label="Volume"
-          style={{ '--fill': `${level * 100}%` } as React.CSSProperties}
-          onChange={(e) => setVolume(Number(e.currentTarget.value))}
-          className="h-1.5 w-full cursor-pointer appearance-none bg-transparent
-            [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[linear-gradient(to_right,white_var(--fill),rgba(255,255,255,0.25)_var(--fill))]
-            [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[linear-gradient(to_right,white_var(--fill),rgba(255,255,255,0.25)_var(--fill))]
-            [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.4)] [&::-webkit-slider-thumb]:opacity-0 transition-opacity group-hover/vol:[&::-webkit-slider-thumb]:opacity-100
-            [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.4)] [&::-moz-range-thumb]:opacity-0 transition-opacity group-hover/vol:[&::-moz-range-thumb]:opacity-100"
-        />
+      {/* Center volume section: aligned under Previous and Next */}
+      <div className="flex flex-1 max-w-[calc(100%-88px)] items-center gap-3 px-1">
+        <div className="grid size-12 place-items-center">
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-full text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label={muted ? 'Unmute' : 'Mute'}
+            onClick={toggleMute}
+          >
+            {muted || level === 0 ? <VolumeX size={18} /> : <VolumeIcon level={level === 0 ? 0 : 0.25} size={18} />}
+          </button>
+        </div>
+
+        {/* Volume slider with smooth fill and thumb animation */}
+        <div className="group/vol relative flex h-6 flex-1 items-center">
+          {/* Background track */}
+          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20 transition-[height] duration-150 group-hover/vol:h-2">
+            {/* Animated filled portion */}
+            <div
+              className={`h-full rounded-full bg-white ${
+                isDragging ? '' : 'transition-[width] duration-300 ease-out'
+              }`}
+              style={{ width: `${level * 100}%` }}
+            />
+          </div>
+
+          {/* Animated Thumb */}
+          <div
+            className={`pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 size-3.5 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.45)] opacity-0 group-hover/vol:opacity-100 ${
+              isDragging ? 'opacity-100 scale-110' : 'transition-[left,opacity,transform] duration-300 ease-out'
+            }`}
+            style={{ left: `clamp(7px, ${level * 100}%, calc(100% - 7px))` }}
+          />
+
+          {/* Accessible input overlay */}
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.005}
+            value={level}
+            aria-label="Volume"
+            onPointerDown={() => setIsDragging(true)}
+            onPointerUp={() => setIsDragging(false)}
+            onPointerCancel={() => setIsDragging(false)}
+            onChange={(e) => setVolume(Number(e.currentTarget.value))}
+            className="absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+          />
+        </div>
+
+        <div className="grid size-12 place-items-center">
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-full text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label="Full volume"
+            onClick={() => setVolume(1)}
+          >
+            <VolumeIcon level={1} size={18} />
+          </button>
+        </div>
       </div>
 
-      <button
-        type="button"
-        className="grid size-7 place-items-center rounded-full text-white/50 transition-colors hover:text-white"
-        aria-label="Full volume"
-        onClick={() => setVolume(1)}
-      >
-        <VolumeIcon level={1} size={18} />
-      </button>
+      {/* Right spacer matching repeat (size-9) */}
+      <div className="size-9 shrink-0" aria-hidden="true" />
     </div>
   );
 }
@@ -177,34 +235,38 @@ function PlayerActionRow({
   onToggleQueue: () => void;
 }) {
   return (
-    <div className="mx-auto mt-[clamp(8px,1.6vh,16px)] flex h-10 w-[min(100%,315px)] items-center justify-between px-3">
-      <button
-        type="button"
-        aria-label="Lyrics"
-        aria-pressed={showLyrics}
-        onClick={onToggleLyrics}
-        className={`grid size-9 place-items-center rounded-full transition-all duration-150 ${
-          showLyrics
-            ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
-            : 'text-white/60 hover:bg-white/10 hover:text-white'
-        }`}
-      >
-        {showLyrics ? <LyricsActiveIcon size={20} /> : <LyricsIcon size={20} />}
-      </button>
+    <div className="mt-[clamp(12px,2vh,20px)] flex h-10 w-full items-center justify-between">
+      <div className="grid size-9 place-items-center">
+        <button
+          type="button"
+          aria-label="Lyrics"
+          aria-pressed={showLyrics}
+          onClick={onToggleLyrics}
+          className={`grid size-9 place-items-center rounded-full transition-all duration-150 ${
+            showLyrics
+              ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
+              : 'text-white/60 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          {showLyrics ? <LyricsActiveIcon size={20} /> : <LyricsIcon size={20} />}
+        </button>
+      </div>
 
-      <button
-        type="button"
-        aria-label="Up Next"
-        aria-pressed={showQueue}
-        onClick={onToggleQueue}
-        className={`grid size-9 place-items-center rounded-full transition-all duration-150 ${
-          showQueue
-            ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
-            : 'text-white/60 hover:bg-white/10 hover:text-white'
-        }`}
-      >
-        <UpNextIcon size={20} />
-      </button>
+      <div className="grid size-9 place-items-center">
+        <button
+          type="button"
+          aria-label="Up Next"
+          aria-pressed={showQueue}
+          onClick={onToggleQueue}
+          className={`grid size-9 place-items-center rounded-full transition-all duration-150 ${
+            showQueue
+              ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
+              : 'text-white/60 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <UpNextIcon size={20} />
+        </button>
+      </div>
     </div>
   );
 }
