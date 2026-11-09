@@ -10,6 +10,163 @@ export interface ArtworkColor {
   accent?: string | null;
   /** Interactive button / badge colour (Apple's keyColor). */
   keyColor?: string | null;
+  /** Secondary text colour lifted from dominant hue (Android onBackgroundVariant). */
+  secondary?: string | null;
+  /** Elevated surface colour (Android elevated). */
+  elevated?: string | null;
+  /** Divider colour (Android divider). */
+  divider?: string | null;
+}
+
+export interface AndroidArtworkPalette {
+  background: string;
+  wash: string;
+  elevated: string;
+  accent: string;
+  onBackground: string;
+  onBackgroundVariant: string;
+  divider: string;
+}
+
+export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rf = r / 255;
+  const gf = g / 255;
+  const bf = b / 255;
+  const max = Math.max(rf, gf, bf);
+  const min = Math.min(rf, gf, bf);
+  const delta = max - min;
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (delta !== 0) {
+    if (max === rf) {
+      h = ((gf - bf) / delta) % 6;
+    } else if (max === gf) {
+      h = (bf - rf) / delta + 2;
+    } else {
+      h = (rf - gf) / delta + 4;
+    }
+    s = delta / (1 - Math.abs(2 * l - 1));
+  }
+
+  h = (h * 60) % 360;
+  if (h < 0) h += 360;
+  return [Math.max(0, Math.min(360, h)), Math.max(0, Math.min(1, s)), Math.max(0, Math.min(1, l))];
+}
+
+export function hslToRgb(h: number, s: number, l: number): RgbColor {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const m = l - 0.5 * c;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const hueSegment = Math.floor(h / 60);
+  let rf = 0;
+  let gf = 0;
+  let bf = 0;
+
+  switch (hueSegment) {
+    case 0:
+      rf = c + m; gf = x + m; bf = m; break;
+    case 1:
+      rf = x + m; gf = c + m; bf = m; break;
+    case 2:
+      rf = m; gf = c + m; bf = x + m; break;
+    case 3:
+      rf = m; gf = x + m; bf = c + m; break;
+    case 4:
+      rf = x + m; gf = m; bf = c + m; break;
+    case 5:
+    case 6:
+      rf = c + m; gf = m; bf = x + m; break;
+  }
+  return {
+    r: Math.round(Math.max(0, Math.min(255, rf * 255))),
+    g: Math.round(Math.max(0, Math.min(255, gf * 255))),
+    b: Math.round(Math.max(0, Math.min(255, bf * 255))),
+  };
+}
+
+export function withHsl(
+  hex: string,
+  modify: { saturation?: (s: number) => number; lightness?: (l: number) => number }
+): string {
+  const rgb = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  const newS = modify.saturation ? Math.max(0, Math.min(1, modify.saturation(s))) : s;
+  const newL = modify.lightness ? Math.max(0, Math.min(1, modify.lightness(l))) : l;
+  const outRgb = hslToRgb(h, newS, newL);
+  return rgbToHex(outRgb.r, outRgb.g, outRgb.b);
+}
+
+const CHROMATIC_SATURATION_THRESHOLD = 0.12;
+
+export function adaptedArtworkSaturation(source: number, minimum: number, maximum: number): number {
+  const saturation = Math.max(0, Math.min(1, source));
+  if (saturation < CHROMATIC_SATURATION_THRESHOLD) {
+    return saturation;
+  }
+  return Math.max(minimum, Math.min(maximum, saturation));
+}
+
+/**
+ * Direct port of Android's ArtworkPalette.kt engine for artist and release pages.
+ */
+export function computeAndroidPalette(
+  dominantHex: string,
+  vibrantHex?: string | null,
+  dark: boolean = true,
+): AndroidArtworkPalette {
+  if (dark) {
+    return {
+      background: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.20, 0.62),
+        lightness: () => 0.13,
+      }),
+      wash: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.18, 0.58),
+        lightness: (l) => Math.max(0.14, Math.min(0.24, l)),
+      }),
+      elevated: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.20, 0.62),
+        lightness: () => 0.22,
+      }),
+      accent: withHsl(vibrantHex || dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.55, 1.0),
+        lightness: (l) => Math.max(0.62, Math.min(0.78, l)),
+      }),
+      onBackground: '#FFFFFF',
+      onBackgroundVariant: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.22, 0.50),
+        lightness: () => 0.80,
+      }),
+      divider: 'rgba(255, 255, 255, 0.12)',
+    };
+  } else {
+    return {
+      background: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.14, 0.50),
+        lightness: () => 0.91,
+      }),
+      wash: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.12, 0.46),
+        lightness: (l) => Math.max(0.78, Math.min(0.90, l)),
+      }),
+      elevated: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.14, 0.50),
+        lightness: () => 0.83,
+      }),
+      accent: withHsl(vibrantHex || dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.55, 1.0),
+        lightness: (l) => Math.max(0.30, Math.min(0.44, l)),
+      }),
+      onBackground: '#000000',
+      onBackgroundVariant: withHsl(dominantHex, {
+        saturation: (s) => adaptedArtworkSaturation(s, 0.22, 0.55),
+        lightness: () => 0.34,
+      }),
+      divider: 'rgba(0, 0, 0, 0.10)',
+    };
+  }
 }
 
 export interface RgbColor {

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { adjustColorForDarkLayout, hexToRgb, rgbToHex } from './artworkColor';
+import {
+  adjustColorForDarkLayout,
+  computeAndroidPalette,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsl,
+} from './artworkColor';
 
 describe('artworkColor OKLCH', () => {
   it('converts hex to rgb and back', () => {
@@ -29,3 +35,41 @@ describe('artworkColor OKLCH', () => {
     expect(rgb.g).toBeGreaterThan(rgb.r);
   });
 });
+
+describe('computeAndroidPalette', () => {
+  it('computes Android ArtworkPalette tokens in dark mode', () => {
+    const palette = computeAndroidPalette('#2e1b20', '#ff9eb2', true);
+    expect(palette.onBackground).toBe('#FFFFFF');
+    expect(palette.divider).toBe('rgba(255, 255, 255, 0.12)');
+    expect(palette.wash).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    expect(palette.elevated).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    expect(palette.accent).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    expect(palette.onBackgroundVariant).toMatch(/^#[0-9A-Fa-f]{6}$/);
+
+    const rgbWash = hexToRgb(palette.wash);
+    const [, , lWash] = rgbToHsl(rgbWash.r, rgbWash.g, rgbWash.b);
+    expect(lWash).toBeGreaterThanOrEqual(0.13);
+    expect(lWash).toBeLessThanOrEqual(0.25);
+
+    const rgbVariant = hexToRgb(palette.onBackgroundVariant);
+    const [, , lVariant] = rgbToHsl(rgbVariant.r, rgbVariant.g, rgbVariant.b);
+    expect(lVariant).toBeCloseTo(0.80, 1);
+  });
+
+  it('computes Android ArtworkPalette tokens in light mode', () => {
+    const palette = computeAndroidPalette('#2e1b20', '#ff9eb2', false);
+    expect(palette.onBackground).toBe('#000000');
+    expect(palette.divider).toBe('rgba(0, 0, 0, 0.10)');
+    expect(palette.wash).toMatch(/^#[0-9A-Fa-f]{6}$/);
+
+    const rgbWash = hexToRgb(palette.wash);
+    const [, , lWash] = rgbToHsl(rgbWash.r, rgbWash.g, rgbWash.b);
+    expect(lWash).toBeGreaterThanOrEqual(0.77);
+    expect(lWash).toBeLessThanOrEqual(0.91);
+
+    const rgbVariant = hexToRgb(palette.onBackgroundVariant);
+    const [, , lVariant] = rgbToHsl(rgbVariant.r, rgbVariant.g, rgbVariant.b);
+    expect(lVariant).toBeCloseTo(0.34, 1);
+  });
+});
+

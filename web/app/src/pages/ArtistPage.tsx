@@ -10,28 +10,32 @@ import { MotionArtwork } from '@/components/music/MotionArtwork';
 import { requestAppleAccess, useAppleArtistArt, useUngrantedAppleOrigins, type AppleArtistArt } from '@/data/apple/artistArt';
 import { useMotionAllowed } from '@/data/apple/motionArt';
 import { useArtist, useYouTubeReady } from '@/data/music/queries';
-import type { ArtworkColor } from '@/lib/artworkColor';
+import { computeAndroidPalette, useArtworkColor, type ArtworkColor } from '@/lib/artworkColor';
+import { useIsDark } from '@/lib/theme';
 import { usePageTint } from '@/lib/usePageTint';
 import { ArtistSkeleton } from '@/skeletons/PageSkeletons';
-
-function luminance(color: string): number {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16) / 255);
-  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-}
 
 /**
  * The name, or Apple's title logo in its place (AppleArtistArt.kt). Until the
  * logo has drawn, the name stands in, so the header is never left empty; a
  * logo that fails to load leaves the name.
  */
-function ArtistName({ name, apple }: { name: string; apple: AppleArtistArt | null }) {
+function ArtistName({
+  name,
+  apple,
+  color,
+}: {
+  name: string;
+  apple: AppleArtistArt | null;
+  color?: string;
+}) {
   const logo = apple?.logoUrl ?? null;
   const [shown, setShown] = useState<string | null>(null);
   const logoShown = !!logo && shown === logo;
   return (
     <h1
       className="type-header-emphasized text-[clamp(34px,5vw,64px)] leading-[1.05] [text-shadow:0_2px_20px_#00000059] data-logo:w-full data-logo:[text-shadow:none]"
-      style={!logoShown && apple?.accent ? { color: apple.accent } : undefined}
+      style={!logoShown ? { color: color ?? '#ffffff' } : undefined}
       data-logo={logoShown || undefined}
     >
       {!logoShown && name}
@@ -55,10 +59,10 @@ function ArtistName({ name, apple }: { name: string; apple: AppleArtistArt | nul
 }
 
 /**
- * An artist (report §4): full-bleed hero with the name and Play, Top Songs,
- * then shelves. Where Apple Music has the artist, the page takes Apple's
- * header as the phone does: its photograph, its title logo over it, its
- * colour behind the whole page, and its colour on the Play button.
+ * An artist: full-bleed hero with the name and Play, Top Songs, then shelves.
+ * 1-to-1 port of BeatFlow Android's artist page (ArtworkPalette.kt & DetailScreen.kt):
+ * Apple's photograph, title logo over it, the exact palette.wash behind the page and
+ * vertical gradient, onBackgroundVariant secondary text, and PlayCircle styling.
  */
 export default function ArtistPage() {
   const id = decodeURIComponent(useParams().id ?? '');
@@ -67,18 +71,34 @@ export default function ArtistPage() {
   const apple = useAppleArtistArt(artist.data?.name);
   const appleUngranted = useUngrantedAppleOrigins();
   const motionAllowed = useMotionAllowed();
-  const tint = useMemo<ArtworkColor | null>(
+  const isDark = useIsDark();
+
+  const fallbackTint = useArtworkColor(artist.data?.heroImage);
+
+  // Exact Android ArtworkPalette.kt engine calculation
+  const palette = useMemo(
     () =>
       apple
-        ? {
-            background: apple.background,
-            accent: apple.accent,
-            keyColor: apple.keyColor,
-            dark: luminance(apple.background) < 0.6,
-          }
-        : null,
-    [apple],
+        ? computeAndroidPalette(apple.background, apple.accent, isDark)
+        : fallbackTint
+          ? computeAndroidPalette(fallbackTint.background, fallbackTint.accent, isDark)
+          : null,
+    [apple, fallbackTint, isDark],
   );
+
+  const tint = useMemo<ArtworkColor | null>(() => {
+    if (!palette) return null;
+    return {
+      background: palette.wash,
+      accent: palette.onBackground,
+      keyColor: apple?.keyColor ?? palette.accent,
+      secondary: palette.onBackgroundVariant,
+      elevated: palette.elevated,
+      divider: palette.divider,
+      dark: isDark,
+    };
+  }, [palette, apple?.keyColor, isDark]);
+
   usePageTint(tint);
 
   if (missing) return <NeedsExtension />;
@@ -89,7 +109,7 @@ export default function ArtistPage() {
   const topSongs = { title: `${data.name}: Top Songs`, type: 'artist' as const, id: data.id };
   return (
     <>
-      {/* The hero (report §4): full-bleed, ~1.93:1 of the content column, the name and actions centred near the bottom. */}
+      {/* The hero: full-bleed, ~1.93:1 of the content column, the name and actions centred near the bottom. */}
       <header className="relative max-h-[70vh] overflow-hidden">
         <div className="relative w-full">
           <Artwork src={data.heroImage} displayWidth={2880} aspect={1165 / 604} eager />
@@ -114,23 +134,22 @@ export default function ArtistPage() {
             />
           )}
         </div>
-        {/* The image melts smoothly into the page at the bottom with seamless easing to eliminate color banding and grain. */}
+        {/* Android DetailScreen.kt exact vertical wash gradient: 0.45 transparent -> 0.65 wash 30% -> 0.82 wash 72% -> 0.94 wash 95% -> 1.00 wash 100% */}
         <div
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,transparent_35%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_15%,transparent)_58%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_50%,transparent)_76%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_85%,transparent)_90%,var(--page-tint,var(--pageBG))_100%)]"
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,transparent_45%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_30%,transparent)_65%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_72%,transparent)_82%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_95%,transparent)_94%,var(--page-tint,var(--pageBG))_100%)]"
           aria-hidden="true"
         />
         <div className="absolute inset-x-0 bottom-6 flex flex-col items-center gap-1.5 px-(--body-gutter) text-center">
-          <ArtistName name={data.name} apple={apple} />
+          <ArtistName name={data.name} apple={apple} color={palette?.onBackground} />
           {data.audience && <p className="type-callout-emphasized text-secondary">{data.audience}</p>}
           <button
-            // The 56px key-colour play button.
-            className="mt-2.5 grid size-14 place-items-center rounded-full bg-(--play-fill,var(--keyColorBG)) text-(--play-glyph,#fff) shadow-[0_2px_6px_-4px_#0006,inset_0_0_2px_#ffffff1a] disabled:opacity-40 enabled:hover:scale-[1.04]"
-            // Apple's fill for the Play circle, with the triangle in the page's colour,
-            // as the phone cuts it out of the circle; white without a key colour.
+            // Android DetailScreen.kt PlayCircle: white filled circle with cutout showing background wash (or keyColor)
+            className="mt-2.5 grid size-14 place-items-center rounded-full bg-(--play-fill) text-(--play-glyph) shadow-[0_4px_16px_#0000004d,inset_0_0_2px_#ffffff1a] transition-transform disabled:opacity-40 enabled:hover:scale-[1.04]"
             style={
-              apple
-                ? ({ '--play-fill': apple.keyColor ?? '#ffffff', '--play-glyph': apple.background } as CSSProperties)
-                : undefined
+              {
+                '--play-fill': apple?.keyColor ? apple.keyColor : '#ffffff',
+                '--play-glyph': apple?.keyColor ? '#ffffff' : (tint?.background ?? '#000000'),
+              } as CSSProperties
             }
             aria-label={`Play ${data.name}`}
             disabled={!data.topSongs.length}

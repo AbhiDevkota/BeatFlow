@@ -14,11 +14,17 @@ export function usePageTint(color: ArtworkColor | null) {
     page.style.setProperty('--page-tint', color.background);
     if (color.accent) page.style.setProperty('--page-accent', color.accent);
     if (color.keyColor) page.style.setProperty('--page-key', color.keyColor);
+    if (color.secondary) page.style.setProperty('--page-secondary', color.secondary);
+    if (color.elevated) page.style.setProperty('--page-elevated', color.elevated);
+    if (color.divider) page.style.setProperty('--page-divider', color.divider);
     page.dataset.tint = color.dark ? 'dark' : 'light';
     return () => {
       page.style.removeProperty('--page-tint');
       page.style.removeProperty('--page-accent');
       page.style.removeProperty('--page-key');
+      page.style.removeProperty('--page-secondary');
+      page.style.removeProperty('--page-elevated');
+      page.style.removeProperty('--page-divider');
       delete page.dataset.tint;
     };
   }, [color]);

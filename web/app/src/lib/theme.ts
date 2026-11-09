@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -34,6 +35,26 @@ export function applyTheme(theme: ThemeMode) {
   }
 }
 
+/** Whether the active resolved theme is dark (honouring system preferences when on 'system'). */
+export function useIsDark(): boolean {
+  const theme = useTheme((s) => s.theme);
+  const [systemDark, setSystemDark] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)').matches : true,
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    media.addEventListener('change', handler);
+    return () => media.removeEventListener('change', handler);
+  }, []);
+
+  if (theme === 'dark') return true;
+  if (theme === 'light') return false;
+  return systemDark;
+}
+
 // Initial application on file evaluation
 if (typeof window !== 'undefined') {
   try {
@@ -46,3 +67,4 @@ if (typeof window !== 'undefined') {
     // Ignore parse errors
   }
 }
+
