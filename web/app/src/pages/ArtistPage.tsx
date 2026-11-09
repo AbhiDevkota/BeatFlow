@@ -88,7 +88,7 @@ export default function ArtistPage() {
           {apple && (
             <img
               key={apple.heroUrl}
-              className="absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-400 ease-in data-loaded:opacity-100"
+              className="absolute inset-0 size-full object-cover object-top opacity-0 transition-opacity duration-400 ease-in data-loaded:opacity-100"
               src={apple.heroUrl}
               alt=""
               decoding="async"
@@ -100,14 +100,14 @@ export default function ArtistPage() {
             <MotionArtwork
               key={apple.videoUrl}
               motion={{ url: apple.videoUrl, fallbackUrl: null }}
-              className="absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
+              className="absolute inset-0 size-full object-cover object-top opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
               highQuality
             />
           )}
         </div>
-        {/* The image melts into the page at the bottom (Apple's masked blur frame), into Apple's colour when the page is tinted with it. */}
+        {/* The image melts smoothly into the page at the bottom with seamless easing to eliminate color banding and grain. */}
         <div
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,transparent_45%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_70%,transparent)_80%,var(--page-tint,var(--pageBG))_100%)]"
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,transparent_35%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_15%,transparent)_58%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_50%,transparent)_76%,color-mix(in_srgb,var(--page-tint,var(--pageBG))_85%,transparent)_90%,var(--page-tint,var(--pageBG))_100%)]"
           aria-hidden="true"
         />
         <div className="absolute inset-x-0 bottom-6 flex flex-col items-center gap-1.5 px-(--body-gutter) text-center">

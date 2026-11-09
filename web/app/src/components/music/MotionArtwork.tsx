@@ -57,6 +57,13 @@ export function MotionArtwork({
         maxBufferLength: highQuality ? 20 : 10,
         enableWorker: true,
       });
+      if (highQuality) {
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (hls && hls.levels.length > 0) {
+            hls.currentLevel = hls.levels.length - 1;
+          }
+        });
+      }
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) retry();
       });

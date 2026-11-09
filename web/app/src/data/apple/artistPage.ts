@@ -28,6 +28,7 @@ export interface AppleArtistArt {
 
 // High-resolution desktop master artwork dimensions (scaled to 2880px for QHD/4K/Retina displays)
 const HERO_WIDTH = 2880;
+const HERO_HEIGHT = 1492; // 2880 / (1165 / 604) = 1492 (Apple's ~1.93:1 hero ratio)
 const LOGO_WIDTH = 2000;
 
 export type Json = Record<string, unknown>;
@@ -54,10 +55,14 @@ function hex(value: unknown): string | null {
 }
 
 /** Fills Apple's image URL template ({w}x{h}{c}.{f}). */
-function fill(template: unknown, w: number, h: number, format: string): string | null {
+function fill(template: unknown, w: number, h: number, crop = 'sr', format = 'jpg'): string | null {
   const url = str(template);
   if (!url.includes('{w}')) return null;
-  return url.replace('{w}', String(w)).replace('{h}', String(h)).replace('{c}', 'bb').replace('{f}', format);
+  return url
+    .replace('{w}', String(w))
+    .replace('{h}', String(h))
+    .replace('{c}', crop)
+    .replace('{f}', format);
 }
 
 /** The first object anywhere in [node] that has an `artistLogo` key: the artist page's header. */
@@ -90,25 +95,48 @@ export function parseArtistPage(html: string): AppleArtistArt | null {
   if (!header) return null;
 
   // Absent for most artists: the key is there and null.
-  const logo = obj(obj(header.artistLogo)?.dictionary);
-  const hero = obj(obj(header.artwork)?.dictionary) ?? obj(obj(header.colorBackdropArtwork)?.dictionary);
+  const logoWrapper = obj(header.artistLogo);
+  const logo = obj(logoWrapper?.dictionary);
+  const logoCrop = str(logoWrapper?.cropStyle) || 'bb';
+
+  // Prefer widescreen master artwork (wideArtwork / uberArtwork) if available, then artwork / colorBackdropArtwork / fallbackArtwork
+  const wideArtwork = obj(header.wideArtwork);
+  const uberArtwork = obj(header.uberArtwork);
+  const heroWrapper = wideArtwork ?? uberArtwork ?? obj(header.artwork) ?? obj(header.colorBackdropArtwork) ?? obj(header.fallbackArtwork);
+  const hero = obj(heroWrapper?.dictionary);
   if (!hero) return null;
   const heroW = num(hero.width);
   const heroH = num(hero.height);
   if (!heroW || !heroH) return null;
+
+  const isWide = heroW > heroH * 1.3;
   const targetHeroW = heroW >= 2560 ? Math.min(heroW, 2880) : HERO_WIDTH;
-  const targetHeroH = Math.round((targetHeroW * heroH) / heroW);
-  const heroUrl = fill(hero.url, targetHeroW, targetHeroH, 'jpg');
+  const targetHeroH = isWide
+    ? Math.round((targetHeroW * heroH) / heroW)
+    : HERO_HEIGHT;
+
+  const heroCrop = str(heroWrapper?.cropStyle) || 'sr';
+  const heroUrl = fill(hero.url, targetHeroW, targetHeroH, heroCrop, 'jpg');
   if (!heroUrl) return null;
 
   const logoW = num(logo?.width);
   const logoH = num(logo?.height);
   const targetLogoW = logoW >= 2000 ? Math.min(logoW, 2400) : LOGO_WIDTH;
   const targetLogoH = logoW && logoH ? Math.round((targetLogoW * logoH) / logoW) : 1000;
-  const logoUrl = logo && logoW && logoH ? fill(logo.url, targetLogoW, targetLogoH, 'png') : null;
+  const logoUrl = logo && logoW && logoH ? fill(logo.url, targetLogoW, targetLogoH, logoCrop, 'png') : null;
 
+  // Video renditions: prioritize wide 4K/1080p landscape renditions on desktop, then square fallbacks
+  const wva = obj(obj(header.wideVideoArtwork)?.dictionary);
   const va = obj(obj(header.videoArtwork)?.dictionary);
-  const clip = obj(va?.motionArtistSquare1x1) ?? obj(va?.motionArtistSquare) ?? obj(va?.motionArtistWide21x9);
+  const clip =
+    obj(wva?.motionArtistFullscreen16x9) ??
+    obj(wva?.motionArtistWide16x9) ??
+    obj(va?.motionArtistWide21x9) ??
+    obj(va?.motionArtistWide) ??
+    obj(va?.motionArtistFullscreen16x9) ??
+    obj(va?.motionArtistWide16x9) ??
+    obj(va?.motionArtistSquare1x1) ??
+    obj(va?.motionArtistSquare);
   const clipVideo = clip ? str(clip.video || clip.videoUrl || clip.hlsUrl || clip.url) : '';
   const videoUrl = clipVideo.startsWith('http') ? clipVideo : null;
 
@@ -121,7 +149,7 @@ export function parseArtistPage(html: string): AppleArtistArt | null {
   if (!background) return null;
   return {
     heroUrl,
-    heroAspect: heroW / heroH,
+    heroAspect: targetHeroW / targetHeroH,
     logoUrl,
     logoAspect: logoUrl ? logoW / logoH : 1,
     videoUrl,
