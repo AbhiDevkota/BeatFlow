@@ -1,10 +1,17 @@
 import type { ArtistRef, MusicItem, Track } from '@/data/music/types';
+import { cachedAudioVersion, isVideoTrack } from '@/data/music/resolveAudio';
+import { useContentSettings } from '@/lib/contentSettings';
 import type { QueueSource } from '@/playback/queue/timeline';
 import { usePlayer } from '@/state/player';
 
 /** A shelf or search item as a queue track. */
 export function toTrack(item: Track | MusicItem, fallbackArtwork?: string | null): Track {
-  if ('videoId' in item) return item.thumbnail || !fallbackArtwork ? item : { ...item, thumbnail: fallbackArtwork };
+  if ('videoId' in item) {
+    const isVideo = item.isVideo ?? !item.album;
+    return item.thumbnail || !fallbackArtwork
+      ? { ...item, isVideo }
+      : { ...item, thumbnail: fallbackArtwork, isVideo };
+  }
   return {
     videoId: item.id,
     title: item.title,
@@ -15,12 +22,17 @@ export function toTrack(item: Track | MusicItem, fallbackArtwork?: string | null
     thumbnail: item.thumbnail ?? fallbackArtwork ?? null,
     index: null,
     plays: null,
+    isVideo: item.kind === 'video' || item.wide || !item.album,
   };
 }
 
 /** One song on its own (Search, Home, a shelf): the queue is that song, then AutoPlay. */
 export function playTrack(item: Track | MusicItem, fallbackArtwork?: string | null, source?: QueueSource) {
-  const track = toTrack(item, fallbackArtwork);
+  let track = toTrack(item, fallbackArtwork);
+  if (useContentSettings.getState().preferMusicOnly && isVideoTrack(track)) {
+    const cached = cachedAudioVersion(track.videoId);
+    if (cached) track = cached;
+  }
   usePlayer.getState().playTrack(track, source ?? { title: track.title, type: 'other' });
 }
 

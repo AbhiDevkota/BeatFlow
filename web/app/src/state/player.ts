@@ -1,8 +1,10 @@
 import type { DetectedExtension } from '@bitchord/shared/bridge';
 import { create } from 'zustand';
 import type { Track } from '@/data/music/types';
+import { isVideoTrack, resolveAudioTrack, resolveVideoTrack } from '@/data/music/resolveAudio';
 import { extensionQueryKey } from '@/extension/useExtension';
 import { artworkAtPixels } from '@/lib/artwork';
+import { useContentSettings } from '@/lib/contentSettings';
 import { queryClient } from '@/lib/queryClient';
 import { extendStation } from '@/playback/queue/builder';
 import {
@@ -102,6 +104,8 @@ interface PlayerState extends Settings {
   setAutomix: (on: boolean) => void;
   setAutomixBars: (bars: number) => void;
   setShowNerdStats: (on: boolean) => void;
+  /** Swaps between official audio song and music video version, preserving playhead position. */
+  swapVersion: () => Promise<boolean>;
 }
 
 // ---- Settings, kept across visits ---------------------------------------------------
@@ -636,7 +640,53 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     set({ showNerdStats });
     saveSettings(get());
   },
+
+  async swapVersion() {
+    const { queue, index, status } = get();
+    const entry = queue[index];
+    if (!entry || partyHooks?.inParty()) return false;
+    const currentTrack = entry.track;
+    const isVideo = isVideoTrack(currentTrack);
+    const target = isVideo
+      ? await resolveAudioTrack(currentTrack)
+      : await resolveVideoTrack(currentTrack);
+    if (!target || target.videoId === currentTrack.videoId) return false;
+
+    const currentQueue = [...get().queue];
+    if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
+      currentQueue[index] = { ...currentQueue[index]!, track: target };
+      set({ queue: currentQueue });
+    }
+    const audioEl = getAudio();
+    const playhead = audioEl?.currentTime ?? 0;
+    const isPlaying = status === 'playing';
+    void startAt(index, { startSec: playhead, autoplay: isPlaying });
+    return true;
+  },
 }));
+
+useContentSettings.subscribe((current, prev) => {
+  if (current.preferMusicOnly && !prev.preferMusicOnly) {
+    const { queue, index, status } = usePlayer.getState();
+    const entry = queue[index];
+    if (entry && isVideoTrack(entry.track) && !partyHooks?.inParty()) {
+      void resolveAudioTrack(entry.track).then((audio) => {
+        if (audio && audio.videoId !== entry.track.videoId) {
+          const currentQueue = [...usePlayer.getState().queue];
+          if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
+            currentQueue[index] = { ...currentQueue[index]!, track: audio };
+            usePlayer.setState({ queue: currentQueue });
+          }
+          const audioEl = getAudio();
+          const playhead = audioEl?.currentTime ?? 0;
+          const isPlaying = status === 'playing';
+          void startAt(index, { startSec: playhead, autoplay: isPlaying });
+        }
+      });
+    }
+    void convertUpcomingTracks();
+  }
+});
 
 // For browser-driven tests, next to __bcAudio.
 if (import.meta.env.DEV) {
@@ -674,17 +724,36 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   cancelCrossfade();
   const token = ++loadToken;
 
+  let currentTrack = entry.track;
+  const preferAudio = useContentSettings.getState().preferMusicOnly && !partyHooks?.inParty();
+  if (preferAudio && isVideoTrack(currentTrack)) {
+    try {
+      const audio = await resolveAudioTrack(currentTrack);
+      if (token !== loadToken) return;
+      if (audio && audio.videoId !== currentTrack.videoId) {
+        currentTrack = audio;
+        const currentQueue = [...usePlayer.getState().queue];
+        if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+          currentQueue[at] = { ...currentQueue[at]!, track: audio };
+          usePlayer.setState({ queue: currentQueue });
+        }
+      }
+    } catch {
+      // Continue with currentTrack on resolution error
+    }
+  }
+
   if (!extensionReady()) {
     usePlayer.setState({
       index: at,
-      nowPlaying: { ...hintOf(entry.track), title: entry.track.title || 'Can’t play this here yet' },
+      nowPlaying: { ...hintOf(currentTrack), title: currentTrack.title || 'Can’t play this here yet' },
       status: 'error',
       error: 'YouTube playback needs the BeatFlow extension.',
     });
     return;
   }
 
-  usePlayer.setState({ index: at, nowPlaying: hintOf(entry.track), status: 'loading', error: null });
+  usePlayer.setState({ index: at, nowPlaying: hintOf(currentTrack), status: 'loading', error: null });
   updateMediaSession(usePlayer.getState().nowPlaying);
   try {
     const all = await getDecks();
@@ -692,9 +761,9 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     all[1 - active]!.engine.stop().catch(() => {});
     deck.gain = 1;
     applyVolumes();
-    const track = await deck.engine.load(entry.track.videoId, { startSec, autoplay });
+    const track = await deck.engine.load(currentTrack.videoId, { startSec, autoplay });
     if (token !== loadToken) return;
-    applyTrack(track, entry.track);
+    applyTrack(track, currentTrack);
     if (!autoplay) usePlayer.setState({ status: 'paused' });
     afterTrackStarted();
     syncAutomix();
@@ -704,7 +773,7 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     usePlayer.setState({ status: 'error', error: message });
     // A track the player reached on its own that can't play is skipped, as on the phone.
     if (auto && planNext(true)) {
-      trackLog.w(`skipping: ${message}`, entry.track.videoId);
+      trackLog.w(`skipping: ${message}`, currentTrack.videoId);
       setTimeout(() => {
         if (token === loadToken) void advance(true);
       }, 1500);
@@ -766,6 +835,31 @@ function afterTrackStarted() {
     });
   }
   void refillAutoplay();
+  void convertUpcomingTracks();
+}
+
+/** Pre-resolves upcoming videos in the queue to their catalogue audio releases (PlaybackService.convertVideosAround). */
+async function convertUpcomingTracks() {
+  if (!useContentSettings.getState().preferMusicOnly || partyHooks?.inParty()) return;
+  const { queue, index } = usePlayer.getState();
+  const nextIndices = [index + 1, index + 2].filter((i) => i >= 0 && i < queue.length);
+  for (const i of nextIndices) {
+    const entry = usePlayer.getState().queue[i];
+    if (entry && isVideoTrack(entry.track)) {
+      try {
+        const audio = await resolveAudioTrack(entry.track);
+        if (audio && audio.videoId !== entry.track.videoId) {
+          const currentQueue = [...usePlayer.getState().queue];
+          if (currentQueue[i] && currentQueue[i]!.entryId === entry.entryId) {
+            currentQueue[i] = { ...currentQueue[i]!, track: audio };
+            usePlayer.setState({ queue: currentQueue });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 // ---- AutoPlay ---------------------------------------------------------------------

@@ -166,6 +166,27 @@ export function best<T extends MatchCandidate>(candidates: T[], target: MatchTar
   return ranked(candidates, target)[0] ?? null;
 }
 
+/**
+ * Resolves a music video to its official catalogue audio song even when the video
+ * has an extended intro/outro skit or visual prelude runtime drift, while still strictly
+ * enforcing core title, versions/takes, and artist match.
+ */
+export function bestOfficialAudioForVideo<T extends MatchCandidate>(candidates: T[], target: MatchTarget): T | null {
+  const wanted = parseTitle(target.title, target.artist ?? '');
+  if (!wanted.core.trim()) return null;
+  const scored = candidates.flatMap((candidate) => {
+    const got = parseTitle(candidate.title, candidate.artist);
+    if (wanted.core !== got.core || !sameSet(wanted.versions, got.versions)) return [];
+    const artist = artistScore(target.artist ?? '', candidate.artist);
+    if (artist === null) return [];
+    const expected = target.durationSec ?? null;
+    const actual = positive(candidate.durationSec);
+    const duration = expected !== null && actual !== null ? -Math.abs(expected - actual) : -120;
+    return [{ candidate, score: artist * 1000 + duration }];
+  });
+  return scored.sort((a, b) => b.score - a.score)[0]?.candidate ?? null;
+}
+
 export function ranked<T extends MatchCandidate>(candidates: T[], target: MatchTarget): T[] {
   const scored = candidates.flatMap((candidate) => {
     const value = score(candidate, target);

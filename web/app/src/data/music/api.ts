@@ -383,6 +383,37 @@ export async function fetchTrackLinks(videoId: string): Promise<Track | null> {
 }
 
 /**
+ * Official paired version from YouTube Music's watch endpoint (YtMusicRepository.officialVersion).
+ * When [wantAudio] is true, resolves a music video to its paired catalogue audio song.
+ * When [wantAudio] is false, resolves an audio track to its paired music video.
+ */
+export async function fetchOfficialVersionPair(videoId: string, wantAudio: boolean): Promise<Track | null> {
+  try {
+    const yt = await getMusicClient();
+    const panel = await yt.music.getUpNext(videoId, false);
+    const rows = (panel.contents as unknown as Raw[]) ?? [];
+    for (const raw of rows) {
+      const cuts = panelCuts(raw);
+      if (cuts.some((cut) => cut.video_id === videoId)) {
+        const counterpart = cuts.find((cut) => (wantAudio ? !isMusicVideo(cut) : isMusicVideo(cut)));
+        if (counterpart?.video_id && counterpart.video_id !== videoId) {
+          const candidate = panelCandidate(raw, !wantAudio);
+          if (candidate?.track) {
+            return {
+              ...candidate.track,
+              isVideo: !wantAudio,
+            };
+          }
+        }
+      }
+    }
+  } catch {
+    // Official pair lookup may fail or not exist
+  }
+  return null;
+}
+
+/**
  * The page of the artist called exactly [name] (YtMusicRepository.findArtistPageId):
  * a name is not an identity, so only a result that answers to it exactly is
  * opened, never the nearest one.

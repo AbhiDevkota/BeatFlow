@@ -1,6 +1,7 @@
-import { ChevronLeft, ChevronRight, ListEnd, ListPlus, ListStart, MoreHorizontal, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ListEnd, ListPlus, ListStart, MoreHorizontal, Music, Star, Video } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Menu, MenuHeader, MenuItem, MenuSeparator, type MenuPlacement } from '@/components/Menu';
+import { isVideoTrack } from '@/data/music/resolveAudio';
 import {
   useAddToPlaylist,
   useLikeStatus,
@@ -82,7 +83,8 @@ function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void 
   if (view === 'playlists') {
     return <PlaylistChoices videoId={track.videoId} onDone={onClose} onBack={() => setView('main')} />;
   }
-  const { playNext, addToQueue } = usePlayer.getState();
+  const { playNext, addToQueue, swapVersion } = usePlayer.getState();
+  const isCurrentPlaying = usePlayer((s) => s.nowPlaying?.videoId === track.videoId);
   return (
     <>
       <MenuItem icon={<ListStart size={15} />} onSelect={() => (onClose(), playNext([track]))}>
@@ -91,6 +93,17 @@ function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void 
       <MenuItem icon={<ListEnd size={15} />} onSelect={() => (onClose(), addToQueue([track]))}>
         Add to Queue
       </MenuItem>
+      {isCurrentPlaying && (
+        <MenuItem
+          icon={isVideoTrack(track) ? <Music size={15} /> : <Video size={15} />}
+          onSelect={async () => {
+            onClose();
+            await swapVersion();
+          }}
+        >
+          {isVideoTrack(track) ? 'Switch to Audio Version' : 'Switch to Music Video'}
+        </MenuItem>
+      )}
       {signedIn && <AccountItems track={track} onClose={onClose} onPlaylists={() => setView('playlists')} />}
     </>
   );

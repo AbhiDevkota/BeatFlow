@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   best,
+  bestOfficialAudioForVideo,
   hasConflictingAlbums,
   matches,
   queries,
@@ -146,5 +147,22 @@ describe('TrackMatcher', () => {
     expect(matches(song('Film Name', 'Some Artist', '4:07'), 'Song Name (From "Film Name")', 'Singer', 247)).toBe(false);
     // One word of a longer aside is not the whole title.
     expect(matches(song('Night', 'Singer', '4:20'), '夜に駆ける (Racing Into The Night)', 'Singer', 260)).toBe(false);
+  });
+
+  it('bestOfficialAudioForVideo accepts official catalogue audio despite music video intro/outro runtime drift', () => {
+    const target = {
+      title: 'Kesariya (Official Video) | Brahmāstra',
+      artist: 'Pritam, Arijit Singh, Amitabh Bhattacharya',
+      durationSec: 292,
+      isVideo: true,
+    };
+    const officialAudio = song('Kesariya', 'Pritam, Arijit Singh, Amitabh Bhattacharya', '4:28');
+    const sameTitleCover = song('Kesariya', 'Local Singer', '4:52');
+
+    // Standard best refuses multi-minute gap
+    expect(best([sameTitleCover], target)).toBe(null);
+
+    // bestOfficialAudioForVideo matches official studio song even with dialogue drift
+    expect(bestOfficialAudioForVideo([sameTitleCover, officialAudio], target)).toBe(officialAudio);
   });
 });

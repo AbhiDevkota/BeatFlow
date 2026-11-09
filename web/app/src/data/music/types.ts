@@ -72,6 +72,8 @@ export interface Track {
    * Music version yet: still being looked for, or not found. Shown, never played.
    */
   unavailable?: 'matching' | 'missing';
+  /** Whether this track is a music video rather than a catalogue audio song. */
+  isVideo?: boolean;
 }
 
 export interface HeaderInfo {
