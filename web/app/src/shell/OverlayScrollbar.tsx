@@ -39,8 +39,11 @@ export function OverlayScrollbar() {
     const topInset = 36;
     const bottomInset = 20;
     const availableTrack = Math.max(80, clientHeight - topInset - bottomInset);
-    const minHeight = 36;
-    const computedHeight = Math.max(minHeight, Math.min(availableTrack * 0.8, (clientHeight / scrollHeight) * availableTrack));
+    // Compact pill height like Apple / iOS indicator
+    const minHeight = 32;
+    const maxHeight = 52;
+    const pageRatio = scrollHeight > clientHeight ? clientHeight / scrollHeight : 1;
+    const computedHeight = Math.max(minHeight, Math.min(maxHeight, Math.round(pageRatio * 64)));
     const maxScroll = scrollHeight - clientHeight;
     const maxThumbTop = availableTrack - computedHeight;
     const scrollRatio = maxScroll > 0 ? scrollTop / maxScroll : 0;
@@ -172,10 +175,10 @@ export function OverlayScrollbar() {
       aria-hidden="true"
     >
       <div
-        className={`absolute right-1 cursor-pointer rounded-full transition-[width,background-color] duration-150 ${
+        className={`absolute right-1 cursor-pointer rounded-[999px] transition-[width,background-color] duration-120 ease-in ${
           isHovered || isDragging
-            ? 'w-[7px] bg-[color-mix(in_srgb,var(--systemPrimary)_75%,transparent)] shadow-sm'
-            : 'w-[4.5px] bg-[color-mix(in_srgb,var(--systemPrimary)_45%,transparent)]'
+            ? 'w-2 bg-[color-mix(in_srgb,var(--systemPrimary)_80%,transparent)] shadow-[0_1px_4px_rgba(0,0,0,0.3)]'
+            : 'w-1 bg-[color-mix(in_srgb,var(--systemPrimary)_45%,transparent)]'
         }`}
         style={{
           height: `${thumb.height}px`,

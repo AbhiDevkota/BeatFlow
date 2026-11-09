@@ -1,4 +1,4 @@
-import { Maximize, Minimize, VolumeX, X } from 'lucide-react';
+import { Maximize, Minimize, Volume1, Volume2, VolumeX, X } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 import {
@@ -12,7 +12,6 @@ import {
   RepeatOneIcon,
   ShuffleIcon,
   UpNextIcon,
-  VolumeIcon,
 } from '@/components/icons/Transport';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
 import { FavoriteButton } from '@/components/music/FavoriteButton';
@@ -159,34 +158,33 @@ function PlayerVolumeBar() {
         <div className="grid size-12 place-items-center">
           <button
             type="button"
-            className="grid size-8 place-items-center rounded-full text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="grid size-8 place-items-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
             aria-label={muted ? 'Unmute' : 'Mute'}
             onClick={toggleMute}
           >
-            {muted || level === 0 ? <VolumeX size={18} /> : <VolumeIcon level={level === 0 ? 0 : 0.25} size={18} />}
+            {muted || level === 0 ? (
+              <VolumeX size={18} strokeWidth={1.8} />
+            ) : (
+              <Volume1 size={18} strokeWidth={1.8} />
+            )}
           </button>
         </div>
 
-        {/* Volume slider with smooth fill and thumb animation */}
-        <div className="group/vol relative flex h-6 flex-1 items-center">
-          {/* Background track */}
-          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20 transition-[height] duration-150 group-hover/vol:h-2">
-            {/* Animated filled portion */}
+        {/* Volume bar matching the player bar (Scrubber): pill line that expands on hover/drag, no dot */}
+        <div
+          className="group/vol relative flex h-5 flex-1 cursor-pointer items-center"
+          data-dragging={isDragging || undefined}
+        >
+          {/* Expanding track */}
+          <div className="relative h-1 w-full overflow-hidden rounded-[999px] bg-white/20 transition-[height] duration-120 ease-in group-hover/vol:h-2 group-data-dragging/vol:h-2">
+            {/* Smooth animated fill */}
             <div
-              className={`h-full rounded-full bg-white ${
+              className={`h-full rounded-[999px] bg-white transition-[background-color] duration-120 ease-in ${
                 isDragging ? '' : 'transition-[width] duration-300 ease-out'
               }`}
               style={{ width: `${level * 100}%` }}
             />
           </div>
-
-          {/* Animated Thumb */}
-          <div
-            className={`pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 size-3.5 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.45)] opacity-0 group-hover/vol:opacity-100 ${
-              isDragging ? 'opacity-100 scale-110' : 'transition-[left,opacity,transform] duration-300 ease-out'
-            }`}
-            style={{ left: `clamp(7px, ${level * 100}%, calc(100% - 7px))` }}
-          />
 
           {/* Accessible input overlay */}
           <input
@@ -207,11 +205,11 @@ function PlayerVolumeBar() {
         <div className="grid size-12 place-items-center">
           <button
             type="button"
-            className="grid size-8 place-items-center rounded-full text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="grid size-8 place-items-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
             aria-label="Full volume"
             onClick={() => setVolume(1)}
           >
-            <VolumeIcon level={1} size={18} />
+            <Volume2 size={18} strokeWidth={1.8} />
           </button>
         </div>
       </div>
