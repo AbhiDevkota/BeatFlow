@@ -22,6 +22,7 @@ import { VideoSurface } from '@/components/music/VideoSurface';
 import { useTrackMotion } from '@/data/apple/motionArt';
 import { sizedArtwork } from '@/lib/artwork';
 import { isDesktopApp } from '@/lib/platform';
+import { useContentSettings } from '@/lib/contentSettings';
 import { usePlayer } from '@/state/player';
 import { useUi } from '@/state/ui';
 import { useHasVideo, useVideo } from '@/state/video';
@@ -303,6 +304,7 @@ export function FullScreenPlayer() {
   const playing = usePlayer((s) => s.status === 'playing' || s.status === 'buffering');
   const setFullScreen = useUi((s) => s.setFullScreen);
   const video = useHasVideo(nowPlaying?.videoId);
+  const squareVideoThumbnails = useContentSettings((s) => s.squareVideoThumbnails);
   // The right-hand column: the lyrics, Up Next, or nothing. Lyrics toggle bottom left, Up Next bottom right.
   // A music video opens on its own, without the lyrics.
   const [panel, setPanel] = useState<'lyrics' | 'queue' | null>(() =>
@@ -455,7 +457,7 @@ export function FullScreenPlayer() {
           {/* Shrinks a touch while paused, as Apple's does. Beside a column, a music video plays here at 16:9. */}
           <div
             className={`relative w-(--art) rounded-[10px] transition-[scale] duration-450 ease-[cubic-bezier(0.34,1.3,0.64,1)] motion-reduce:transition-none${
-              video ? ' aspect-video overflow-hidden bg-black' : ' aspect-square'
+              video && !squareVideoThumbnails ? ' aspect-video overflow-hidden bg-black' : ' aspect-square'
             }${playing ? '' : ' scale-92'}${column ? ' max-md:hidden' : ''}${theater ? ' hidden' : ''}`}
           >
             {nowPlaying.artworkUrl && (

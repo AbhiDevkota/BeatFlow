@@ -14,6 +14,12 @@ describe('contentSettings', () => {
       fontFamily: 'dm-sans',
       dynamicTint: true,
       reduceAnimation: false,
+      preferMusicOnly: false,
+      hideRecents: false,
+      hideHomeVideos: false,
+      hideTopPicks: false,
+      hideHomeMoods: false,
+      squareVideoThumbnails: false,
     });
   });
 
@@ -47,5 +53,33 @@ describe('contentSettings', () => {
 
     useContentSettings.getState().setPreferAudioCuts(false);
     expect(useContentSettings.getState().preferAudioCuts).toBe(false);
+  });
+
+  it('manages content preferences matching Android AppSettings', () => {
+    const s = useContentSettings.getState();
+    expect(s.preferMusicOnly).toBe(false);
+    expect(s.hideRecents).toBe(false);
+    expect(s.hideHomeVideos).toBe(false);
+    expect(s.hideTopPicks).toBe(false);
+    expect(s.hideHomeMoods).toBe(false);
+    expect(s.squareVideoThumbnails).toBe(false);
+
+    s.setPreferMusicOnly(true);
+    expect(useContentSettings.getState().preferMusicOnly).toBe(true);
+
+    s.setHideRecents(true);
+    expect(useContentSettings.getState().hideRecents).toBe(true);
+
+    s.setHideHomeVideos(true);
+    expect(useContentSettings.getState().hideHomeVideos).toBe(true);
+
+    s.setHideTopPicks(true);
+    expect(useContentSettings.getState().hideTopPicks).toBe(true);
+
+    s.setHideHomeMoods(true);
+    expect(useContentSettings.getState().hideHomeMoods).toBe(true);
+
+    s.setSquareVideoThumbnails(true);
+    expect(useContentSettings.getState().squareVideoThumbnails).toBe(true);
   });
 });

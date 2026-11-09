@@ -8,6 +8,7 @@ import { artistHref, hrefFor } from './links';
 import { playTrack, toTrack } from './play';
 import { TrackMenu } from './TrackMenu';
 import { usePlayer } from '@/state/player';
+import { useContentSettings } from '@/lib/contentSettings';
 
 const isPlayable = (item: MusicItem) => item.kind === 'song' || item.kind === 'video';
 
@@ -119,11 +120,13 @@ export function SquareLockup({ item, width = 220 }: { item: MusicItem; width?: n
   );
 }
 
-/** 16:9 video lockup (report §2, type C). */
+/** 16:9 video lockup (report §2, type C), or 1:1 square when squareVideoThumbnails is active. */
 export function VideoLockup({ item, width = 300 }: { item: MusicItem; width?: number }) {
+  const square = useContentSettings((s) => s.squareVideoThumbnails);
+  const effectiveWidth = square ? Math.min(width, 220) : width;
   return (
     <div className={lockup}>
-      <LockupArtwork item={item} width={width} aspect={16 / 9} />
+      <LockupArtwork item={item} width={effectiveWidth} aspect={square ? 1 : 16 / 9} />
       <div className={caption}>
         <div className={title}>
           <span>{item.title}</span>

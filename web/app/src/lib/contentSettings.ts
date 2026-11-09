@@ -14,6 +14,14 @@ export interface ContentSettingsState {
   dynamicTint: boolean;
   reduceAnimation: boolean;
 
+  // Android-matched Content Preferences
+  preferMusicOnly: boolean;
+  hideRecents: boolean;
+  hideHomeVideos: boolean;
+  hideTopPicks: boolean;
+  hideHomeMoods: boolean;
+  squareVideoThumbnails: boolean;
+
   setStreamingQuality: (quality: StreamingQuality) => void;
   setDirectSource: (enabled: boolean) => void;
   setLoudnessNormalization: (enabled: boolean) => void;
@@ -22,6 +30,13 @@ export interface ContentSettingsState {
   setFontFamily: (font: AppFontFamily) => void;
   setDynamicTint: (enabled: boolean) => void;
   setReduceAnimation: (enabled: boolean) => void;
+
+  setPreferMusicOnly: (enabled: boolean) => void;
+  setHideRecents: (enabled: boolean) => void;
+  setHideHomeVideos: (enabled: boolean) => void;
+  setHideTopPicks: (enabled: boolean) => void;
+  setHideHomeMoods: (enabled: boolean) => void;
+  setSquareVideoThumbnails: (enabled: boolean) => void;
 }
 
 export function applyFont(font: AppFontFamily) {
@@ -41,6 +56,14 @@ export const useContentSettings = create<ContentSettingsState>()(
       dynamicTint: true,
       reduceAnimation: false,
 
+      // Content preferences defaults matching Android AppSettings
+      preferMusicOnly: false,
+      hideRecents: false,
+      hideHomeVideos: false,
+      hideTopPicks: false,
+      hideHomeMoods: false,
+      squareVideoThumbnails: false,
+
       setStreamingQuality: (streamingQuality) => set({ streamingQuality }),
       setDirectSource: (directSource) => set({ directSource }),
       setLoudnessNormalization: (loudnessNormalization) => set({ loudnessNormalization }),
@@ -52,6 +75,13 @@ export const useContentSettings = create<ContentSettingsState>()(
       },
       setDynamicTint: (dynamicTint) => set({ dynamicTint }),
       setReduceAnimation: (reduceAnimation) => set({ reduceAnimation }),
+
+      setPreferMusicOnly: (preferMusicOnly) => set({ preferMusicOnly }),
+      setHideRecents: (hideRecents) => set({ hideRecents }),
+      setHideHomeVideos: (hideHomeVideos) => set({ hideHomeVideos }),
+      setHideTopPicks: (hideTopPicks) => set({ hideTopPicks }),
+      setHideHomeMoods: (hideHomeMoods) => set({ hideHomeMoods }),
+      setSquareVideoThumbnails: (squareVideoThumbnails) => set({ squareVideoThumbnails }),
     }),
     {
       name: 'beatflow:content-settings',

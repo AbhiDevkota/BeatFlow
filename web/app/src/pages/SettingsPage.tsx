@@ -2,6 +2,7 @@ import {
   BarChart2,
   ChevronLeft,
   ChevronRight,
+  Compass,
   Cpu,
   ExternalLink,
   EyeOff,
@@ -10,6 +11,7 @@ import {
   History,
   Info,
   Layers,
+  LayoutGrid,
   Monitor,
   Moon,
   Music,
@@ -27,6 +29,7 @@ import {
   Trash2,
   Type,
   Users,
+  Video,
   Volume2,
   VolumeX,
   Waves,
@@ -62,7 +65,14 @@ import { settingsUi } from './settingsStyles';
 
 const LyricsSettings = lazy(() => import('@/shell/LyricsSettings').then((m) => ({ default: m.LyricsSettings })));
 
-export type SettingsCategoryKey = 'playback' | 'appearance' | 'content' | 'lyrics' | 'storage' | 'about';
+export type SettingsCategoryKey =
+  | 'playback'
+  | 'content-preferences'
+  | 'audio-quality'
+  | 'appearance'
+  | 'lyrics'
+  | 'storage'
+  | 'about';
 
 interface CategoryMeta {
   key: SettingsCategoryKey;
@@ -80,16 +90,22 @@ const CATEGORIES: CategoryMeta[] = [
     icon: PlayCircle,
   },
   {
+    key: 'content-preferences',
+    title: 'Content Preferences',
+    subtitle: 'Music-only playback, video thumbnails, Home feed visibility',
+    icon: Film,
+  },
+  {
+    key: 'audio-quality',
+    title: 'Audio Quality',
+    subtitle: 'Streaming quality, direct source streaming, studio cuts, history',
+    icon: SlidersHorizontal,
+  },
+  {
     key: 'appearance',
     title: 'Appearance',
     subtitle: 'Theme mode, font selection, animated artwork, tinting',
     icon: SunMoon,
-  },
-  {
-    key: 'content',
-    title: 'Content & Audio',
-    subtitle: 'Streaming quality, direct source, studio cuts, history',
-    icon: SlidersHorizontal,
   },
   {
     key: 'lyrics',
@@ -172,6 +188,12 @@ export default function SettingsPage() {
     fontFamily,
     dynamicTint,
     reduceAnimation,
+    preferMusicOnly,
+    hideRecents,
+    hideHomeVideos,
+    hideTopPicks,
+    hideHomeMoods,
+    squareVideoThumbnails,
     setStreamingQuality,
     setDirectSource,
     setLoudnessNormalization,
@@ -180,6 +202,12 @@ export default function SettingsPage() {
     setFontFamily,
     setDynamicTint,
     setReduceAnimation,
+    setPreferMusicOnly,
+    setHideRecents,
+    setHideHomeVideos,
+    setHideTopPicks,
+    setHideHomeMoods,
+    setSquareVideoThumbnails,
   } = useContentSettings();
 
   // Dialogs & Navigation
@@ -463,8 +491,61 @@ export default function SettingsPage() {
     </>
   );
 
-  // Content & Audio group
-  const renderContentGroup = () => (
+  // Android-matched Content Preferences group
+  const renderContentPreferencesGroup = () => (
+    <>
+      <section className={settingsUi.group}>
+        <Toggle
+          icon={<Video size={20} />}
+          label="Prefer music-only version"
+          detail="Music videos play as their audio version, and the next track in the queue is converted ahead of time so Automix and crossfade work."
+          checked={preferMusicOnly}
+          onChange={setPreferMusicOnly}
+        />
+        <Toggle
+          icon={<History size={20} />}
+          label="Hide Recents"
+          detail="Hides the Recently Played shelf from the Home screen."
+          checked={hideRecents}
+          onChange={setHideRecents}
+        />
+        <Toggle
+          icon={<EyeOff size={20} />}
+          label="Hide videos from Home"
+          detail="Shelves of only videos go too. Search, artists and playlists still show them."
+          checked={hideHomeVideos}
+          onChange={setHideHomeVideos}
+        />
+        <Toggle
+          icon={<Sparkles size={20} />}
+          label="Hide Top Picks for You"
+          detail="Hides the Top Picks for You recommendation shelf from the Home screen."
+          checked={hideTopPicks}
+          onChange={setHideTopPicks}
+        />
+        <Toggle
+          icon={<Compass size={20} />}
+          label="Hide Find Your Mood"
+          detail="Hides the Find Your Mood genre and activity chips from the Home screen."
+          checked={hideHomeMoods}
+          onChange={setHideHomeMoods}
+        />
+        <Toggle
+          icon={<LayoutGrid size={20} />}
+          label="Square video thumbnails"
+          detail="Show music videos as squares everywhere, including the player."
+          checked={squareVideoThumbnails}
+          onChange={setSquareVideoThumbnails}
+        />
+      </section>
+      <p className={settingsUi.footer}>
+        Content preferences customize what shows on your Home feed and how music videos are displayed and played.
+      </p>
+    </>
+  );
+
+  // Audio Quality group
+  const renderAudioQualityGroup = () => (
     <>
       <section className={settingsUi.group}>
         <label className={settingsUi.controlRowWithIcon}>
@@ -673,7 +754,7 @@ export default function SettingsPage() {
         <span className={settingsUi.integrationName}>YouTube Music</span>
         <span className={settingsUi.value}>{youtubeText(yt)}</span>
       </div>
-    ), 'content');
+    ), 'audio-quality');
 
     check('Spotify', ['spotify', 'canvas', 'sync', 'library'], (
       <div key="spot" className={settingsUi.integration}>
@@ -681,11 +762,11 @@ export default function SettingsPage() {
         <span className={settingsUi.integrationName}>Spotify</span>
         {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
       </div>
-    ), 'content');
+    ), 'audio-quality');
 
     check('Discord Presence', ['discord', 'rich presence', 'activity', 'rpc'], (
       <LinkRow key="dc" to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
-    ), 'content');
+    ), 'audio-quality');
 
     check(desktop ? 'Desktop Engine' : 'BeatFlow Extension', ['extension', 'engine', 'host', 'native', 'desktop'], (
       <LinkRow
@@ -705,7 +786,7 @@ export default function SettingsPage() {
         title="Listen Together"
         value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
       />
-    ), 'content');
+    ), 'audio-quality');
 
     // Playback
     check('AutoPlay', ['autoplay', 'queue', 'recommendations', 'similar'], (
@@ -894,7 +975,74 @@ export default function SettingsPage() {
       />
     ), 'appearance');
 
-    // Content
+    // Content Preferences (matching Android)
+    check('Prefer music-only version', ['prefer music only', 'video', 'audio', 'music video', 'convert', 'song'], (
+      <Toggle
+        key="preferMusicOnly"
+        icon={<Video size={20} />}
+        label="Prefer music-only version"
+        detail="Music videos play as their audio version, and the next track in the queue is converted ahead of time so Automix and crossfade work."
+        checked={preferMusicOnly}
+        onChange={setPreferMusicOnly}
+      />
+    ), 'content-preferences');
+
+    check('Hide Recents', ['recents', 'recent', 'history', 'feed', 'home', 'hide recents'], (
+      <Toggle
+        key="hideRecents"
+        icon={<History size={20} />}
+        label="Hide Recents"
+        detail="Hides the Recently Played shelf from the Home screen."
+        checked={hideRecents}
+        onChange={setHideRecents}
+      />
+    ), 'content-preferences');
+
+    check('Hide videos from Home', ['video', 'music video', 'feed', 'home', 'hide home videos'], (
+      <Toggle
+        key="hideHomeVideos"
+        icon={<EyeOff size={20} />}
+        label="Hide videos from Home"
+        detail="Shelves of only videos go too. Search, artists and playlists still show them."
+        checked={hideHomeVideos}
+        onChange={setHideHomeVideos}
+      />
+    ), 'content-preferences');
+
+    check('Hide Top Picks for You', ['top picks', 'recommendations', 'feed', 'home', 'hide top picks'], (
+      <Toggle
+        key="hideTopPicks"
+        icon={<Sparkles size={20} />}
+        label="Hide Top Picks for You"
+        detail="Hides the Top Picks for You recommendation shelf from the Home screen."
+        checked={hideTopPicks}
+        onChange={setHideTopPicks}
+      />
+    ), 'content-preferences');
+
+    check('Hide Find Your Mood', ['mood', 'moods', 'find your mood', 'feed', 'home', 'hide mood'], (
+      <Toggle
+        key="hideHomeMoods"
+        icon={<Compass size={20} />}
+        label="Hide Find Your Mood"
+        detail="Hides the Find Your Mood genre and activity chips from the Home screen."
+        checked={hideHomeMoods}
+        onChange={setHideHomeMoods}
+      />
+    ), 'content-preferences');
+
+    check('Square video thumbnails', ['video', 'thumbnail', 'cover', 'artwork', 'player', 'square video'], (
+      <Toggle
+        key="squareVideoThumbnails"
+        icon={<LayoutGrid size={20} />}
+        label="Square video thumbnails"
+        detail="Show music videos as squares everywhere, including the player."
+        checked={squareVideoThumbnails}
+        onChange={setSquareVideoThumbnails}
+      />
+    ), 'content-preferences');
+
+    // Audio Quality
     check('Streaming Quality', ['quality', 'bitrate', 'audio quality', 'high', 'audio format'], (
       <label key="quality" className={settingsUi.controlRowWithIcon}>
         <span className={settingsUi.rowIcon}>
@@ -915,7 +1063,7 @@ export default function SettingsPage() {
           onChange={setStreamingQuality}
         />
       </label>
-    ), 'content');
+    ), 'audio-quality');
 
     check('Direct Source Streaming', ['direct source', 'cdn', 'lossless', 'stream'], (
       <Toggle
@@ -926,7 +1074,7 @@ export default function SettingsPage() {
         checked={directSource}
         onChange={setDirectSource}
       />
-    ), 'content');
+    ), 'audio-quality');
 
     check('Prefer Studio Audio Cuts', ['studio', 'cuts', 'audio only', 'music only', 'video'], (
       <Toggle
@@ -937,7 +1085,7 @@ export default function SettingsPage() {
         checked={preferAudioCuts}
         onChange={setPreferAudioCuts}
       />
-    ), 'content');
+    ), 'audio-quality');
 
     check('Share Listening Activity', ['share history', 'scrobble', 'recommendations', 'history'], (
       <Toggle
@@ -948,7 +1096,7 @@ export default function SettingsPage() {
         checked={shareHistory}
         onChange={setShareHistory}
       />
-    ), 'content');
+    ), 'audio-quality');
 
     // Lyrics
     check('Lyric Sources', ['lyrics', 'words', 'subtitles', 'sources', 'kugou', 'musixmatch', 'lrclib'], (
@@ -1046,6 +1194,18 @@ export default function SettingsPage() {
     setPreferAudioCuts,
     shareHistory,
     setShareHistory,
+    preferMusicOnly,
+    setPreferMusicOnly,
+    hideRecents,
+    setHideRecents,
+    hideHomeVideos,
+    setHideHomeVideos,
+    hideTopPicks,
+    setHideTopPicks,
+    hideHomeMoods,
+    setHideHomeMoods,
+    squareVideoThumbnails,
+    setSquareVideoThumbnails,
     storageEstimate,
     clearing,
     cleared,
@@ -1110,8 +1270,9 @@ export default function SettingsPage() {
         {!searching && activeCategory && (
           <div>
             {activeCategory === 'playback' && renderPlaybackGroup()}
+            {activeCategory === 'content-preferences' && renderContentPreferencesGroup()}
+            {activeCategory === 'audio-quality' && renderAudioQualityGroup()}
             {activeCategory === 'appearance' && renderAppearanceGroup()}
-            {activeCategory === 'content' && renderContentGroup()}
             {activeCategory === 'lyrics' && renderLyricsGroup()}
             {activeCategory === 'storage' && renderStorageGroup()}
             {activeCategory === 'about' && renderAboutGroup()}

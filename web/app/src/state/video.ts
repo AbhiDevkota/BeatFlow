@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useContentSettings } from '@/lib/contentSettings';
 
 /**
  * A music video's picture (playback/youtube/videoDeck.ts plays it). One muted
@@ -51,8 +52,11 @@ export function setVideoQuality(quality: VideoQuality): void {
   useVideo.setState({ quality });
 }
 
-/** Whether [videoId]'s picture is ready to show. */
-export const useHasVideo = (videoId: string | null | undefined) => useVideo((s) => !!videoId && s.videoId === videoId);
+/** Whether [videoId]'s picture is ready to show. Honors preferMusicOnly setting. */
+export const useHasVideo = (videoId: string | null | undefined) => {
+  const preferMusicOnly = useContentSettings((s) => s.preferMusicOnly);
+  return useVideo((s) => !preferMusicOnly && !!videoId && s.videoId === videoId);
+};
 
 /** How a height is named on screen: the marketing name where there is one, the height otherwise. */
 export function qualityLabel(height: number): string {

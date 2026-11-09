@@ -7,6 +7,7 @@ import { LoadError, LoadMoreError, NeedsExtension } from '@/components/music/Sta
 import { useHome, useLibrary, useYouTubeReady } from '@/data/music/queries';
 import type { Track } from '@/data/music/types';
 import { ytAuthSnapshot } from '@/extension/useYtAuth';
+import { useContentSettings } from '@/lib/contentSettings';
 import { buildTopPicks } from '@/lib/homeLayout';
 import { HomeSkeleton } from '@/skeletons/PageSkeletons';
 import { ShelfSkeleton } from '@/skeletons/ShelfSkeleton';
@@ -41,6 +42,7 @@ export default function HomePage() {
   const home = useHome();
   const recent = useRecentlyPlayed();
   const sentinel = useRef<HTMLDivElement>(null);
+  const { hideRecents, hideHomeVideos, hideTopPicks, hideHomeMoods } = useContentSettings();
 
   // Synchronous non-triggering snapshot of auth to avoid query cancellation
   const auth = ytAuthSnapshot();
@@ -64,10 +66,23 @@ export default function HomePage() {
   // Extract shelves safely with useMemo BEFORE any conditional early returns
   const shelves = useMemo(() => {
     if (!home.data?.pages) return [];
-    return home.data.pages
+    let list = home.data.pages
       .flatMap((page) => page.data)
       .filter((shelf) => !(recent.length > 0 && shelf.title.trim().toLowerCase() === RECENT_TITLE.toLowerCase()));
-  }, [home.data, recent]);
+
+    // Android-matched "Hide videos from Home" filter: remove video shelves & items
+    if (hideHomeVideos) {
+      list = list
+        .map((shelf) => {
+          if (shelf.layout === 'video') return null;
+          const items = shelf.items.filter((item) => item.kind !== 'video');
+          return items.length === 0 ? null : { ...shelf, items };
+        })
+        .filter((s): s is typeof s & object => s !== null);
+    }
+
+    return list;
+  }, [home.data, recent, hideHomeVideos]);
 
   // Top Picks for You (Android lead row) - computed BEFORE any early returns
   const topPicks = useMemo(
@@ -103,10 +118,10 @@ export default function HomePage() {
       <PageHeader title="Home" />
 
       {/* 1. Top Picks for You (Android TopPicksShelf) */}
-      {topPicks.length > 0 && <TopPicksShelf picks={topPicks} />}
+      {!hideTopPicks && topPicks.length > 0 && <TopPicksShelf picks={topPicks} />}
 
       {/* 2. Recently Played 4-row compact track scroller */}
-      {recent.length > 0 && (
+      {!hideRecents && recent.length > 0 && (
         <TrackShelf
           title={RECENT_TITLE}
           to="/library/recent"
@@ -117,13 +132,13 @@ export default function HomePage() {
 
       {/* 3. Shelves & Find Your Mood (at index 1 following lead shelf, as on Android) */}
       {shelves.length === 0 ? (
-        <FindYourMoodShelf />
+        !hideHomeMoods && <FindYourMoodShelf />
       ) : (
         <>
           {shelves.slice(0, 1).map((shelf, index) => (
             <Shelves key={`${shelf.title}-${index}`} shelves={[shelf]} />
           ))}
-          <FindYourMoodShelf />
+          {!hideHomeMoods && <FindYourMoodShelf />}
           {shelves.slice(1).map((shelf, index) => (
             <Shelves key={`${shelf.title}-${index + 1}`} shelves={[shelf]} />
           ))}
