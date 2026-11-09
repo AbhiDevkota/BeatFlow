@@ -1,8 +1,9 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useParams } from 'react-router';
+import { PrefetchLink } from '@/components/PrefetchLink';
 import { PlayIcon } from '@/components/icons/Transport';
 import { Artwork } from '@/components/music/Artwork';
-import { browseHref } from '@/components/music/links';
+import { browseHref, hrefFor } from '@/components/music/links';
 import { playList } from '@/components/music/play';
 import { Shelves, TrackShelf } from '@/components/music/ShelfView';
 import { LoadError, NeedsExtension } from '@/components/music/States';
@@ -10,6 +11,8 @@ import { MotionArtwork } from '@/components/music/MotionArtwork';
 import { requestAppleAccess, useAppleArtistArt, useUngrantedAppleOrigins, type AppleArtistArt } from '@/data/apple/artistArt';
 import { useMotionAllowed } from '@/data/apple/motionArt';
 import { useArtist, useYouTubeReady } from '@/data/music/queries';
+import type { MusicItem } from '@/data/music/types';
+import { findTopRelease, organizeArtistShelves, recentLabel } from '@/lib/artistLayout';
 import { computeAndroidPalette, useArtworkColor, type ArtworkColor } from '@/lib/artworkColor';
 import { useIsDark } from '@/lib/theme';
 import { usePageTint } from '@/lib/usePageTint';
@@ -59,6 +62,45 @@ function ArtistName({
 }
 
 /**
+ * Top Release / Latest Release card (port of Android DetailScreen.kt TopReleaseCard):
+ * Proportioned off Apple Music's card: 96px sleeve, title, type/year subtitle, and overline.
+ */
+function TopReleaseCard({ item }: { item: MusicItem }) {
+  const label = recentLabel(item.subtitle);
+  const href = hrefFor(item) ?? `/album/${encodeURIComponent(item.id)}`;
+
+  return (
+    <section className="mx-(--body-gutter) mt-6 mb-3" aria-label={label}>
+      <h2 className="mb-2.5 type-title-2-emphasized">{label}</h2>
+      <PrefetchLink
+        to={href}
+        className="group relative flex max-w-[560px] items-center gap-4 rounded-[20px] border border-divider bg-opaque-shelf p-3.5 shadow-sm transition-all duration-200 hover:border-vibrant-divider hover:brightness-[1.04] hover:shadow-md"
+      >
+        <div className="relative size-[96px] flex-none overflow-hidden rounded-[14px] bg-generic shadow-inner">
+          <Artwork src={item.thumbnail} displayWidth={200} aspect={1} radius="14px" />
+          <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/25 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            <span className="grid size-11 place-items-center rounded-full bg-white text-black shadow-lg transition-transform duration-150 group-hover:scale-105">
+              <PlayIcon size={22} className="translate-x-0.5" />
+            </span>
+          </div>
+        </div>
+        <div className="min-w-0 flex-1 pr-3">
+          <p className="type-callout-emphasized text-secondary tracking-wide uppercase text-[11px]">
+            {item.subtitle || label}
+          </p>
+          <p className="mt-0.5 type-title-2-emphasized truncate text-primary group-hover:underline">
+            {item.title}
+          </p>
+          <p className="mt-0.5 type-callout text-secondary">
+            {label}
+          </p>
+        </div>
+      </PrefetchLink>
+    </section>
+  );
+}
+
+/**
  * An artist: full-bleed hero with the name and Play, Top Songs, then shelves.
  * 1-to-1 port of BeatFlow Android's artist page (ArtworkPalette.kt & DetailScreen.kt):
  * Apple's photograph, title logo over it, the exact palette.wash behind the page and
@@ -100,6 +142,16 @@ export default function ArtistPage() {
   }, [palette, apple?.keyColor, isDark]);
 
   usePageTint(tint);
+
+  const topRelease = useMemo(
+    () => (artist.data?.shelves ? findTopRelease(artist.data.shelves) : null),
+    [artist.data?.shelves],
+  );
+
+  const shelves = useMemo(
+    () => (artist.data?.shelves ? organizeArtistShelves(artist.data.shelves) : []),
+    [artist.data?.shelves],
+  );
 
   if (missing) return <NeedsExtension />;
   if (artist.isError) return <LoadError error={artist.error} onRetry={() => void artist.refetch()} />;
@@ -173,6 +225,8 @@ export default function ArtistPage() {
         </div>
       </header>
 
+      {topRelease && <TopReleaseCard item={topRelease} />}
+
       {data.topSongs.length > 0 && (
         <TrackShelf
           title="Top Songs"
@@ -182,7 +236,7 @@ export default function ArtistPage() {
         />
       )}
 
-      <Shelves shelves={data.shelves} />
+      <Shelves shelves={shelves} />
 
       {data.description && (
         <section className="mx-(--body-gutter) mt-3 mb-10" aria-label={`About ${data.name}`}>
@@ -193,3 +247,4 @@ export default function ArtistPage() {
     </>
   );
 }
+
