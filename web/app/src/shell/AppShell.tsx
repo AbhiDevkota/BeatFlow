@@ -17,6 +17,7 @@ import { PlayerBar } from './PlayerBar';
 import { SidePanel } from './SidePanel';
 import { Sidebar } from './Sidebar';
 import { WindowControls } from './WindowControls';
+import { OverlayScrollbar } from './OverlayScrollbar';
 
 const mobile = isMobileBrowser();
 const desktop = isDesktopApp();
@@ -80,16 +81,17 @@ export function AppShell() {
       <div className="relative min-h-0 overflow-hidden">
         <Sidebar />
         <MobileTopBar />
-        {/* The page scrolls under the fixed sidebar and the floating player. Background tint extends under sidebar glass. */}
+        {/* The page scrolls under the fixed sidebar and the floating player. Native scrollbars hidden in favour of Apple-style overlay pill. */}
         <main
           id="scrollable-page"
-          className="absolute inset-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable] data-tint:bg-(--page-tint) data-tint:transition-[background-color] data-tint:duration-300 data-tint:ease-in"
+          className="absolute inset-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden data-tint:bg-(--page-tint) data-tint:transition-[background-color] data-tint:duration-300 data-tint:ease-in"
         >
           {/* Clears the floating pill: its height, its offset, and some air. Indents content past the fixed translucent sidebar. */}
           <div className="min-h-full pl-(--web-navigation-width) pb-[calc(var(--player-pill-height)+var(--player-bottom-offset)+40px)] max-sm:pt-(--mobile-top-bar-height) max-sm:pl-0">
             <Outlet />
           </div>
         </main>
+        <OverlayScrollbar />
         <PlayerBar />
         <SidePanel />
       </div>

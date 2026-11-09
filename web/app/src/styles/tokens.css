@@ -453,7 +453,7 @@
 [data-tint='dark'] {
   --pageBG: var(--page-tint);
   --pageBG-rgb: var(--page-tint-rgb, 31, 31, 31);
-  --systemPrimary: var(--page-accent, #ffffff);
+  --systemPrimary: #ffffff;
   --systemSecondary: var(--page-secondary, #ffffffa3);
   --systemTertiary: color-mix(in srgb, var(--page-secondary, #ffffff) 40%, var(--page-tint));
   --systemQuaternary: color-mix(in srgb, #ffffff 15%, var(--page-tint));
@@ -464,12 +464,13 @@
   --shelfBG: color-mix(in srgb, #ffffff 5%, var(--page-tint));
   --opaqueShelfBG: var(--page-elevated, color-mix(in srgb, var(--page-tint) 85%, #000000));
   --genericJoeColor: var(--page-elevated, color-mix(in srgb, #ffffff 10%, var(--page-tint)));
-  --keyColor: var(--page-key, #fa586a);
-  --keyColorBG: var(--page-key, #fa233b);
+  --keyColor: var(--page-key, var(--page-accent, #fa586a));
+  --keyColorBG: var(--page-key, var(--page-accent, #fa233b));
   --button-pill-color: #000000;
   --button-pill-background-color: #ffffff;
   --button-circle-background-color: rgba(255, 255, 255, 0.15);
   --button-circle-border-color: rgba(255, 255, 255, 0.20);
+  color: var(--systemPrimary);
 }
 
 [data-tint='light'] {

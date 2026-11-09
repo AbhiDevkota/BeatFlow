@@ -336,6 +336,17 @@
     height: 100%;
   }
 
+  /* Native scrollbar hidden for Apple-style overlay pill */
+  #scrollable-page {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  #scrollable-page::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   h1,
   h2,
   h3,
