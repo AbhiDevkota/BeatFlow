@@ -83,7 +83,7 @@ export default function ArtistPage() {
       {/* The hero (report §4): full-bleed, ~1.93:1 of the content column, the name and actions centred near the bottom. */}
       <header className="relative max-h-[70vh] overflow-hidden">
         <div className="relative w-full">
-          <Artwork src={data.heroImage} displayWidth={1200} aspect={1165 / 604} eager />
+          <Artwork src={data.heroImage} displayWidth={2880} aspect={1165 / 604} eager />
           {/* Apple's photograph fades in over YouTube's once it arrives. */}
           {apple && (
             <img
@@ -101,6 +101,7 @@ export default function ArtistPage() {
               key={apple.videoUrl}
               motion={{ url: apple.videoUrl, fallbackUrl: null }}
               className="absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
+              highQuality
             />
           )}
         </div>

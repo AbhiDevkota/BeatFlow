@@ -26,8 +26,9 @@ export interface AppleArtistArt {
   keyColor: string | null;
 }
 
-const HERO_WIDTH = 1200;
-const LOGO_WIDTH = 1000;
+// High-resolution desktop master artwork dimensions (scaled to 2880px for QHD/4K/Retina displays)
+const HERO_WIDTH = 2880;
+const LOGO_WIDTH = 2000;
 
 export type Json = Record<string, unknown>;
 export const obj = (v: unknown): Json | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : null);
@@ -95,12 +96,16 @@ export function parseArtistPage(html: string): AppleArtistArt | null {
   const heroW = num(hero.width);
   const heroH = num(hero.height);
   if (!heroW || !heroH) return null;
-  const heroUrl = fill(hero.url, HERO_WIDTH, Math.round((HERO_WIDTH * heroH) / heroW), 'jpg');
+  const targetHeroW = heroW >= 2560 ? Math.min(heroW, 2880) : HERO_WIDTH;
+  const targetHeroH = Math.round((targetHeroW * heroH) / heroW);
+  const heroUrl = fill(hero.url, targetHeroW, targetHeroH, 'jpg');
   if (!heroUrl) return null;
 
   const logoW = num(logo?.width);
   const logoH = num(logo?.height);
-  const logoUrl = logo && logoW && logoH ? fill(logo.url, LOGO_WIDTH, Math.round((LOGO_WIDTH * logoH) / logoW), 'png') : null;
+  const targetLogoW = logoW >= 2000 ? Math.min(logoW, 2400) : LOGO_WIDTH;
+  const targetLogoH = logoW && logoH ? Math.round((targetLogoW * logoH) / logoW) : 1000;
+  const logoUrl = logo && logoW && logoH ? fill(logo.url, targetLogoW, targetLogoH, 'png') : null;
 
   const va = obj(obj(header.videoArtwork)?.dictionary);
   const clip = obj(va?.motionArtistSquare1x1) ?? obj(va?.motionArtistSquare) ?? obj(va?.motionArtistWide21x9);

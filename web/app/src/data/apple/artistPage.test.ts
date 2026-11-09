@@ -19,9 +19,9 @@ describe('parseArtistPage', () => {
       }),
     );
     expect(art).toEqual({
-      heroUrl: 'https://is1-ssl.mzstatic.com/image/thumb/a/1200x300bb.jpg',
+      heroUrl: 'https://is1-ssl.mzstatic.com/image/thumb/a/2880x720bb.jpg',
       heroAspect: 4,
-      logoUrl: 'https://is1-ssl.mzstatic.com/image/thumb/logo/1000x250bb.png',
+      logoUrl: 'https://is1-ssl.mzstatic.com/image/thumb/logo/2000x500bb.png',
       logoAspect: 4,
       videoUrl: null,
       background: '#1a2b3c',
@@ -59,7 +59,7 @@ describe('parseArtistPage', () => {
 
   it('falls back to the colour backdrop artwork', () => {
     const art = parseArtistPage(page({ artistLogo: null, artwork: null, colorBackdropArtwork: { dictionary: hero } }));
-    expect(art?.heroUrl).toContain('1200x300bb.jpg');
+    expect(art?.heroUrl).toContain('2880x720bb.jpg');
   });
 
   it('is nothing for a page without the header or with broken JSON', () => {

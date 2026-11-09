@@ -12,7 +12,17 @@ const nativeHls = () => document.createElement('video').canPlayType('application
  * second rendition is tried once when the first won't. [playing] false holds
  * it on its frame, as the music is paused.
  */
-export function MotionArtwork({ motion, className, playing = true }: { motion: AppleMotion; className?: string; playing?: boolean }) {
+export function MotionArtwork({
+  motion,
+  className,
+  playing = true,
+  highQuality = false,
+}: {
+  motion: AppleMotion;
+  className?: string;
+  playing?: boolean;
+  highQuality?: boolean;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const [url, setUrl] = useState(motion.url);
   const [ready, setReady] = useState(false);
@@ -41,7 +51,12 @@ export function MotionArtwork({ motion, className, playing = true }: { motion: A
         return;
       }
       // A sleeve is small: no need for the 1080p rendition, nor a long buffer for a few-second loop.
-      hls = new Hls({ capLevelToPlayerSize: true, maxBufferLength: 10, enableWorker: true });
+      // Full-bleed heroes pass highQuality to stream master 1080p/4K without size-capping down.
+      hls = new Hls({
+        capLevelToPlayerSize: !highQuality,
+        maxBufferLength: highQuality ? 20 : 10,
+        enableWorker: true,
+      });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) retry();
       });
