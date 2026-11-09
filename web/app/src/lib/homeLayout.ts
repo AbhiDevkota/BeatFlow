@@ -2,7 +2,7 @@ import type { Shelf, Track } from '@/data/music/types';
 
 /** How a shelf title is displayed, matching Android's localizeShelfTitle. */
 export function localizeShelfTitle(title: string): string {
-  const trimmed = title.trim();
+  const trimmed = title?.trim() ?? '';
   const lower = trimmed.toLowerCase();
 
   if (lower === 'recents' || lower === 'recently played' || lower === 'gần đây' || lower === '最近') {
@@ -68,7 +68,7 @@ export function localizeShelfTitle(title: string): string {
 
 /** How a shelf subtitle is displayed, matching Android's localizeShelfSubtitle. */
 export function localizeShelfSubtitle(subtitle: string): string {
-  const trimmed = subtitle.trim();
+  const trimmed = subtitle?.trim() ?? '';
   const lower = trimmed.toLowerCase();
 
   if (lower === 'top tunes right now' || lower === 'giai điệu hàng đầu hiện nay' || lower === '注目の曲') {
@@ -224,116 +224,130 @@ export function buildTopPicks({
 }: BuildTopPicksOptions): TopPickItem[] {
   const picks: TopPickItem[] = [];
 
-  // 1. Personal Station
-  const firstName = userName?.trim().split(/\s+/)[0];
-  const stationTitle = firstName ? `${firstName}'s Station` : 'Your Station';
+  try {
+    // 1. Personal Station
+    const firstName = userName?.trim()?.split(/\s+/)?.[0];
+    const stationTitle = firstName ? `${firstName}'s Station` : 'Your Station';
 
-  // Look for My Supermix in shelves if present
-  let supermixPlaylistId: string | undefined;
-  for (const shelf of shelves) {
-    for (const item of shelf.items) {
-      if (item.title.toLowerCase().includes('supermix') || item.title.toLowerCase().includes('your mix')) {
-        supermixPlaylistId = item.id;
-        break;
+    // Look for My Supermix in shelves if present
+    let supermixPlaylistId: string | undefined;
+    if (Array.isArray(shelves)) {
+      for (const shelf of shelves) {
+        if (!shelf?.items) continue;
+        for (const item of shelf.items) {
+          const titleLower = item?.title?.toLowerCase() ?? '';
+          if (titleLower.includes('supermix') || titleLower.includes('your mix')) {
+            supermixPlaylistId = item.id;
+            break;
+          }
+        }
+        if (supermixPlaylistId) break;
       }
     }
-    if (supermixPlaylistId) break;
-  }
 
-  const seedTrack = recent[0];
-  picks.push({
-    id: 'top-pick-personal-station',
-    kind: 'PERSONAL_STATION',
-    title: stationTitle,
-    subtitle: 'All your favorites and new discoveries',
-    eyebrow: 'MADE FOR YOU',
-    eyebrowColor: '#FFD2DA',
-    target: {
-      playlistId: supermixPlaylistId,
-      videoId: seedTrack?.videoId,
-    },
-  });
-
-  // 2. Discovery Station
-  let discoverPlaylistId: string | undefined;
-  for (const shelf of shelves) {
-    for (const item of shelf.items) {
-      if (item.title.toLowerCase().includes('discover')) {
-        discoverPlaylistId = item.id;
-        break;
-      }
-    }
-    if (discoverPlaylistId) break;
-  }
-
-  picks.push({
-    id: 'top-pick-discovery-station',
-    kind: 'DISCOVERY_STATION',
-    title: 'Discovery Station',
-    subtitle: 'Fresh music you haven’t heard yet',
-    eyebrow: 'MADE FOR YOU',
-    eyebrowColor: '#CDBDFF',
-    target: {
-      playlistId: discoverPlaylistId,
-      videoId: recent[1]?.videoId ?? seedTrack?.videoId,
-    },
-  });
-
-  // 3. Mood for You
-  const mood = pickMoodForNow(now);
-  picks.push({
-    id: `top-pick-mood-${mood.key.toLowerCase()}`,
-    kind: 'MOOD',
-    title: mood.title,
-    subtitle: mood.subtitle,
-    eyebrow: 'MOOD FOR YOU',
-    eyebrowColor: mood.eyebrowColor,
-    mood,
-  });
-
-  // 4. Latest Release / Featured Artist
-  // Find top artist from recent tracks
-  const artistCounts = new Map<string, { name: string; id: string | null; track: Track }>();
-  for (const track of recent) {
-    const artist = track.artists[0];
-    if (artist?.name) {
-      const existing = artistCounts.get(artist.name);
-      if (!existing) {
-        artistCounts.set(artist.name, { name: artist.name, id: artist.id, track });
-      }
-    }
-  }
-
-  const topArtistEntry = Array.from(artistCounts.values())[0];
-  if (topArtistEntry) {
+    const seedTrack = recent?.[0];
     picks.push({
-      id: `top-pick-artist-${topArtistEntry.name}`,
-      kind: 'FEATURED_ARTIST',
-      title: `${topArtistEntry.name} & Similar`,
-      subtitle: topArtistEntry.track.title,
-      eyebrow: `FEATURING ${topArtistEntry.name.toUpperCase()}`,
-      eyebrowColor: 'rgba(255, 255, 255, 0.72)',
-      thumbnail: topArtistEntry.track.thumbnail,
-      browseId: topArtistEntry.id,
+      id: 'top-pick-personal-station',
+      kind: 'PERSONAL_STATION',
+      title: stationTitle,
+      subtitle: 'All your favorites and new discoveries',
+      eyebrow: 'MADE FOR YOU',
+      eyebrowColor: '#FFD2DA',
       target: {
-        videoId: topArtistEntry.track.videoId,
+        playlistId: supermixPlaylistId,
+        videoId: seedTrack?.videoId,
       },
     });
-  } else if (shelves[0]?.items[0]) {
-    const firstItem = shelves[0].items[0];
+
+    // 2. Discovery Station
+    let discoverPlaylistId: string | undefined;
+    if (Array.isArray(shelves)) {
+      for (const shelf of shelves) {
+        if (!shelf?.items) continue;
+        for (const item of shelf.items) {
+          const titleLower = item?.title?.toLowerCase() ?? '';
+          if (titleLower.includes('discover')) {
+            discoverPlaylistId = item.id;
+            break;
+          }
+        }
+        if (discoverPlaylistId) break;
+      }
+    }
+
     picks.push({
-      id: `top-pick-item-${firstItem.id}`,
-      kind: 'LATEST_RELEASE',
-      title: firstItem.title,
-      subtitle: firstItem.subtitle || 'Recommended for you',
-      eyebrow: 'NEW RELEASE',
-      eyebrowColor: 'rgba(255, 255, 255, 0.72)',
-      thumbnail: firstItem.thumbnail,
-      browseId: firstItem.id,
+      id: 'top-pick-discovery-station',
+      kind: 'DISCOVERY_STATION',
+      title: 'Discovery Station',
+      subtitle: 'Fresh music you haven’t heard yet',
+      eyebrow: 'MADE FOR YOU',
+      eyebrowColor: '#CDBDFF',
       target: {
-        videoId: firstItem.kind === 'song' || firstItem.kind === 'video' ? firstItem.id : undefined,
+        playlistId: discoverPlaylistId,
+        videoId: recent?.[1]?.videoId ?? seedTrack?.videoId,
       },
     });
+
+    // 3. Mood for You
+    const mood = pickMoodForNow(now);
+    picks.push({
+      id: `top-pick-mood-${mood.key.toLowerCase()}`,
+      kind: 'MOOD',
+      title: mood.title,
+      subtitle: mood.subtitle,
+      eyebrow: 'MOOD FOR YOU',
+      eyebrowColor: mood.eyebrowColor,
+      mood,
+    });
+
+    // 4. Latest Release / Featured Artist
+    const artistCounts = new Map<string, { name: string; id: string | null; track: Track }>();
+    if (Array.isArray(recent)) {
+      for (const track of recent) {
+        const artist = track?.artists?.[0];
+        if (artist?.name) {
+          const existing = artistCounts.get(artist.name);
+          if (!existing) {
+            artistCounts.set(artist.name, { name: artist.name, id: artist.id ?? null, track });
+          }
+        }
+      }
+    }
+
+    const topArtistEntry = Array.from(artistCounts.values())[0];
+    const firstShelfItem = shelves?.[0]?.items?.[0];
+
+    if (topArtistEntry) {
+      picks.push({
+        id: `top-pick-artist-${topArtistEntry.name}`,
+        kind: 'FEATURED_ARTIST',
+        title: `${topArtistEntry.name} & Similar`,
+        subtitle: topArtistEntry.track.title,
+        eyebrow: `FEATURING ${topArtistEntry.name.toUpperCase()}`,
+        eyebrowColor: 'rgba(255, 255, 255, 0.72)',
+        thumbnail: topArtistEntry.track.thumbnail,
+        browseId: topArtistEntry.id,
+        target: {
+          videoId: topArtistEntry.track.videoId,
+        },
+      });
+    } else if (firstShelfItem) {
+      picks.push({
+        id: `top-pick-item-${firstShelfItem.id}`,
+        kind: 'LATEST_RELEASE',
+        title: firstShelfItem.title,
+        subtitle: firstShelfItem.subtitle || 'Recommended for you',
+        eyebrow: 'NEW RELEASE',
+        eyebrowColor: 'rgba(255, 255, 255, 0.72)',
+        thumbnail: firstShelfItem.thumbnail,
+        browseId: firstShelfItem.id,
+        target: {
+          videoId: firstShelfItem.kind === 'song' || firstShelfItem.kind === 'video' ? firstShelfItem.id : undefined,
+        },
+      });
+    }
+  } catch (err) {
+    console.error('Failed to build top picks:', err);
   }
 
   return picks;
