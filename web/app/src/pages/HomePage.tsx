@@ -61,6 +61,20 @@ export default function HomePage() {
     return () => observer.disconnect();
   }, [home.hasNextPage, home.isFetchingNextPage, home.isFetchNextPageError, home.fetchNextPage]);
 
+  // Extract shelves safely with useMemo BEFORE any conditional early returns
+  const shelves = useMemo(() => {
+    if (!home.data?.pages) return [];
+    return home.data.pages
+      .flatMap((page) => page.data)
+      .filter((shelf) => !(recent.length > 0 && shelf.title.trim().toLowerCase() === RECENT_TITLE.toLowerCase()));
+  }, [home.data, recent]);
+
+  // Top Picks for You (Android lead row) - computed BEFORE any early returns
+  const topPicks = useMemo(
+    () => buildTopPicks({ shelves, recent, userName }),
+    [shelves, recent, userName],
+  );
+
   if (missing) {
     return (
       <>
@@ -83,17 +97,6 @@ export default function HomePage() {
   if (!home.data) {
     return <HomeSkeleton />;
   }
-
-  // YouTube's feed can carry its own, older Recently Played; the history wins, as on the phone.
-  const shelves = home.data.pages
-    .flatMap((page) => page.data)
-    .filter((shelf) => !(recent.length > 0 && shelf.title.trim().toLowerCase() === RECENT_TITLE.toLowerCase()));
-
-  // Top Picks for You (Android lead row)
-  const topPicks = useMemo(
-    () => buildTopPicks({ shelves, recent, userName }),
-    [shelves, recent, userName],
-  );
 
   return (
     <>

@@ -63,7 +63,7 @@ function PlayPlatter({ item }: { item: MusicItem }) {
 function LockupArtwork({ item, width, aspect }: { item: MusicItem; width: number; aspect: number }) {
   const href = hrefFor(item);
   const current = usePlayer((s) => s.nowPlaying?.videoId === item.id);
-  const isPlaying = usePlayer((s) => current && (s.status === 'playing' || s.status === 'buffering'));
+  const isPlaying = usePlayer((s) => s.nowPlaying?.videoId === item.id && (s.status === 'playing' || s.status === 'buffering'));
 
   return (
     <div className="group/art relative rounded-artwork-md">
@@ -149,7 +149,7 @@ export function CircleLockup({ item, width = 160 }: { item: MusicItem; width?: n
 export function TrackLockup({ item, onPlay }: { item: MusicItem; onPlay?: () => void }) {
   const play = onPlay ?? (() => playTrack(item));
   const current = usePlayer((s) => s.nowPlaying?.videoId === item.id);
-  const isPlaying = usePlayer((s) => current && (s.status === 'playing' || s.status === 'buffering'));
+  const isPlaying = usePlayer((s) => s.nowPlaying?.videoId === item.id && (s.status === 'playing' || s.status === 'buffering'));
 
   return (
     // 52px art column (40 + 12 gap), content, menu; 55px tall.
