@@ -4,6 +4,7 @@ import { PrefetchLink } from '@/components/PrefetchLink';
 import { shelfHeader, shelfKinds, shelfList, shelfSection, type ShelfKind } from '@/components/shelf';
 import type { MusicItem, Shelf, Track } from '@/data/music/types';
 import type { QueueSource } from '@/playback/queue/timeline';
+import { localizeShelfSubtitle, localizeShelfTitle } from '@/lib/homeLayout';
 import { browseHref } from './links';
 import { CircleLockup, SquareLockup, TrackLockup, VideoLockup } from './Lockups';
 import { playList } from './play';
@@ -82,9 +83,9 @@ export function ShelfScroller({ kind, children }: { kind: ShelfKind; children: R
 }
 
 /** A shelf's title, a link with a chevron when there's a page behind it. */
-function ShelfTitle({ title, to }: { title: string; to?: string | null }) {
+function ShelfTitle({ title, subtitle, to }: { title: string; subtitle?: string | null; to?: string | null }) {
   return (
-    <div className={shelfHeader}>
+    <div className={`${shelfHeader} flex-col !items-start`}>
       <h2 className="type-title-2-emphasized">
         {to ? (
           <PrefetchLink to={to} className="group/title inline-flex items-center gap-0.5">
@@ -95,6 +96,9 @@ function ShelfTitle({ title, to }: { title: string; to?: string | null }) {
           title
         )}
       </h2>
+      {subtitle && (
+        <p className="text-xs text-secondary font-medium tracking-wide mt-0.5 truncate">{subtitle}</p>
+      )}
     </div>
   );
 }
@@ -133,9 +137,16 @@ export function TrackShelf({ title, to, tracks, source }: { title: string; to?: 
 
 /** A titled horizontal shelf (report §2): grid columns per breakpoint, scroll-snap, hover arrows. */
 export function ShelfView({ shelf }: { shelf: Shelf }) {
+  const displayTitle = localizeShelfTitle(shelf.title);
+  const displaySubtitle = shelf.strapline ? localizeShelfSubtitle(shelf.strapline) : null;
+
   return (
-    <section className={shelfSection} aria-label={shelf.title}>
-      <ShelfTitle title={shelf.title} to={shelf.seeAll ? browseHref(shelf.seeAll) : null} />
+    <section className={shelfSection} aria-label={displayTitle}>
+      <ShelfTitle
+        title={displayTitle}
+        subtitle={displaySubtitle}
+        to={shelf.seeAll ? browseHref(shelf.seeAll) : null}
+      />
       <ShelfScroller key={shelf.items.length} kind={shelf.layout}>
         {shelf.items.map((item, i) => (
           <li key={`${item.id}-${i}`}>{renderItem(shelf, item)}</li>

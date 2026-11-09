@@ -46,6 +46,9 @@
   --animate-spin: spin 1s linear infinite;
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-matching: matching 1.4s ease-in-out infinite alternate;
+  --animate-eq-bar-1: eq-1 0.75s ease-in-out infinite alternate;
+  --animate-eq-bar-2: eq-2 0.85s ease-in-out 0.15s infinite alternate;
+  --animate-eq-bar-3: eq-3 0.7s ease-in-out 0.3s infinite alternate;
 
   @keyframes menu-in {
     from {
@@ -101,6 +104,18 @@
     to {
       opacity: 0.7;
     }
+  }
+  @keyframes eq-1 {
+    0% { transform: scaleY(0.25); }
+    100% { transform: scaleY(1); }
+  }
+  @keyframes eq-2 {
+    0% { transform: scaleY(0.9); }
+    100% { transform: scaleY(0.35); }
+  }
+  @keyframes eq-3 {
+    0% { transform: scaleY(0.4); }
+    100% { transform: scaleY(0.95); }
   }
 }
 

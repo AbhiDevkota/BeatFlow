@@ -1,11 +1,13 @@
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { PlayIcon } from '@/components/icons/Transport';
+import { PlayingBars } from '@/components/home/PlayingBars';
 import type { MusicItem } from '@/data/music/types';
 import { Artwork } from './Artwork';
 import { ExplicitBadge } from './ExplicitBadge';
 import { artistHref, hrefFor } from './links';
 import { playTrack, toTrack } from './play';
 import { TrackMenu } from './TrackMenu';
+import { usePlayer } from '@/state/player';
 
 const isPlayable = (item: MusicItem) => item.kind === 'song' || item.kind === 'video';
 
@@ -60,6 +62,9 @@ function PlayPlatter({ item }: { item: MusicItem }) {
 /** The artwork with its hover scrim, linking to the item or playing it. */
 function LockupArtwork({ item, width, aspect }: { item: MusicItem; width: number; aspect: number }) {
   const href = hrefFor(item);
+  const current = usePlayer((s) => s.nowPlaying?.videoId === item.id);
+  const isPlaying = usePlayer((s) => current && (s.status === 'playing' || s.status === 'buffering'));
+
   return (
     <div className="group/art relative rounded-artwork-md">
       <Artwork src={item.thumbnail} displayWidth={width} aspect={aspect} radius="var(--radius-artwork-medium)" />
@@ -67,6 +72,12 @@ function LockupArtwork({ item, width, aspect }: { item: MusicItem; width: number
         <PrefetchLink to={href} className={overlayLink} aria-label={item.title} />
       ) : (
         <button className={overlayLink} aria-label={`Play ${item.title}`} onClick={() => playTrack(item)} />
+      )}
+      {/* Playing bars indicator matching Android's SearchPlayingBars */}
+      {isPlaying && (
+        <div className="pointer-events-none absolute inset-0 z-2 grid place-items-center group-hover/art:opacity-0 transition-opacity">
+          <PlayingBars size={28} />
+        </div>
       )}
       {/* Hover scrim and platter (report §2: --lockupHoverBGColor, opacity .1s ease-in). */}
       <div className="pointer-events-none absolute inset-0 z-2 rounded-[inherit] bg-lockup-hover opacity-0 transition-opacity duration-100 ease-in group-focus-visible/art:opacity-100 group-hover/art:opacity-100">{isPlayable(item) && <PlayPlatter item={item} />}</div>
@@ -137,17 +148,26 @@ export function CircleLockup({ item, width = 160 }: { item: MusicItem; width?: n
 /** A song row inside a shelf (report §2, track lockup): 40px art, title, byline. */
 export function TrackLockup({ item, onPlay }: { item: MusicItem; onPlay?: () => void }) {
   const play = onPlay ?? (() => playTrack(item));
+  const current = usePlayer((s) => s.nowPlaying?.videoId === item.id);
+  const isPlaying = usePlayer((s) => current && (s.status === 'playing' || s.status === 'buffering'));
+
   return (
     // 52px art column (40 + 12 gap), content, menu; 55px tall.
     <div className="group/track grid h-[55px] grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-x-3 py-[7.5px] pr-3.5 pl-0">
       <button className="group/art relative w-10 rounded-artwork-sm" aria-label={`Play ${item.title}`} onClick={play}>
         <Artwork src={item.thumbnail} displayWidth={40} radius="var(--radius-artwork-small)" />
-        <span
-          className="absolute inset-0 grid place-items-center rounded-[inherit] bg-lockup-hover text-white opacity-0 transition-opacity duration-100 ease-in group-hover/track:opacity-100 group-focus-visible/art:opacity-100"
-          aria-hidden="true"
-        >
-          <PlayIcon size={16} />
-        </span>
+        {isPlaying ? (
+          <span className="absolute inset-0 grid place-items-center rounded-[inherit] bg-black/40 text-white group-hover/track:hidden">
+            <PlayingBars size={20} />
+          </span>
+        ) : (
+          <span
+            className="absolute inset-0 grid place-items-center rounded-[inherit] bg-lockup-hover text-white opacity-0 transition-opacity duration-100 ease-in group-hover/track:opacity-100 group-focus-visible/art:opacity-100"
+            aria-hidden="true"
+          >
+            <PlayIcon size={16} />
+          </span>
+        )}
       </button>
       <div className="flex min-w-0 flex-col gap-px px-1">
         <div className="flex min-w-0 items-center type-body">
