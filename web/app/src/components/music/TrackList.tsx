@@ -35,8 +35,8 @@ const cell = 'flex h-full min-w-0 items-center';
 // 396 / 274 / 274 / 141 at 1440px (report §14).
 const playlistColumns = 'grid-cols-[minmax(0,36.5fr)_minmax(0,25.25fr)_minmax(0,25.25fr)_minmax(0,13fr)]';
 // Artist and album: playlists only, and not below 768px.
-const secondary = `${cell} pe-2.5 max-md:hidden`;
-const tertiary = `${cell} pe-4 max-md:hidden`;
+const secondary = `${cell} pe-2.5 text-secondary max-md:hidden`;
+const tertiary = `${cell} pe-4 text-secondary max-md:hidden`;
 // A row from another catalogue with no YouTube Music song (yet) is dimmed.
 const dimmed = 'group-data-unavailable/row:opacity-45';
 const link = 'text-inherit hover:underline group-data-current/row:text-primary';
@@ -80,8 +80,8 @@ function Artists({ artists }: { artists: ArtistRef[] }) {
 }
 
 const time: Record<Variant, string> = {
-  album: 'relative justify-end pe-3 type-body tabular-nums',
-  playlist: 'relative justify-end pe-[18px] type-body tabular-nums',
+  album: 'relative justify-end pe-3 type-body tabular-nums text-secondary',
+  playlist: 'relative justify-end pe-[18px] type-body tabular-nums text-secondary',
 };
 
 interface RowProps {
@@ -153,7 +153,7 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
             {track.explicit && <ExplicitBadge />}
           </div>
           {variant === 'album' && track.artists.length > 0 && (
-            <div className="truncate type-callout">
+            <div className="truncate type-callout text-secondary">
               <Artists artists={track.artists} />
             </div>
           )}

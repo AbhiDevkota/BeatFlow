@@ -25,7 +25,7 @@ interface DetailHeaderProps {
 export const detailButton = {
   pill: 'inline-flex h-9 min-w-[150px] items-center justify-center gap-1.5 rounded-[24px] bg-pill-bg px-3 type-title-3-emphasized text-pill disabled:opacity-40 enabled:hover:opacity-90',
   circle:
-    'grid size-9 place-items-center rounded-full border-[0.75px] border-quaternary bg-quinary text-primary disabled:opacity-40 enabled:hover:bg-quaternary',
+    'grid size-9 place-items-center rounded-full border-[0.75px] border-circle-border bg-circle-bg text-primary disabled:opacity-40 enabled:hover:bg-quaternary',
 };
 
 /**
@@ -63,14 +63,14 @@ export function DetailHeader({ info, onPlay, onShuffle, canPlay, extra, motion }
           {info.explicit && <ExplicitBadge size={16} />}
         </h1>
         {info.artists.length > 0 && (
-          <div className="type-large-title leading-[30px] text-primary">
+          <div className="type-large-title leading-[30px] text-key">
             {info.artists.map((artist, i) => {
               const href = artistHref(artist.id);
               return (
                 <span key={`${artist.name}-${i}`}>
-                  {i > 0 && ', '}
+                  {i > 0 && <span className="text-secondary">, </span>}
                   {href ? (
-                    <PrefetchLink to={href} className="hover:underline">
+                    <PrefetchLink to={href} className="text-key hover:underline">
                       {artist.name}
                     </PrefetchLink>
                   ) : (

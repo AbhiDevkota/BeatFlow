@@ -148,7 +148,10 @@
   --color-thin-material: var(--systemStandardThinMaterialSover);
   --color-thick-material: var(--systemStandardThickMaterialSover);
   --color-header-material: var(--systemHeaderMaterialSover);
+  --color-nav-bg: var(--navSidebarBG);
   --color-nav-selected: var(--navSidebarSelectedState);
+  --color-player-bg: var(--playerBackground);
+  --color-mini-player-bg: var(--miniPlayerBackground);
   --color-tracklist-hover: var(--tracklistHoverColor);
   --color-shelf: var(--shelfBG);
   --color-opaque-shelf: var(--opaqueShelfBG);
@@ -160,6 +163,8 @@
   --color-segmented-selected: var(--segmentedControlSelectedBG);
   --color-pill: var(--button-pill-color);
   --color-pill-bg: var(--button-pill-background-color);
+  --color-circle-bg: var(--button-circle-background-color);
+  --color-circle-border: var(--button-circle-border-color);
   --color-radiosity: var(--radiosityShadowColor);
   --color-dialog-shadow: var(--dialogShadowColor);
   --color-destructive: var(--contextMenuOverrideTextColor);
@@ -233,7 +238,7 @@
 
   &::before {
     z-index: -1;
-    background-color: var(--glassMaterialBackground);
+    background-color: var(--playerBackground);
     backdrop-filter: saturate(2.2) blur(16px);
     box-shadow: 0 10px 40px var(--glassMaterialShadowColor);
   }
