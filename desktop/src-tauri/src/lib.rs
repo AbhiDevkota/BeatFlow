@@ -58,6 +58,8 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   // 5. sw.js_data, iframe_api, and s/player/* MUST NOT have Origin or X-Origin headers,
   //    otherwise YouTube returns HTTP 400 Bad Request.
   let is_yt = is_youtube || params.url.contains("youtube.com") || params.url.contains("googlevideo.com");
+  let is_apple = params.url.contains("amp-api.music.apple.com");
+  let is_musixmatch = params.url.contains("musixmatch.com");
   if params.url.contains("music.youtube.com/youtubei/") {
     req = req
       .header("Origin", "https://music.youtube.com")
@@ -78,6 +80,12 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
     req = req
       .header("Origin", "https://music.youtube.com")
       .header("Referer", "https://music.youtube.com/");
+  } else if is_apple {
+    req = req
+      .header("Origin", "https://music.apple.com")
+      .header("Referer", "https://music.apple.com/");
+  } else if is_musixmatch {
+    req = req.header("Cookie", "mxm_bab=AB");
   }
 
   if let Some(headers) = params.headers {
@@ -91,6 +99,12 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
         && (k.eq_ignore_ascii_case("origin")
           || k.eq_ignore_ascii_case("referer")
           || k.eq_ignore_ascii_case("x-origin"))
+      {
+        continue;
+      }
+      if is_apple
+        && (k.eq_ignore_ascii_case("origin")
+          || k.eq_ignore_ascii_case("referer"))
       {
         continue;
       }

@@ -6,6 +6,7 @@ import { DetailHeader, detailButton } from '@/components/music/DetailHeader';
 import { playList, shuffleList } from '@/components/music/play';
 import { EmptyState, LoadError, NeedsExtension } from '@/components/music/States';
 import { TrackList } from '@/components/music/TrackList';
+import { usePlaylistMotion } from '@/data/apple/motionArt';
 import { createPlaylist } from '@/data/music/api';
 import { useSignedIn } from '@/data/music/queries';
 import type { HeaderInfo } from '@/data/music/types';
@@ -30,6 +31,7 @@ export default function SpotifyPlaylistPage() {
   const info = useSpotifyPlaylistInfo(id);
   const rows = useSpotifyRows(id);
   usePageTint(useArtworkColor(info.data?.imageUrl));
+  const motion = usePlaylistMotion(info.data?.name);
 
   if (extension.state === 'missing') return <NeedsExtension what="your Spotify playlists" />;
   if (!signedIn) return <EmptyState title="Sign in to Spotify" detail="Open Spotify in the sidebar to connect your account." />;
@@ -63,6 +65,7 @@ export default function SpotifyPlaylistPage() {
       <DetailHeader
         info={headerInfo}
         canPlay={playable.length > 0}
+        motion={motion}
         onPlay={() => playList(playable, 0, context)}
         onShuffle={() => shuffleList(playable, context)}
         extra={<ImportButton title={info.data.name} videoIds={playable.map((t) => t.videoId)} ready={rows.matching === 0} />}

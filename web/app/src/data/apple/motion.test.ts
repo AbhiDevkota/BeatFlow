@@ -54,4 +54,15 @@ describe('Apple motion artwork matching', () => {
     expect(matches(found, 'Afsos', 'Anuv Jain', 'Something Else')).toBe(false);
     expect(matches(found, 'Husn', 'Anuv Jain', null)).toBe(false);
   });
+
+  it('extracts motion artwork from editorial playlist attributes', () => {
+    const playlistVideo = {
+      motionDetailSquare: { video: 'https://mvod.itunes.apple.com/square.m3u8' },
+      motionDetailTall: { video: 'https://mvod.itunes.apple.com/tall.m3u8' },
+    };
+    expect(motionUrls(playlistVideo)).toEqual({
+      url: 'https://mvod.itunes.apple.com/square.m3u8',
+      fallbackUrl: 'https://mvod.itunes.apple.com/tall.m3u8',
+    });
+  });
 });

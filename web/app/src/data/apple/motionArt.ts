@@ -5,7 +5,7 @@ import { metered, useReducedMotion } from '@/data/spotify/canvas';
 import { lyricsGet, onGranted, urlWith } from '@/lyrics/http';
 import { queryClient } from '@/lib/queryClient';
 import { obj, parse, str, type Json } from './artistPage';
-import { albumIdOf, isCompilation, matches, motionUrls, ranked, songTerm, type AppleMotion } from './motion';
+import { albumIdOf, isCompilation, matches, motionUrls, normalizeForMatch, ranked, songTerm, type AppleMotion } from './motion';
 import { appleWebToken } from './webToken';
 
 export type { AppleMotion };
@@ -97,6 +97,41 @@ export async function fetchAlbumMotion(album: string, artist: string): Promise<A
   return null;
 }
 
+/** The motion artwork for an editorial playlist (Apple Music's curated playlists carry motion inline). */
+export async function fetchPlaylistMotion(title: string): Promise<AppleMotion | null> {
+  const want = normalizeForMatch(title);
+  const searchSf = async (sf: string): Promise<AppleMotion | null> => {
+    try {
+      const token = await appleWebToken();
+      if (!token) return null;
+      const body = await lyricsGet(urlWith(`${AMP}/${sf}/search`, { term: title, types: 'playlists', limit: 10, extend: 'editorialVideo' }), {
+        route: 'extension',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!body) return null;
+      const root = obj(parse(body));
+      for (const hit of hitsOf(root, 'playlists')) {
+        const attributes = obj(hit.attributes);
+        const name = str(attributes?.name);
+        if (!attributes || !name) continue;
+        if (normalizeForMatch(name) !== want) continue;
+        const motion = motionUrls(attributes.editorialVideo);
+        if (motion) return motion;
+      }
+    } catch {
+      // Ignored
+    }
+    return null;
+  };
+
+  const found = await searchSf(storefront);
+  if (found) return found;
+  if (storefront !== 'us') {
+    return searchSf('us');
+  }
+  return null;
+}
+
 // Apple's hosts are optional extension permissions: once allowed, the lookups they refused run again.
 onGranted(() => void queryClient.invalidateQueries({ queryKey: ['apple', 'motion'] }));
 
@@ -128,6 +163,18 @@ export function useAlbumMotion(album: string | null | undefined, artist: string 
     queryKey: ['apple', 'motion', 'album', album ?? '', artist ?? ''],
     queryFn: () => fetchAlbumMotion(album!, artist!),
     enabled: allowed && !!album?.trim() && !!artist?.trim(),
+    ...QUERY,
+  });
+  return allowed ? (query.data ?? null) : null;
+}
+
+/** Apple's animated cover for a playlist page; null until (and unless) one is found. */
+export function usePlaylistMotion(title: string | null | undefined) {
+  const allowed = useMotionAllowed();
+  const query = useQuery({
+    queryKey: ['apple', 'motion', 'playlist', title ?? ''],
+    queryFn: () => fetchPlaylistMotion(title!),
+    enabled: allowed && !!title?.trim(),
     ...QUERY,
   });
   return allowed ? (query.data ?? null) : null;

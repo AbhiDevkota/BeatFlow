@@ -4,6 +4,7 @@ import { DetailHeader } from '@/components/music/DetailHeader';
 import { playList, shuffleList } from '@/components/music/play';
 import { LoadError, LoadMoreError, NeedsExtension } from '@/components/music/States';
 import { TrackList } from '@/components/music/TrackList';
+import { usePlaylistMotion } from '@/data/apple/motionArt';
 import { usePlaylist, useYouTubeReady } from '@/data/music/queries';
 import { useArtworkColor } from '@/lib/artworkColor';
 import { usePageTint } from '@/lib/usePageTint';
@@ -17,6 +18,7 @@ export default function PlaylistPage() {
   const playlist = usePlaylist(id);
   const header = playlist.data?.pages[0]?.header ?? null;
   usePageTint(useArtworkColor(header?.thumbnail));
+  const motion = usePlaylistMotion(header?.title);
 
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = playlist;
   const onNearEnd = useCallback(() => {
@@ -34,6 +36,7 @@ export default function PlaylistPage() {
       <DetailHeader
         info={header}
         canPlay={tracks.length > 0}
+        motion={motion}
         onPlay={() => playList(tracks, 0, context)}
         onShuffle={() => shuffleList(tracks, context)}
       />

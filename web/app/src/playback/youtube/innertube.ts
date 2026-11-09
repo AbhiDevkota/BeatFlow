@@ -78,7 +78,7 @@ async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit):
     url.hostname.endsWith('.youtube.com') ||
     url.hostname.endsWith('.googlevideo.com');
 
-  if (bridge && (isDesktopApp() || isInnertubeCall(url)) && isYtHost && !url.pathname.startsWith('/api/jnn/')) {
+  if (bridge && isDesktopApp() && isYtHost && !url.pathname.startsWith('/api/jnn/')) {
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase() as 'GET' | 'POST';
     const headers: Record<string, string> = {};
     new Headers(init?.headers ?? request?.headers).forEach((value, key) => (headers[key] = value));
