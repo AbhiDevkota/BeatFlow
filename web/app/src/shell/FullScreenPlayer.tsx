@@ -12,6 +12,7 @@ import {
   RepeatOneIcon,
   ShuffleIcon,
   UpNextIcon,
+  VolumeIcon,
 } from '@/components/icons/Transport';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
 import { FavoriteButton } from '@/components/music/FavoriteButton';
@@ -33,7 +34,6 @@ import { UpNext } from './UpNext';
 import { MixWindowHighlight, NerdStats } from './NerdStats';
 import { useScrubber } from './useScrubber';
 import { VideoQuality } from './VideoQuality';
-import { fadeForVolume, VolumeControl } from './VolumeControl';
 
 function useBrowserFullScreen(): boolean {
   return useSyncExternalStore(
@@ -115,6 +115,100 @@ function Transport() {
   );
 }
 
+/** Android-style horizontal volume bar matching NowPlayingScreen.kt */
+function PlayerVolumeBar() {
+  const volume = usePlayer((s) => s.volume);
+  const muted = usePlayer((s) => s.muted);
+  const setVolume = usePlayer((s) => s.setVolume);
+  const toggleMute = usePlayer((s) => s.toggleMute);
+  const level = muted ? 0 : volume;
+
+  return (
+    <div className="mx-auto mt-[clamp(8px,1.6vh,16px)] flex h-8 w-[min(100%,315px)] items-center gap-3">
+      <button
+        type="button"
+        className="grid size-7 place-items-center rounded-full text-white/50 transition-colors hover:text-white"
+        aria-label={muted ? 'Unmute' : 'Mute'}
+        onClick={toggleMute}
+      >
+        <VolumeIcon level={level === 0 ? 0 : 0.25} size={18} />
+      </button>
+
+      <div className="group/vol relative flex h-4 flex-1 items-center">
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={level}
+          aria-label="Volume"
+          style={{ '--fill': `${level * 100}%` } as React.CSSProperties}
+          onChange={(e) => setVolume(Number(e.currentTarget.value))}
+          className="h-1.5 w-full cursor-pointer appearance-none bg-transparent
+            [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[linear-gradient(to_right,white_var(--fill),rgba(255,255,255,0.25)_var(--fill))]
+            [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[linear-gradient(to_right,white_var(--fill),rgba(255,255,255,0.25)_var(--fill))]
+            [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.4)] [&::-webkit-slider-thumb]:opacity-0 transition-opacity group-hover/vol:[&::-webkit-slider-thumb]:opacity-100
+            [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.4)] [&::-moz-range-thumb]:opacity-0 transition-opacity group-hover/vol:[&::-moz-range-thumb]:opacity-100"
+        />
+      </div>
+
+      <button
+        type="button"
+        className="grid size-7 place-items-center rounded-full text-white/50 transition-colors hover:text-white"
+        aria-label="Full volume"
+        onClick={() => setVolume(1)}
+      >
+        <VolumeIcon level={1} size={18} />
+      </button>
+    </div>
+  );
+}
+
+/** Android-style bottom action row (Lyrics on left, Up Next / Playlist on right) */
+function PlayerActionRow({
+  showLyrics,
+  showQueue,
+  onToggleLyrics,
+  onToggleQueue,
+}: {
+  showLyrics: boolean;
+  showQueue: boolean;
+  onToggleLyrics: () => void;
+  onToggleQueue: () => void;
+}) {
+  return (
+    <div className="mx-auto mt-[clamp(8px,1.6vh,16px)] flex h-10 w-[min(100%,315px)] items-center justify-between px-3">
+      <button
+        type="button"
+        aria-label="Lyrics"
+        aria-pressed={showLyrics}
+        onClick={onToggleLyrics}
+        className={`grid size-9 place-items-center rounded-full transition-all duration-150 ${
+          showLyrics
+            ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
+            : 'text-white/60 hover:bg-white/10 hover:text-white'
+        }`}
+      >
+        {showLyrics ? <LyricsActiveIcon size={20} /> : <LyricsIcon size={20} />}
+      </button>
+
+      <button
+        type="button"
+        aria-label="Up Next"
+        aria-pressed={showQueue}
+        onClick={onToggleQueue}
+        className={`grid size-9 place-items-center rounded-full transition-all duration-150 ${
+          showQueue
+            ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
+            : 'text-white/60 hover:bg-white/10 hover:text-white'
+        }`}
+      >
+        <UpNextIcon size={20} />
+      </button>
+    </div>
+  );
+}
+
 // Close, browser full screen, the column toggles and the speaker, in the corners.
 const chromeButton =
   'grid size-8 place-items-center rounded-full text-secondary transition-[background-color,color] duration-100 ease-in hover:bg-quinary hover:text-primary';
@@ -157,7 +251,6 @@ export function FullScreenPlayer() {
   // Once the listener picks a column, a video arriving late doesn't take it away.
   const picked = useRef(false);
   const [idle, setIdle] = useState(false);
-  const [volumeOpen, setVolumeOpen] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const browserFullScreen = useBrowserFullScreen();
   const close = useRef<HTMLButtonElement>(null);
@@ -270,7 +363,7 @@ export function FullScreenPlayer() {
           }`}
         />
       )}
-      {document.fullscreenEnabled && (
+      {video && document.fullscreenEnabled && (
         <button
           className={`${corner} top-4 ${isDesktopApp() ? 'right-36' : 'right-5'}`}
           aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
@@ -384,6 +477,13 @@ export function FullScreenPlayer() {
 
           <Scrubber />
           <Transport />
+          <PlayerVolumeBar />
+          <PlayerActionRow
+            showLyrics={showLyrics}
+            showQueue={showQueue}
+            onToggleLyrics={() => togglePanel('lyrics')}
+            onToggleQueue={() => togglePanel('queue')}
+          />
         </section>
 
         {showLyrics && (
@@ -400,34 +500,6 @@ export function FullScreenPlayer() {
             <UpNext />
           </section>
         )}
-      </div>
-
-      <button
-        className={`${corner} bottom-5 left-5 aria-pressed:text-primary`}
-        aria-label="Lyrics"
-        aria-pressed={showLyrics}
-        onClick={() => togglePanel('lyrics')}
-      >
-        {showLyrics ? <LyricsActiveIcon size={18} /> : <LyricsIcon size={18} />}
-      </button>
-      {/* Up Next, with the speaker beside it: the level slides in over Up Next, as it does in the pill. */}
-      <div
-        className={`group/actions absolute right-5 bottom-5 z-1 flex items-center [--volume-gap:36px] transition-opacity duration-300${hidden}`}
-        data-volume-open={volumeOpen || undefined}
-        onPointerLeave={() => setVolumeOpen(false)}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setVolumeOpen(false);
-        }}
-      >
-        <button
-          className={`${chromeButton} ${fadeForVolume} aria-pressed:text-primary`}
-          aria-label="Up Next"
-          aria-pressed={showQueue}
-          onClick={() => togglePanel('queue')}
-        >
-          <UpNextIcon size={18} />
-        </button>
-        <VolumeControl open={volumeOpen} onOpen={() => setVolumeOpen(true)} className={chromeButton} iconSize={18} />
       </div>
     </div>
   );
