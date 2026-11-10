@@ -28,6 +28,7 @@ import {
   Tag,
   Trash2,
   Type,
+  UserCheck,
   Users,
   Video,
   Volume2,
@@ -272,64 +273,42 @@ export default function SettingsPage() {
   const searching = searchQuery.trim().length > 0;
   const q = searchQuery.toLowerCase().trim();
 
-  // Render Account Centre groups: Account Management & Integrations
+  // Render Account Centre group (Account Management, Discord, Extension, Listen Together)
   const renderAccountGroup = () => (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h3 className="mx-4 mb-2 type-subhead-emphasized uppercase text-secondary font-semibold tracking-wider text-[11px]">
-          Account Management
-        </h3>
-        <section className={settingsUi.group}>
-          <div className={settingsUi.integration}>
-            <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
-            <span className={settingsUi.integrationName}>YouTube Music</span>
-            <span className={settingsUi.value}>
-              {youtubeText(yt)}
-              {yt.state === 'ready' && !yt.auth.browserSignedIn && (
-                <a
-                  href="https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className={settingsUi.inlineButton}
-                >
-                  Sign In
-                </a>
-              )}
-            </span>
-          </div>
-          <div className={settingsUi.integration}>
-            <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
-            <span className={settingsUi.integrationName}>Spotify</span>
-            {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
-          </div>
-        </section>
-      </div>
-
-      <div>
-        <h3 className="mx-4 mb-2 type-subhead-emphasized uppercase text-secondary font-semibold tracking-wider text-[11px]">
-          Integrations & Services
-        </h3>
-        <section className={settingsUi.group}>
-          {present && discordAvailable && (
-            <LinkRow to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
-          )}
-          {!desktop && (
-            <LinkRow
-              to="/extension"
-              icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
-              title="BeatFlow Extension"
-              value={extensionVersion ? extensionVersion : 'Not installed'}
-            />
-          )}
-          <LinkRow
-            to="/settings/listen-together"
-            icon={<Users size={22} className="text-white flex-shrink-0" />}
-            title="Listen Together"
-            value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
-          />
-        </section>
-      </div>
-    </div>
+    <section className={settingsUi.group}>
+      <LinkRow
+        to="/settings/accounts"
+        icon={<UserCheck size={22} className="text-white flex-shrink-0" />}
+        title="Account Management"
+        value={
+          yt.state === 'ready' && yt.auth.browserSignedIn && yt.auth.active
+            ? yt.auth.active.name
+            : 'Manage accounts'
+        }
+      />
+      {present && discordAvailable && (
+        <LinkRow
+          to="/settings/discord"
+          icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />}
+          title="Discord"
+          value={discordText}
+        />
+      )}
+      {!desktop && (
+        <LinkRow
+          to="/extension"
+          icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
+          title="BeatFlow Extension"
+          value={extensionVersion ? extensionVersion : 'Not installed'}
+        />
+      )}
+      <LinkRow
+        to="/settings/listen-together"
+        icon={<Users size={22} className="text-white flex-shrink-0" />}
+        title="Listen Together"
+        value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
+      />
+    </section>
   );
 
   // Playback group
@@ -776,37 +755,40 @@ export default function SettingsPage() {
       if (match) matches.push({ key, title, element });
     };
 
-    // Account Centre: Account Management & Integrations
+    // Account Centre
+    check('Account Management', ['account management', 'accounts', 'manage accounts', 'youtube music', 'spotify', 'google', 'profile'], (
+      <LinkRow
+        key="acct-mgmt"
+        to="/settings/accounts"
+        icon={<UserCheck size={22} className="text-white flex-shrink-0" />}
+        title="Account Management"
+        value={
+          yt.state === 'ready' && yt.auth.browserSignedIn && yt.auth.active
+            ? yt.auth.active.name
+            : 'Manage accounts'
+        }
+      />
+    ), 'about');
+
     check('YouTube Music', ['youtube', 'google', 'account', 'sign in', 'auth', 'account centre', 'account management'], (
-      <div key="yt" className={settingsUi.integration}>
-        <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
-        <span className={settingsUi.integrationName}>YouTube Music</span>
-        <span className={settingsUi.value}>{youtubeText(yt)}</span>
-      </div>
-    ), 'audio-quality');
+      <LinkRow
+        key="yt-mgmt"
+        to="/settings/accounts"
+        icon={<SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />}
+        title="YouTube Music"
+        value={youtubeText(yt)}
+      />
+    ), 'about');
 
     check('Spotify', ['spotify', 'canvas', 'sync', 'library', 'account centre', 'account management'], (
-      <div key="spot" className={settingsUi.integration}>
-        <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
-        <span className={settingsUi.integrationName}>Spotify</span>
-        {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
-      </div>
-    ), 'audio-quality');
-
-    check('Account Management', ['account management', 'accounts', 'manage accounts', 'youtube music', 'spotify', 'account centre'], (
-      <div key="acct-mgmt" className="flex flex-col gap-2">
-        <div className={settingsUi.integration}>
-          <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
-          <span className={settingsUi.integrationName}>YouTube Music</span>
-          <span className={settingsUi.value}>{youtubeText(yt)}</span>
-        </div>
-        <div className={settingsUi.integration}>
-          <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
-          <span className={settingsUi.integrationName}>Spotify</span>
-          {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
-        </div>
-      </div>
-    ), 'audio-quality');
+      <LinkRow
+        key="spot-mgmt"
+        to="/settings/accounts"
+        icon={<SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />}
+        title="Spotify"
+        value={present ? 'Settings & library' : `Needs ${desktop ? 'engine' : 'extension'}`}
+      />
+    ), 'about');
 
     check('Discord Presence', ['discord', 'rich presence', 'activity', 'rpc', 'account centre'], (
       <LinkRow key="dc" to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
