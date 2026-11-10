@@ -1255,15 +1255,18 @@ export default function SettingsPage() {
           </button>
         )}
 
-        {/* Search Bar matching Android SettingsSheet */}
+        {/* Search Bar matching SearchField */}
         <div className={settingsUi.searchContainer}>
-          <Search size={16} className="text-secondary flex-shrink-0" />
+          <Search size={15} strokeWidth={2.4} className="pointer-events-none absolute left-3 text-secondary" aria-hidden="true" />
           <input
-            type="text"
+            type="search"
             className={settingsUi.searchInput}
-            placeholder="Search settings…"
+            placeholder="Search settings, accounts, playback…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setSearchQuery('');
+            }}
           />
           {searchQuery && (
             <button
@@ -1272,7 +1275,7 @@ export default function SettingsPage() {
               onClick={() => setSearchQuery('')}
               aria-label="Clear search"
             >
-              <X size={14} />
+              <X size={12} strokeWidth={2.5} />
             </button>
           )}
         </div>

@@ -57,9 +57,12 @@ export const settingsUi = {
   input: field,
 
   /** Search bar matching Android SettingsSheet */
-  searchContainer: 'relative flex items-center mb-5 w-full rounded-[12px] bg-quinary px-3.5 py-2.5 text-primary focus-within:ring-2 focus-within:ring-key/40 transition-all border border-[var(--searchBarBorderColor)]',
-  searchInput: 'w-full bg-transparent pl-2.5 pr-6 text-[14px] leading-tight placeholder:text-secondary focus:outline-none type-body',
-  searchClear: 'absolute right-2.5 p-1 text-secondary hover:text-primary cursor-pointer rounded-full hover:bg-quaternary transition-colors',
+  searchContainer:
+    'relative flex items-center mb-6 w-full h-[38px] rounded-pill border border-search-border bg-page px-3 text-primary focus-within:border-key/60 focus-within:ring-2 focus-within:ring-key/20 transition-all shadow-xs',
+  searchInput:
+    'w-full h-full bg-transparent pl-6 pr-6 text-[14px] type-body text-primary placeholder:text-tertiary focus:outline-none [&::-webkit-search-cancel-button]:hidden',
+  searchClear:
+    'absolute right-2.5 grid size-5 place-items-center rounded-full bg-quaternary text-secondary hover:text-primary transition-colors cursor-pointer',
 
   /** Minimal monochrome icon styling (no colored boxes, 22px) */
   minimalIcon: 'size-[22px] text-secondary group-hover:text-primary transition-colors flex-shrink-0',

@@ -5,6 +5,53 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+static INITIAL_DEEP_LINK: OnceLock<std::sync::Mutex<Option<String>>> = OnceLock::new();
+
+fn set_deep_link(url: String) {
+  let m = INITIAL_DEEP_LINK.get_or_init(|| std::sync::Mutex::new(None));
+  if let Ok(mut lock) = m.lock() {
+    *lock = Some(url);
+  }
+}
+
+fn get_deep_link_value() -> Option<String> {
+  INITIAL_DEEP_LINK
+    .get_or_init(|| std::sync::Mutex::new(None))
+    .lock()
+    .ok()
+    .and_then(|lock| lock.clone())
+}
+
+#[cfg(target_os = "windows")]
+fn register_custom_protocol() {
+  use std::os::windows::process::CommandExt;
+  if let Ok(exe_path) = std::env::current_exe() {
+    let exe_str = exe_path.to_string_lossy().to_string();
+    let command = format!("\"{}\" \"%1\"", exe_str);
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    // Register beatflow:// protocol in HKCU (no administrator privileges needed)
+    let _ = std::process::Command::new("reg")
+      .args(&["add", "HKCU\\Software\\Classes\\beatflow", "/ve", "/d", "URL:BeatFlow Protocol", "/f"])
+      .creation_flags(CREATE_NO_WINDOW)
+      .output();
+    let _ = std::process::Command::new("reg")
+      .args(&["add", "HKCU\\Software\\Classes\\beatflow", "/v", "URL Protocol", "/d", "", "/f"])
+      .creation_flags(CREATE_NO_WINDOW)
+      .output();
+    let _ = std::process::Command::new("reg")
+      .args(&["add", "HKCU\\Software\\Classes\\beatflow\\DefaultIcon", "/ve", "/d", &format!("\"{}\",0", exe_str), "/f"])
+      .creation_flags(CREATE_NO_WINDOW)
+      .output();
+    let _ = std::process::Command::new("reg")
+      .args(&["add", "HKCU\\Software\\Classes\\beatflow\\shell\\open\\command", "/ve", "/d", &command, "/f"])
+      .creation_flags(CREATE_NO_WINDOW)
+      .output();
+  }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn register_custom_protocol() {}
 
 fn client() -> &'static reqwest::Client {
   HTTP_CLIENT.get_or_init(|| {
@@ -236,6 +283,15 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
     "discord.presence" | "discord.connect" | "discord.disconnect" | "discord.setEnabled" => {
       Ok(json!({}))
     }
+    "app.getDeepLink" => {
+      let url = get_deep_link_value();
+      Ok(json!({ "url": url }))
+    }
+    "app.openDeepLink" => {
+      let url = params.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+      set_deep_link(url.to_string());
+      Ok(json!({ "handled": true, "url": url }))
+    }
     _ => Err(format!("Unknown bridge method: {method}")),
   }
 }
@@ -301,6 +357,21 @@ const DESKTOP_BRIDGE_INIT: &str = r#"
       return Promise.resolve(false);
     }
   };
+
+  window.__BEATFLOW_DEEP_LINK__ = {
+    get: function() {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        return window.__TAURI_INTERNALS__.invoke('get_deep_link');
+      }
+      return Promise.resolve(window.__BEATFLOW_INITIAL_DEEPLINK__ || null);
+    },
+    open: function(url) {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        return window.__TAURI_INTERNALS__.invoke('open_deep_link', { url: url });
+      }
+      return Promise.resolve();
+    }
+  };
 })();
 "#;
 
@@ -331,20 +402,70 @@ fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
   window.is_maximized().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_deep_link() -> Option<String> {
+  get_deep_link_value()
+}
+
+#[tauri::command]
+fn open_deep_link(window: tauri::WebviewWindow, url: String) -> Result<(), String> {
+  set_deep_link(url.clone());
+  let json = serde_json::to_string(&url).map_err(|e| e.to_string())?;
+  let script = format!(
+    "window.__BEATFLOW_INITIAL_DEEPLINK__ = {json}; window.dispatchEvent(new CustomEvent('beatflow:deeplink', {{ detail: {json} }}));"
+  );
+  window.eval(&script).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  for arg in std::env::args().skip(1) {
+    if arg.starts_with("beatflow://") {
+      set_deep_link(arg);
+      break;
+    }
+  }
+
   tauri::Builder::default()
+    .register_uri_scheme_protocol("beatflow", |_app, req| {
+      let uri = req.uri().to_string();
+      log::info!("Handling beatflow protocol request: {}", uri);
+      let json = json!({
+        "status": "ok",
+        "uri": uri,
+        "scheme": "beatflow"
+      });
+      let body = serde_json::to_vec(&json).unwrap_or_default();
+      tauri::http::Response::builder()
+        .status(200)
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        .header("Content-Type", "application/json")
+        .body(body)
+        .unwrap()
+    })
     .invoke_handler(tauri::generate_handler![
       bridge_call,
       window_minimize,
       window_toggle_maximize,
       window_close,
       window_is_maximized,
+      get_deep_link,
+      open_deep_link,
     ])
     .on_page_load(|window, _payload| {
       let _ = window.eval(DESKTOP_BRIDGE_INIT);
+      if let Some(url) = get_deep_link_value() {
+        if let Ok(json) = serde_json::to_string(&url) {
+          let script = format!(
+            "window.__BEATFLOW_INITIAL_DEEPLINK__ = {json}; window.dispatchEvent(new CustomEvent('beatflow:deeplink', {{ detail: {json} }}));"
+          );
+          let _ = window.eval(&script);
+        }
+      }
     })
     .setup(|app| {
+      register_custom_protocol();
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()

@@ -4,7 +4,8 @@ import { startPartySync } from '@/party/partySync';
 import { useDiscordPresence } from '@/playback/discordPresence';
 import { startHistoryReporting } from '@/playback/historyReporting';
 import { startLivePresence } from '@/playback/livePresence';
-import { Outlet } from 'react-router';
+import { Outlet, useNavigate } from 'react-router';
+import { resolveDeepLink } from '@/lib/deepLink';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { config } from '@/config';
 import { useExtension } from '@/extension/useExtension';
@@ -30,8 +31,33 @@ const FullScreenPlayer = lazy(() => import('./FullScreenPlayer').then((m) => ({ 
  * player pill, the side panel, and the bottom band when there is one.
  */
 export function AppShell() {
+  const navigate = useNavigate();
   useKeyboardShortcuts();
   useDiscordPresence();
+
+  // Listen for beatflow:// deep links (from desktop bridge, protocol handler, or window events)
+  useEffect(() => {
+    const handleUrl = (url: string) => {
+      const route = resolveDeepLink(url);
+      if (route) navigate(route);
+    };
+
+    const initial = (window as unknown as { __BEATFLOW_INITIAL_DEEPLINK__?: string }).__BEATFLOW_INITIAL_DEEPLINK__;
+    if (initial) {
+      delete (window as unknown as { __BEATFLOW_INITIAL_DEEPLINK__?: string }).__BEATFLOW_INITIAL_DEEPLINK__;
+      handleUrl(initial);
+    }
+
+    const onCustomEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (typeof customEvent.detail === 'string') {
+        handleUrl(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('beatflow:deeplink', onCustomEvent);
+    return () => window.removeEventListener('beatflow:deeplink', onCustomEvent);
+  }, [navigate]);
   // Listen Together: pick a party back up after a reload, and keep the player in step with it.
   useEffect(() => {
     resumeSession();
