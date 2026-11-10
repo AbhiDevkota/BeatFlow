@@ -272,37 +272,64 @@ export default function SettingsPage() {
   const searching = searchQuery.trim().length > 0;
   const q = searchQuery.toLowerCase().trim();
 
-  // Render Account Centre card (minimal monochrome vectors)
+  // Render Account Centre groups: Account Management & Integrations
   const renderAccountGroup = () => (
-    <section className={settingsUi.group}>
-      <div className={settingsUi.integration}>
-        <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
-        <span className={settingsUi.integrationName}>YouTube Music</span>
-        <span className={settingsUi.value}>{youtubeText(yt)}</span>
+    <div className="flex flex-col gap-5">
+      <div>
+        <h3 className="mx-4 mb-2 type-subhead-emphasized uppercase text-secondary font-semibold tracking-wider text-[11px]">
+          Account Management
+        </h3>
+        <section className={settingsUi.group}>
+          <div className={settingsUi.integration}>
+            <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
+            <span className={settingsUi.integrationName}>YouTube Music</span>
+            <span className={settingsUi.value}>
+              {youtubeText(yt)}
+              {yt.state === 'ready' && !yt.auth.browserSignedIn && (
+                <a
+                  href="https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={settingsUi.inlineButton}
+                >
+                  Sign In
+                </a>
+              )}
+            </span>
+          </div>
+          <div className={settingsUi.integration}>
+            <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
+            <span className={settingsUi.integrationName}>Spotify</span>
+            {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
+          </div>
+        </section>
       </div>
-      <div className={settingsUi.integration}>
-        <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
-        <span className={settingsUi.integrationName}>Spotify</span>
-        {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
+
+      <div>
+        <h3 className="mx-4 mb-2 type-subhead-emphasized uppercase text-secondary font-semibold tracking-wider text-[11px]">
+          Integrations & Services
+        </h3>
+        <section className={settingsUi.group}>
+          {present && discordAvailable && (
+            <LinkRow to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
+          )}
+          {!desktop && (
+            <LinkRow
+              to="/extension"
+              icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
+              title="BeatFlow Extension"
+              value={extensionVersion ? extensionVersion : 'Not installed'}
+            />
+          )}
+          <LinkRow
+            to="/settings/listen-together"
+            icon={<Users size={22} className="text-white flex-shrink-0" />}
+            title="Listen Together"
+            value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
+          />
+        </section>
       </div>
-      {present && discordAvailable && (
-        <LinkRow to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
-      )}
-      {!desktop && (
-        <LinkRow
-          to="/extension"
-          icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
-          title="BeatFlow Extension"
-          value={extensionVersion ? extensionVersion : 'Not installed'}
-        />
-      )}
-      <LinkRow
-        to="/settings/listen-together"
-        icon={<Users size={22} className="text-white flex-shrink-0" />}
-        title="Listen Together"
-        value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
-      />
-    </section>
+    </div>
   );
 
   // Playback group
@@ -749,8 +776,8 @@ export default function SettingsPage() {
       if (match) matches.push({ key, title, element });
     };
 
-    // Account Centre
-    check('YouTube Music', ['youtube', 'google', 'account', 'sign in', 'auth', 'account centre'], (
+    // Account Centre: Account Management & Integrations
+    check('YouTube Music', ['youtube', 'google', 'account', 'sign in', 'auth', 'account centre', 'account management'], (
       <div key="yt" className={settingsUi.integration}>
         <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
         <span className={settingsUi.integrationName}>YouTube Music</span>
@@ -758,11 +785,26 @@ export default function SettingsPage() {
       </div>
     ), 'audio-quality');
 
-    check('Spotify', ['spotify', 'canvas', 'sync', 'library', 'account centre'], (
+    check('Spotify', ['spotify', 'canvas', 'sync', 'library', 'account centre', 'account management'], (
       <div key="spot" className={settingsUi.integration}>
         <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
         <span className={settingsUi.integrationName}>Spotify</span>
         {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
+      </div>
+    ), 'audio-quality');
+
+    check('Account Management', ['account management', 'accounts', 'manage accounts', 'youtube music', 'spotify', 'account centre'], (
+      <div key="acct-mgmt" className="flex flex-col gap-2">
+        <div className={settingsUi.integration}>
+          <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
+          <span className={settingsUi.integrationName}>YouTube Music</span>
+          <span className={settingsUi.value}>{youtubeText(yt)}</span>
+        </div>
+        <div className={settingsUi.integration}>
+          <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
+          <span className={settingsUi.integrationName}>Spotify</span>
+          {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>}
+        </div>
       </div>
     ), 'audio-quality');
 

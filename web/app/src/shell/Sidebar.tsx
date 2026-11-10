@@ -190,12 +190,12 @@ export function Sidebar() {
             <AccountButton onNavigate={close} />
             <PrefetchNavLink
               to="/settings"
-              className="grid size-8 flex-none place-items-center rounded-nav text-secondary hover:bg-quinary hover:text-primary aria-[current=page]:bg-quinary aria-[current=page]:text-primary transition-colors"
+              className="glass-pill relative grid size-8 flex-none place-items-center rounded-pill text-secondary hover:text-primary hover:bg-white/10 aria-[current=page]:text-primary transition-all active:scale-[0.98]"
               aria-label="Settings"
               title="Settings"
               onClick={close}
             >
-              <Settings size={18} strokeWidth={1.9} />
+              <Settings size={17} strokeWidth={1.9} />
             </PrefetchNavLink>
           </div>
         </div>

@@ -29,13 +29,13 @@ export function GoogleLogo({ size = 18, className = '' }: { size?: number; class
   );
 }
 
-// Android-style white pill with Google logo and black text
+// Miniplayer-style glass pill matching BeatFlow's player pill and mobile theme
 const googlePill =
-  'inline-flex min-w-0 flex-1 items-center justify-center gap-2 h-8 rounded-full bg-white px-3 text-black hover:bg-[#f0f0f0] active:scale-[0.98] transition-all shadow-xs select-none';
+  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-2 h-8 rounded-pill px-3.5 text-primary hover:text-white hover:bg-white/10 active:scale-[0.98] transition-all select-none';
 const connectPill =
-  'inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-full bg-key px-3 text-white hover:brightness-110 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
+  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-pill bg-key/80 px-3 text-white hover:brightness-110 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
 const retryPill =
-  'inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-full bg-quaternary px-3 text-primary hover:bg-quinary active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
+  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-pill px-3 text-primary hover:bg-white/10 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
 const avatar = 'inline-grid flex-none place-items-center rounded-full bg-quinary object-cover type-[600_11px/1] text-secondary';
 
 function Avatar({ src, name, size }: { src: string | null; name: string; size: number }) {
@@ -113,13 +113,13 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
     <>
       <button
         // Signed in: a 24px avatar and the name, opening the account menu.
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-nav px-1 py-1 text-start type-body-reduced text-primary hover:bg-quinary aria-expanded:bg-quinary transition-colors"
+        className="glass-pill relative flex min-w-0 flex-1 items-center gap-2 h-8 rounded-pill px-2.5 text-start type-body-reduced text-primary hover:bg-white/10 aria-expanded:bg-white/10 transition-all select-none"
         aria-haspopup="menu"
         aria-expanded={anchor !== null}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
       >
-        <Avatar src={active.avatarUrl} name={active.name} size={24} />
-        <span className="min-w-0 flex-1 truncate">{active.name}</span>
+        <Avatar src={active.avatarUrl} name={active.name} size={22} />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{active.name}</span>
         {multiple && <ChevronsUpDown size={14} strokeWidth={2} className="flex-none text-secondary" />}
       </button>
       {anchor && (
