@@ -27,7 +27,9 @@ describe('resolveDeepLink', () => {
     expect(resolveDeepLink('beatflow://settings/accounts')).toBe('/settings/accounts');
     expect(resolveDeepLink('beatflow://settings/discord')).toBe('/settings/discord');
     expect(resolveDeepLink('beatflow://settings/listen-together')).toBe('/settings/listen-together');
+    expect(resolveDeepLink('beatflow://library')).toBe('/library');
     expect(resolveDeepLink('beatflow://library/songs')).toBe('/library/songs');
+    expect(resolveDeepLink('beatflow://downloads')).toBe('/downloads');
     expect(resolveDeepLink('beatflow://spotify')).toBe('/spotify');
   });
 });

@@ -71,12 +71,17 @@ export function resolveDeepLink(rawUrl: string): string | null {
     return `/${path}${search}`;
   }
 
-  // 8. Library: beatflow://library/<SECTION>
-  if (path.startsWith('library/')) {
+  // 8. Library: beatflow://library or beatflow://library/<SECTION>
+  if (path === 'library' || path.startsWith('library/')) {
     return `/${path}`;
   }
 
-  // 9. Spotify: beatflow://spotify
+  // 9. Downloads: beatflow://downloads
+  if (path === 'downloads' || path.startsWith('downloads/')) {
+    return `/${path}`;
+  }
+
+  // 10. Spotify: beatflow://spotify
   if (path === 'spotify' || path.startsWith('spotify/')) {
     return `/${path}`;
   }

@@ -6,7 +6,9 @@ import {
   AlbumsIcon,
   AllPlaylistsIcon,
   ArtistsIcon,
+  DownloadsIcon,
   HomeIcon,
+  LibraryIcon,
   MadeForYouIcon,
   NewIcon,
   RecentlyAddedIcon,
@@ -29,12 +31,15 @@ interface NavItem {
   to: string;
   label: string;
   Icon: (props: NavIconProps) => React.ReactNode;
+  end?: boolean;
 }
 
 const PRIMARY: NavItem[] = [
   { to: '/search', label: 'Search', Icon: SearchIcon },
   { to: '/home', label: 'Home', Icon: HomeIcon },
   { to: '/new', label: 'New', Icon: NewIcon },
+  { to: '/library', label: 'Library', Icon: LibraryIcon, end: true },
+  { to: '/downloads', label: 'Downloads', Icon: DownloadsIcon },
 ];
 
 const LIBRARY_ICONS: Record<Exclude<LibrarySection, 'playlists'>, NavItem['Icon']> = {
@@ -64,9 +69,9 @@ const list = 'flex flex-col';
 function NavList({ items, onNavigate }: { items: NavItem[]; onNavigate: () => void }) {
   return (
     <ul className={list}>
-      {items.map(({ to, label, Icon }) => (
+      {items.map(({ to, label, Icon, end }) => (
         <li key={to}>
-          <PrefetchNavLink to={to} className={item} onClick={onNavigate}>
+          <PrefetchNavLink to={to} end={end} className={item} onClick={onNavigate}>
             <Icon size={24} className={icon} />
             <span className={navLabel}>{label}</span>
           </PrefetchNavLink>
@@ -76,13 +81,21 @@ function NavList({ items, onNavigate }: { items: NavItem[]; onNavigate: () => vo
   );
 }
 
-/** Library and Playlists (report §1), once YouTube requests are made as the user. */
-function LibraryNav({ onNavigate }: { onNavigate: () => void }) {
-  const playlists = useLibraryPlaylists();
+/** Library sections (Recently Added, Artists, Albums, Songs, Made for You) when signed in. */
+function LibrarySectionsNav({ onNavigate }: { onNavigate: () => void }) {
   return (
     <>
       <h2 className={sectionHeader}>Library</h2>
       <NavList items={LIBRARY} onNavigate={onNavigate} />
+    </>
+  );
+}
+
+/** Playlists (report §1), matching the web version with All Playlists and user playlists. */
+function PlaylistsNav({ onNavigate }: { onNavigate: () => void }) {
+  const playlists = useLibraryPlaylists();
+  return (
+    <>
       <h2 className={sectionHeader}>Playlists</h2>
       <ul className={list}>
         <li>
@@ -160,7 +173,8 @@ export function Sidebar() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-3 pl-5 [scrollbar-width:none]">
           <NavList items={PRIMARY} onNavigate={close} />
-          {signedIn && <LibraryNav onNavigate={close} />}
+          {signedIn && <LibrarySectionsNav onNavigate={close} />}
+          <PlaylistsNav onNavigate={close} />
           {spotifySignedIn && <SpotifyNav onNavigate={close} />}
         </div>
         <div className="flex flex-col gap-2 pt-3 pr-3 pb-5 pl-5">

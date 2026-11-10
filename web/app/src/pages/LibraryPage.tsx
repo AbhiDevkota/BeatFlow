@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { CircleLockup, SquareLockup, VideoLockup } from '@/components/music/Lockups';
 import { EmptyState, LoadError, LoadMoreError, NeedsExtension } from '@/components/music/States';
 import { TrackList } from '@/components/music/TrackList';
-import { isLibrarySection, LIBRARY_SECTIONS } from '@/data/music/library';
+import { isLibrarySection, LIBRARY_SECTIONS, type LibrarySection } from '@/data/music/library';
 import { useLibrary, useSignedIn, useYouTubeReady } from '@/data/music/queries';
 import { useYtAuth } from '@/extension/useYtAuth';
 import { PlainSkeleton } from '@/skeletons/PageSkeletons';
@@ -25,21 +25,23 @@ function useLoadMore(onVisible: (() => void) | null) {
   return target;
 }
 
-/** A library section (prompt §5.3): Recently Played, Artists, Albums, Songs, Made for You, All Playlists. */
+/** A library section (prompt §5.3): Recently Played, Artists, Albums, Songs, Made for You, All Playlists, or Library overview. */
 export default function LibraryPage() {
-  const section = useParams().section ?? '';
+  const rawSection = useParams().section;
+  const isGeneralLibrary = !rawSection;
+  const section: LibrarySection = rawSection && isLibrarySection(rawSection) ? rawSection : 'playlists';
   const { missing } = useYouTubeReady();
   const auth = useYtAuth();
   const signedIn = useSignedIn();
-  const library = useLibrary(isLibrarySection(section) ? section : 'playlists');
+  const library = useLibrary(section);
   const loadMore = useLoadMore(
     library.hasNextPage && !library.isFetchingNextPage && !library.isFetchNextPageError
       ? () => void library.fetchNextPage()
       : null,
   );
 
-  if (!isLibrarySection(section)) return <Navigate to="/home" replace />;
-  const title = LIBRARY_SECTIONS[section].title;
+  if (rawSection && !isLibrarySection(rawSection)) return <Navigate to="/home" replace />;
+  const title = isGeneralLibrary ? 'Library' : LIBRARY_SECTIONS[section].title;
   if (missing) return <NeedsExtension what="your library" />;
   if (auth.state === 'ready' && !signedIn) {
     return (
