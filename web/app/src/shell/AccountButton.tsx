@@ -5,9 +5,37 @@ import { useRefreshYtAuth, useSelectChannel, useSetConnected, useYtAuth } from '
 
 const SIGN_IN_URL = 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com/';
 
-// The signed-out pill: Apple's red "Sign In" (report §1, .navigation__native-cta).
-const pill =
-  'self-start rounded-[16px] bg-key px-3.5 py-[5px] type-[600_13px/18px] text-white hover:brightness-[1.08] disabled:opacity-60';
+/** Official Google multi-color G icon matching the mobile / Android implementation. */
+export function GoogleLogo({ size = 18, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" className={`flex-none ${className}`}>
+      <path
+        fill="#EA4335"
+        d="M24,9.5c3.54,0 6.71,1.22 9.21,3.6l6.85,-6.85C35.9,2.38 30.47,0 24,0 14.62,0 6.51,5.38 2.56,13.22l7.98,6.19C12.43,13.72 17.74,9.5 24,9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.98,24.55c0,-1.57 -0.15,-3.09 -0.38,-4.55H24v9.02h12.94c-0.58,2.96 -2.26,5.48 -4.78,7.18l7.73,6c4.51,-4.18 7.09,-10.36 7.09,-17.65z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.53,28.59c-0.48,-1.45 -0.76,-2.99 -0.76,-4.59s0.27,-3.14 0.76,-4.59l-7.98,-6.19C0.92,16.46 0,20.12 0,24c0,3.88 0.92,7.54 2.56,10.78l7.97,-6.19z"
+      />
+      <path
+        fill="#34A853"
+        d="M24,48c6.48,0 11.93,-2.13 15.89,-5.81l-7.73,-6c-2.15,1.45 -4.92,2.3 -8.16,2.3 -6.26,0 -11.57,-4.22 -13.47,-9.91l-7.98,6.19C6.51,42.62 14.62,48 24,48z"
+      />
+    </svg>
+  );
+}
+
+// Android-style white pill with Google logo and black text
+const googlePill =
+  'inline-flex min-w-0 flex-1 items-center justify-center gap-2 h-8 rounded-full bg-white px-3 text-black hover:bg-[#f0f0f0] active:scale-[0.98] transition-all shadow-xs select-none';
+const connectPill =
+  'inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-full bg-key px-3 text-white hover:brightness-110 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
+const retryPill =
+  'inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-full bg-quaternary px-3 text-primary hover:bg-quinary active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
 const avatar = 'inline-grid flex-none place-items-center rounded-full bg-quinary object-cover type-[600_11px/1] text-secondary';
 
 function Avatar({ src, name, size }: { src: string | null; name: string; size: number }) {
@@ -21,14 +49,10 @@ function Avatar({ src, name, size }: { src: string | null; name: string; size: n
 }
 
 /**
- * The sidebar's account control (report §1: avatar and name at the bottom,
- * opening the account menu; a red "Sign In" pill when signed out).
- *
- * There is no sign-in form (prompt §5.3): BitChord uses the YouTube session
- * this browser already has, through the extension. "Sign In" opens Google's
- * own sign-in; the extension notices the new session and this updates itself.
+ * The sidebar's account control (avatar and name opening the account menu;
+ * Android-style "Continue With Google" pill when signed out).
  */
-export function AccountButton() {
+export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) {
   const status = useYtAuth();
   const select = useSelectChannel();
   const connect = useSetConnected();
@@ -36,28 +60,43 @@ export function AccountButton() {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const close = useCallback(() => setAnchor(null), []);
 
-  if (status.state !== 'ready') return null;
-  const { auth } = status;
+  if (status.state === 'checking') {
+    return <div className="min-w-0 flex-1 h-8" />;
+  }
 
-  if (!auth.browserSignedIn) {
+  const auth = status.state === 'ready' ? status.auth : null;
+
+  if (!auth || !auth.browserSignedIn) {
     return (
-      <a className={pill} href={SIGN_IN_URL} target="_blank" rel="noreferrer">
-        Sign In
+      <a
+        className={googlePill}
+        href={SIGN_IN_URL}
+        target="_blank"
+        rel="noreferrer"
+        title="Continue With Google"
+        onClick={onNavigate}
+      >
+        <GoogleLogo size={18} />
+        <span className="truncate text-[12.5px] font-semibold leading-none tracking-tight">
+          Continue With Google
+        </span>
       </a>
     );
   }
+
   if (!auth.connected) {
     return (
-      <button className={pill} onClick={() => connect.mutate(true)} disabled={connect.isPending}>
+      <button className={connectPill} onClick={() => connect.mutate(true)} disabled={connect.isPending}>
         Connect YouTube Music
       </button>
     );
   }
+
   if (!auth.active) {
     // Signed in to the browser, but the account couldn't be read (the reason is on the Extension page).
     return (
       <button
-        className={pill}
+        className={retryPill}
         title={auth.problem ?? undefined}
         onClick={() => refresh.mutate()}
         disabled={refresh.isPending}
@@ -66,6 +105,7 @@ export function AccountButton() {
       </button>
     );
   }
+
   const active = auth.active;
   const multiple = auth.accounts.flatMap((a) => a.channels).length > 1;
 
@@ -73,7 +113,7 @@ export function AccountButton() {
     <>
       <button
         // Signed in: a 24px avatar and the name, opening the account menu.
-        className="flex w-full min-w-0 items-center gap-2 rounded-nav px-1 py-1.5 text-start type-body-reduced text-primary hover:bg-quinary aria-expanded:bg-quinary"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-nav px-1 py-1 text-start type-body-reduced text-primary hover:bg-quinary aria-expanded:bg-quinary transition-colors"
         aria-haspopup="menu"
         aria-expanded={anchor !== null}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}

@@ -178,24 +178,26 @@ export function Sidebar() {
               )}
             </PrefetchNavLink>
           )}
-          <AccountButton />
-          {!isDesktopApp() ? (
-            <div className="flex items-center justify-between">
-              <a className="inline-flex items-center gap-1 ps-1 type-callout text-primary hover:underline" href={config.androidAppUrl} target="_blank" rel="noreferrer">
+          {!isDesktopApp() && (
+            <div className="flex items-center ps-1">
+              <a className="inline-flex items-center gap-1 type-callout text-primary hover:underline" href={config.androidAppUrl} target="_blank" rel="noreferrer">
                 <span>Get the Android app</span>
                 <ArrowUpRight size={14} strokeWidth={2} />
               </a>
-              <PrefetchNavLink to="/settings" className="grid size-7 place-items-center rounded-nav text-secondary hover:bg-quinary hover:text-primary aria-[current=page]:bg-quinary aria-[current=page]:text-primary" aria-label="Settings" title="Settings" onClick={close}>
-                <Settings size={17} strokeWidth={1.9} />
-              </PrefetchNavLink>
-            </div>
-          ) : (
-            <div className="flex items-center justify-end">
-              <PrefetchNavLink to="/settings" className="grid size-7 place-items-center rounded-nav text-secondary hover:bg-quinary hover:text-primary aria-[current=page]:bg-quinary aria-[current=page]:text-primary" aria-label="Settings" title="Settings" onClick={close}>
-                <Settings size={17} strokeWidth={1.9} />
-              </PrefetchNavLink>
             </div>
           )}
+          <div className="flex items-center justify-between gap-2 min-h-8">
+            <AccountButton onNavigate={close} />
+            <PrefetchNavLink
+              to="/settings"
+              className="grid size-8 flex-none place-items-center rounded-nav text-secondary hover:bg-quinary hover:text-primary aria-[current=page]:bg-quinary aria-[current=page]:text-primary transition-colors"
+              aria-label="Settings"
+              title="Settings"
+              onClick={close}
+            >
+              <Settings size={18} strokeWidth={1.9} />
+            </PrefetchNavLink>
+          </div>
         </div>
       </nav>
       {drawerOpen && <div className="absolute inset-0 z-[calc(var(--z-web-chrome)-1)] hidden bg-scrim max-sm:block" onClick={close} aria-hidden="true" />}
