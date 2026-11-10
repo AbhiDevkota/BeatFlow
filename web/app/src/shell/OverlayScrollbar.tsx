@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useUi } from '@/state/ui';
 
 /**
  * Apple / iOS style floating overlay scrollbar:
@@ -8,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * - Supports dragging the pill and clicking the track to scroll.
  */
 export function OverlayScrollbar() {
+  const fullScreen = useUi((s) => s.fullScreen);
   const [thumb, setThumb] = useState<{ top: number; height: number; visible: boolean }>({
     top: 0,
     height: 0,
@@ -162,7 +164,7 @@ export function OverlayScrollbar() {
     });
   };
 
-  if (thumb.height <= 0) return null;
+  if (thumb.height <= 0 || fullScreen) return null;
 
   const isVisible = thumb.visible || isHovered || isDragging;
 

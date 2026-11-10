@@ -272,7 +272,7 @@ export default function SettingsPage() {
   const searching = searchQuery.trim().length > 0;
   const q = searchQuery.toLowerCase().trim();
 
-  // Render Account & Integrations card (minimal monochrome vectors)
+  // Render Account Centre card (minimal monochrome vectors)
   const renderAccountGroup = () => (
     <section className={settingsUi.group}>
       <div className={settingsUi.integration}>
@@ -288,15 +288,17 @@ export default function SettingsPage() {
       {present && discordAvailable && (
         <LinkRow to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
       )}
-      <LinkRow
-        to="/extension"
-        icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
-        title={desktop ? 'Desktop Native Engine' : 'BeatFlow Extension'}
-        value={extensionVersion ? extensionVersion : (desktop ? 'Embedded Host' : 'Not installed')}
-      />
+      {!desktop && (
+        <LinkRow
+          to="/extension"
+          icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
+          title="BeatFlow Extension"
+          value={extensionVersion ? extensionVersion : 'Not installed'}
+        />
+      )}
       <LinkRow
         to="/settings/listen-together"
-        icon={<Users size={22} className="text-[#fa2d48] flex-shrink-0" />}
+        icon={<Users size={22} className="text-white flex-shrink-0" />}
         title="Listen Together"
         value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
       />
@@ -747,8 +749,8 @@ export default function SettingsPage() {
       if (match) matches.push({ key, title, element });
     };
 
-    // Account & Integrations
-    check('YouTube Music', ['youtube', 'google', 'account', 'sign in', 'auth'], (
+    // Account Centre
+    check('YouTube Music', ['youtube', 'google', 'account', 'sign in', 'auth', 'account centre'], (
       <div key="yt" className={settingsUi.integration}>
         <SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />
         <span className={settingsUi.integrationName}>YouTube Music</span>
@@ -756,7 +758,7 @@ export default function SettingsPage() {
       </div>
     ), 'audio-quality');
 
-    check('Spotify', ['spotify', 'canvas', 'sync', 'library'], (
+    check('Spotify', ['spotify', 'canvas', 'sync', 'library', 'account centre'], (
       <div key="spot" className={settingsUi.integration}>
         <SiSpotify size={22} className="text-[#1ed760] flex-shrink-0" />
         <span className={settingsUi.integrationName}>Spotify</span>
@@ -764,25 +766,27 @@ export default function SettingsPage() {
       </div>
     ), 'audio-quality');
 
-    check('Discord Presence', ['discord', 'rich presence', 'activity', 'rpc'], (
+    check('Discord Presence', ['discord', 'rich presence', 'activity', 'rpc', 'account centre'], (
       <LinkRow key="dc" to="/settings/discord" icon={<SiDiscord size={22} className="text-[#5865f2] flex-shrink-0" />} title="Discord" value={discordText} />
     ), 'audio-quality');
 
-    check(desktop ? 'Desktop Engine' : 'BeatFlow Extension', ['extension', 'engine', 'host', 'native', 'desktop'], (
-      <LinkRow
-        key="ext"
-        to="/extension"
-        icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
-        title={desktop ? 'Desktop Native Engine' : 'BeatFlow Extension'}
-        value={extensionVersion ? extensionVersion : (desktop ? 'Embedded Host' : 'Not installed')}
-      />
-    ), 'about');
+    if (!desktop) {
+      check('BeatFlow Extension', ['extension', 'host', 'browser', 'account centre'], (
+        <LinkRow
+          key="ext"
+          to="/extension"
+          icon={<MdOutlineExtension size={22} className="text-secondary flex-shrink-0" />}
+          title="BeatFlow Extension"
+          value={extensionVersion ? extensionVersion : 'Not installed'}
+        />
+      ), 'about');
+    }
 
-    check('Listen Together', ['jam', 'party', 'listen together', 'friends', 'sync'], (
+    check('Listen Together', ['jam', 'party', 'listen together', 'friends', 'sync', 'account centre'], (
       <LinkRow
         key="party"
         to="/settings/listen-together"
-        icon={<Users size={22} className="text-[#fa2d48] flex-shrink-0" />}
+        icon={<Users size={22} className="text-white flex-shrink-0" />}
         title="Listen Together"
         value={party.code ? `Party: ${party.code}` : 'Listen in sync'}
       />
@@ -1279,10 +1283,10 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Main View: Account & Integrations + Minimal Category Cards */}
+        {/* Main View: Account Centre + Minimal Category Cards */}
         {!searching && !activeCategory && (
           <div>
-            <h2 className={settingsUi.sectionHeader}>Account & Integrations</h2>
+            <h2 className={settingsUi.sectionHeader}>Account Centre</h2>
             {renderAccountGroup()}
 
             <h2 className={settingsUi.sectionHeader}>Categories</h2>

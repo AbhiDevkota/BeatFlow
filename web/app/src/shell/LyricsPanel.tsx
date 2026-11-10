@@ -97,16 +97,16 @@ const DOWNSIDE_CONTROLS =
   ':host { transform: translateZ(0) !important; }' +
   ' .lyrics-header { display: flex !important; position: fixed !important; inset: auto auto 24px 50% !important;' +
   ' transform: translateX(-50%) !important; z-index: 20 !important; width: auto !important; height: auto !important;' +
-  ' padding: 0 !important; margin: 0 !important; opacity: 0 !important; pointer-events: none !important;' +
+  ' padding: 0 !important; margin: 0 !important; opacity: 0.45 !important; pointer-events: auto !important;' +
   ' transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important; }' +
-  ' :host(:hover) .lyrics-header, :host(:focus-within) .lyrics-header, .lyrics-container:hover .lyrics-header {' +
+  ' :host(:hover) .lyrics-header, :host(:focus-within) .lyrics-header, .lyrics-container:hover .lyrics-header, .lyrics-header:hover {' +
   ' opacity: 1 !important; pointer-events: auto !important; }' +
   ' .header-controls { display: flex !important; align-items: center !important; gap: 6px !important;' +
   ' padding: 4px 8px !important; border-radius: 9999px !important; background: rgba(24, 24, 27, 0.72) !important;' +
   ' backdrop-filter: blur(24px) saturate(200%) !important; -webkit-backdrop-filter: blur(24px) saturate(200%) !important;' +
   ' border: 0.5px solid rgba(255, 255, 255, 0.16) !important; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36) !important; }' +
   ' .header-controls .download-button { width: 34px !important; height: 34px !important; border-radius: 50% !important;' +
-  ' color: rgba(255, 255, 255, 0.65) !important; background: transparent !important; display: inline-flex !important;' +
+  ' color: rgba(255, 255, 255, 0.85) !important; background: transparent !important; display: inline-flex !important;' +
   ' align-items: center !important; justify-content: center !important; cursor: pointer !important;' +
   ' transition: color 0.15s ease, background 0.15s ease, transform 0.12s ease !important; }' +
   ' .header-controls .download-button:hover { color: #ffffff !important; background: rgba(255, 255, 255, 0.16) !important;' +
