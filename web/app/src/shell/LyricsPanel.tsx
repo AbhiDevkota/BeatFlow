@@ -288,13 +288,10 @@ function ProviderPicker({ current, full }: { current: LyricsSourceId | null; ful
     <div
       className={
         full
-          ? 'flex items-center justify-between pb-1 opacity-0 transition-opacity duration-200 group-hover/panel:opacity-100 focus-within:opacity-100'
-          : 'flex items-center justify-between px-4 pt-4 pb-1'
+          ? 'flex items-center justify-end pb-1 opacity-0 transition-opacity duration-200 group-hover/panel:opacity-100 focus-within:opacity-100'
+          : 'flex items-center justify-end px-4 pt-4 pb-1'
       }
     >
-      <span className={full ? 'type-callout-emphasized text-secondary' : 'type-title-3 font-semibold text-primary'}>
-        Lyrics
-      </span>
       <button
         className="grid size-7 place-items-center rounded-[8px] text-secondary hover:bg-quinary hover:text-primary transition-colors"
         aria-label="Lyrics options"
