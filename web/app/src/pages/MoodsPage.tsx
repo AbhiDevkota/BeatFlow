@@ -4,7 +4,7 @@ import { LogoMark } from '@/components/icons/LogoMark';
 import { PlayingBars } from '@/components/home/PlayingBars';
 import { PageHeader } from '@/components/PageHeader';
 import { ALL_MOODS, type MoodDefinition } from '@/lib/homeLayout';
-import { MoodEmblem } from '@/components/home/TopPickArtwork';
+import { MoodCanvas } from '@/components/home/MoodCanvas';
 import { playMoodStation, prewarmCoreMoods } from '@/lib/playMood';
 import { usePlayer } from '@/state/player';
 
@@ -64,17 +64,17 @@ export default function MoodsPage() {
               >
                 {/* Square Tile */}
                 <div
-                  className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-transform duration-300 ease-out group-hover:scale-[1.03] group-hover:shadow-md flex items-center justify-center"
+                  className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-transform duration-300 ease-out group-hover:scale-[1.03] group-hover:shadow-md"
                   style={{ backgroundColor: mood.background }}
                 >
-                  {/* Mood Vector Emblem (at rest matching Android still=true) */}
-                  <div className="w-[70%] h-[70%] flex items-center justify-center pointer-events-none">
-                    <MoodEmblem
-                      moodKey={mood.key}
-                      strokeColor={mood.stroke}
-                      className="w-full h-full opacity-95 transition-transform duration-300 ease-out group-hover:scale-105"
-                    />
-                  </div>
+                  {/* 1:1 Android Skia Animated Canvas */}
+                  <MoodCanvas
+                    moodKey={mood.key}
+                    strokeColor={mood.stroke}
+                    backgroundColor={mood.background}
+                    square={true}
+                    className="pointer-events-none"
+                  />
 
                   {/* BeatFlow Badge (Top-Right): Loader | Playing Bars | Logo */}
                   <div className="absolute top-2.5 right-2.5 size-5.5 grid place-items-center rounded-full bg-black/25 text-white/95 backdrop-blur-xs">

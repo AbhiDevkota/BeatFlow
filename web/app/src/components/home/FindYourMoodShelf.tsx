@@ -7,7 +7,7 @@ import { shelfHeader, shelfSection } from '@/components/shelf';
 import { CORE_MOODS, type MoodDefinition } from '@/lib/homeLayout';
 import { playMoodStation, prewarmCoreMoods } from '@/lib/playMood';
 import { usePlayer } from '@/state/player';
-import { MoodEmblem } from './TopPickArtwork';
+import { MoodCanvas } from './MoodCanvas';
 
 const arrow =
   'absolute top-1/2 z-3 hidden h-13 w-7 -translate-y-1/2 place-items-center rounded-pill bg-thin-material text-secondary opacity-0 transition-[opacity,background-color,color] duration-(--duration-arrow) ease-linear [backdrop-filter:saturate(180%)_blur(60px)] hover:text-primary disabled:pointer-events-none lg:grid lg:enabled:group-hover/shelf:opacity-100';
@@ -102,17 +102,17 @@ export function FindYourMoodShelf() {
                 >
                   {/* Square Tile */}
                   <div
-                    className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-transform duration-300 ease-out group-hover/mood:scale-[1.03] group-hover/mood:shadow-md flex items-center justify-center"
+                    className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-transform duration-300 ease-out group-hover/mood:scale-[1.03] group-hover/mood:shadow-md"
                     style={{ backgroundColor: mood.background }}
                   >
-                    {/* Mood SVG Emblem */}
-                    <div className="w-[70%] h-[70%] flex items-center justify-center pointer-events-none">
-                      <MoodEmblem
-                        moodKey={mood.key}
-                        strokeColor={mood.stroke}
-                        className="w-full h-full opacity-95 transition-transform duration-300 ease-out group-hover/mood:scale-105"
-                      />
-                    </div>
+                    {/* 1:1 Android Skia Animated Canvas */}
+                    <MoodCanvas
+                      moodKey={mood.key}
+                      strokeColor={mood.stroke}
+                      backgroundColor={mood.background}
+                      square={true}
+                      className="pointer-events-none"
+                    />
 
                     {/* BeatFlow Badge (Top-Right): Loader | Playing Bars | Logo */}
                     <div className="absolute top-2.5 right-2.5 size-5.5 grid place-items-center rounded-full bg-black/25 text-white/95 backdrop-blur-xs">

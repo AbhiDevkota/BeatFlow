@@ -9,7 +9,8 @@ import { playMoodStation } from '@/lib/playMood';
 import { playList, playTrack, toTrack } from '@/components/music/play';
 import { fetchPlaylist, fetchSearch } from '@/data/music/api';
 import { usePlayer } from '@/state/player';
-import { CardPhotoArt, DiscoveryStationArt, MoodEmblem, PersonalStationArt } from './TopPickArtwork';
+import { CardPhotoArt, DiscoveryStationArt, PersonalStationArt } from './TopPickArtwork';
+import { MoodCanvas } from './MoodCanvas';
 
 interface TopPicksShelfProps {
   picks: TopPickItem[];
@@ -184,17 +185,13 @@ export function TopPicksShelf({ picks }: TopPicksShelfProps) {
                     ) : pick.kind === 'DISCOVERY_STATION' ? (
                       <DiscoveryStationArt />
                     ) : pick.kind === 'MOOD' && pick.mood ? (
-                      <div
-                        className="relative w-full h-full flex items-center justify-center"
-                        style={{ backgroundColor: pick.mood.background }}
-                      >
-                        <MoodEmblem
-                          moodKey={pick.mood.key}
-                          strokeColor={pick.mood.stroke}
-                          className="w-32 h-32 opacity-90"
-                          animated={true}
-                        />
-                      </div>
+                      <MoodCanvas
+                        moodKey={pick.mood.key}
+                        strokeColor={pick.mood.stroke}
+                        backgroundColor={pick.mood.background}
+                        square={false}
+                        className="w-full h-full"
+                      />
                     ) : (
                       <CardPhotoArt pick={pick} />
                     )}
