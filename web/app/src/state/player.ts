@@ -736,17 +736,11 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
       originalTracks.set(upgradedTrack.videoId, currentTrack);
 
-      const currentQueue = [...get().queue];
-      if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
-        currentQueue[index] = { ...currentQueue[index]!, track: upgradedTrack };
-        set({ queue: currentQueue });
+      const success = await smoothTransitionToTrack(upgradedTrack, index);
+      if (!success) {
+        originalTracks.delete(upgradedTrack.videoId);
+        return false;
       }
-
-      const audioEl = getAudio();
-      const playhead = audioEl?.currentTime ?? 0;
-      const isPlaying = status !== 'paused';
-
-      void startAt(index, { startSec: playhead, autoplay: isPlaying });
       return true;
     } catch (err) {
       trackLog.e(`[Player] Quality upgrade failed: ${String(err)}`, currentTrack.videoId);
@@ -758,7 +752,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   async revertToOriginal() {
-    const { queue, index, status } = get();
+    const { queue, index } = get();
     const entry = queue[index];
     if (!entry || partyHooks?.inParty()) return false;
     const currentTrack = entry.track;
@@ -774,18 +768,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       } catch {}
     }
 
-    const currentQueue = [...get().queue];
-    if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
-      currentQueue[index] = { ...currentQueue[index]!, track: original };
-      set({ queue: currentQueue });
-    }
-
-    const audioEl = getAudio();
-    const playhead = audioEl?.currentTime ?? 0;
-    const isPlaying = status === 'playing';
-
-    void startAt(index, { startSec: playhead, autoplay: isPlaying });
-    return true;
+    return await smoothTransitionToTrack(original, index);
   },
 }));
 
@@ -932,6 +915,121 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   }
 }
 
+/**
+ * Smoothly transitions the currently playing track to an upgraded (or reverted) track
+ * using dual-deck equal-power crossfading, without stopping audio or showing buffering.
+ */
+async function smoothTransitionToTrack(
+  targetTrack: Track,
+  at: number,
+  options: { durationMs?: number } = {},
+): Promise<boolean> {
+  const state = usePlayer.getState();
+  const entry = state.queue[at];
+  if (!entry) return false;
+
+  const all = await getDecks();
+  const front = all[active]!;
+  const back = all[1 - active]!;
+  const isSounding = state.status === 'playing' && !front.audio.paused && front.audio.currentTime > 0;
+
+  // If not currently playing or audio is stopped, fall back to standard startAt
+  if (!isSounding) {
+    const currentQueue = [...usePlayer.getState().queue];
+    if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+      currentQueue[at] = { ...currentQueue[at]!, track: targetTrack };
+      usePlayer.setState({ queue: currentQueue });
+    }
+    const playhead = front.audio.currentTime || 0;
+    void startAt(at, { startSec: playhead, autoplay: false });
+    return true;
+  }
+
+  // Dual-deck smooth crossfade transition:
+  // 1. Keep front deck playing untouched so the music never stops.
+  // 2. Load the target track on the back deck starting at the exact same playhead.
+  const token = ++loadToken;
+  const startPlayhead = front.audio.currentTime;
+  back.gain = 0;
+  applyVolumes();
+
+  trackLog.i(
+    `[Smooth Transition] Seamlessly blending into "${targetTrack.title}" (${targetTrack.videoId}) at ${startPlayhead.toFixed(2)}s`,
+    targetTrack.videoId,
+  );
+
+  try {
+    const loaded = await back.engine.load(targetTrack.videoId, {
+      startSec: startPlayhead,
+      autoplay: true,
+    });
+
+    if (token !== loadToken) {
+      void back.engine.stop().catch(() => {});
+      return false;
+    }
+
+    // Synchronize playheads if drift occurred during connection
+    const currentFrontTime = front.audio.currentTime;
+    if (Math.abs(back.audio.currentTime - currentFrontTime) > 0.08) {
+      try {
+        back.audio.currentTime = currentFrontTime;
+      } catch {}
+    }
+
+    // Update queue track and nowPlaying representation
+    const currentQueue = [...usePlayer.getState().queue];
+    if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+      currentQueue[at] = { ...currentQueue[at]!, track: targetTrack };
+      usePlayer.setState((s) => ({ queue: currentQueue, deck: s.deck + 1 }));
+    }
+
+    // Switch active deck reference to back deck
+    active = 1 - active;
+    applyTrack(loaded, targetTrack);
+
+    // Run equal-power crossfade between front and back decks
+    const durationMs = options.durationMs ?? 1600;
+    const started = performance.now();
+    const from = front;
+    const to = back;
+
+    await new Promise<void>((resolve) => {
+      const step = () => {
+        if (token !== loadToken) {
+          resolve();
+          return;
+        }
+        const progress = Math.min(1, (performance.now() - started) / durationMs);
+        // Equal-power crossfade curve: cos(progress * pi / 2) & sin(progress * pi / 2)
+        from.gain = Math.cos((progress * Math.PI) / 2);
+        to.gain = Math.sin((progress * Math.PI) / 2);
+        applyVolumes();
+
+        if (progress < 1 && !from.audio.ended && !to.audio.ended) {
+          window.setTimeout(step, FADE_STEP_MS);
+        } else {
+          from.gain = 1;
+          to.gain = 1;
+          void from.engine.stop().catch(() => {});
+          applyVolumes();
+          resolve();
+        }
+      };
+      step();
+    });
+
+    trackLog.i(`[Smooth Transition] Transition complete for "${targetTrack.title}"!`, targetTrack.videoId);
+    return true;
+  } catch (err) {
+    trackLog.w(`[Smooth Transition] Background load failed, continuing uninterrupted on current track: ${String(err)}`, targetTrack.videoId);
+    back.gain = 1;
+    void back.engine.stop().catch(() => {});
+    applyVolumes();
+    return false;
+  }
+}
+
 async function checkAutoUpgrade(track: Track, expectedToken: number): Promise<void> {
   if (!isDesktopApp() || partyHooks?.inParty() || revertedTracks.has(track.videoId)) return;
   try {
@@ -957,17 +1055,7 @@ async function checkAutoUpgrade(track: Track, expectedToken: number): Promise<vo
     };
 
     originalTracks.set(upgradedTrack.videoId, track);
-    const currentQueue = [...usePlayer.getState().queue];
-    if (currentQueue[state.index] && currentQueue[state.index]!.entryId === entry.entryId) {
-      currentQueue[state.index] = { ...currentQueue[state.index]!, track: upgradedTrack };
-      usePlayer.setState({ queue: currentQueue });
-    }
-
-    const audioEl = getAudio();
-    const playhead = audioEl?.currentTime ?? 0;
-    const isPlaying = state.status !== 'paused';
-
-    void startAt(state.index, { startSec: playhead, autoplay: isPlaying });
+    void smoothTransitionToTrack(upgradedTrack, state.index);
   } catch (err) {
     trackLog.w('background hi-res auto-upgrade skipped', String(err));
   }
