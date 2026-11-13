@@ -122,6 +122,7 @@ export interface MoodDefinition {
   stroke: string;
   eyebrowColor: string;
   isCoreMood?: boolean;
+  shelfWords?: readonly string[];
 }
 
 /** All 28 Find Your Mood stations and activities matching Android BeatFlow TopPickMood.entries. */
@@ -136,6 +137,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#E2F6A2',
     eyebrowColor: '#E8FF9C',
     isCoreMood: true,
+    shelfWords: [],
   },
   {
     key: 'RELAX',
@@ -146,6 +148,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#B4E9FF',
     eyebrowColor: '#D6F3FF',
     isCoreMood: true,
+    shelfWords: ['unwind', 'peaceful', 'relaxing', 'laidback'],
   },
   {
     key: 'FEELING_BLUE',
@@ -156,6 +159,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#6CC4FF',
     eyebrowColor: '#A9DBFF',
     isCoreMood: true,
+    shelfWords: ['sad', 'melanchol', 'lonely'],
   },
   {
     key: 'FEEL_GOOD',
@@ -166,6 +170,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFE8A0',
     eyebrowColor: '#FFF27A',
     isCoreMood: true,
+    shelfWords: [],
   },
   {
     key: 'FOCUS',
@@ -176,6 +181,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFD6A4',
     eyebrowColor: '#FFE2B8',
     isCoreMood: true,
+    shelfWords: [],
   },
   {
     key: 'HEARTBREAK',
@@ -186,16 +192,18 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFA690',
     eyebrowColor: '#FFC9BC',
     isCoreMood: true,
+    shelfWords: ['heartbreak', 'breakup', 'break-up', 'broken', 'heartache'],
   },
   {
     key: 'LOVE',
     title: 'Love',
-    subtitle: 'Romantic songs for the moment.',
+    subtitle: 'Romantic melodies and passionate rhythms.',
     params: 'ggMPOg1uX0FzQ2FhZWtUY211',
     background: '#F34CA0',
     stroke: '#FFB8DC',
     eyebrowColor: '#FFD0EA',
     isCoreMood: true,
+    shelfWords: [],
   },
 
   // Moods and Activities (21)
@@ -208,6 +216,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#C9B6FF',
     eyebrowColor: '#DCC8FF',
     isCoreMood: false,
+    shelfWords: ['deep grooves', 'electronic', 'jazz', 'r&b'],
   },
   {
     key: 'ALONE_TIME',
@@ -218,6 +227,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#A9E2F5',
     eyebrowColor: '#C5EFFB',
     isCoreMood: false,
+    shelfWords: ['mellow', 'acoustic', 'laidback'],
   },
   {
     key: 'CHILL',
@@ -228,6 +238,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#A6F0E6',
     eyebrowColor: '#C6F7F0',
     isCoreMood: false,
+    shelfWords: ['chill', 'chilled'],
   },
   {
     key: 'COMMUTING',
@@ -238,6 +249,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#A8EFD0',
     eyebrowColor: '#C8F7E0',
     isCoreMood: false,
+    shelfWords: [],
   },
   {
     key: 'EATING_COOKING',
@@ -248,6 +260,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFD3A8',
     eyebrowColor: '#FFE4C8',
     isCoreMood: false,
+    shelfWords: ['coffee', 'soul', 'jazz', 'r&b'],
   },
   {
     key: 'EVENING',
@@ -258,6 +271,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#B8C6FF',
     eyebrowColor: '#D4DEFF',
     isCoreMood: false,
+    shelfWords: ['unwind', 'acoustic', 'laidback', 'jazz'],
   },
   {
     key: 'FITNESS',
@@ -268,6 +282,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#EFFFA8',
     eyebrowColor: '#F5FFC4',
     isCoreMood: false,
+    shelfWords: ['gym', 'cardio', 'essentials'],
   },
   {
     key: 'GAMING',
@@ -278,6 +293,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#B8FFB0',
     eyebrowColor: '#D4FFCE',
     isCoreMood: false,
+    shelfWords: [],
   },
   {
     key: 'HOME',
@@ -288,6 +304,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#A8F2DB',
     eyebrowColor: '#C8F9E8',
     isCoreMood: false,
+    shelfWords: ['coffee shop', 'chill pop', 'laidback'],
   },
   {
     key: 'MORNING',
@@ -298,6 +315,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFE2A6',
     eyebrowColor: '#FFEDC4',
     isCoreMood: false,
+    shelfWords: ['happy', 'confident', 'pop'],
   },
   {
     key: 'MOTIVATION',
@@ -308,6 +326,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFB3C6',
     eyebrowColor: '#FFD0DE',
     isCoreMood: false,
+    shelfWords: ['motivation', 'power', 'beast'],
   },
   {
     key: 'OUTDOORS',
@@ -318,6 +337,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#D4F5A8',
     eyebrowColor: '#E4F9C4',
     isCoreMood: false,
+    shelfWords: ['outdoor', 'running'],
   },
   {
     key: 'PARTY',
@@ -328,6 +348,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFFFE0',
     eyebrowColor: '#FFF5E8',
     isCoreMood: false,
+    shelfWords: [],
   },
   {
     key: 'SLEEP',
@@ -338,6 +359,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#C2C6FF',
     eyebrowColor: '#D8DCFF',
     isCoreMood: false,
+    shelfWords: [],
   },
   {
     key: 'SOCIAL',
@@ -348,6 +370,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFD0DE',
     eyebrowColor: '#FFE2EB',
     isCoreMood: false,
+    shelfWords: ['party today', 'chill party', 'throwback'],
   },
   {
     key: 'SPORTS',
@@ -358,6 +381,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#B8D8FF',
     eyebrowColor: '#D0E4FF',
     isCoreMood: false,
+    shelfWords: ['beast', 'power', 'hip-hop'],
   },
   {
     key: 'SUMMERTIME',
@@ -368,6 +392,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFE6A8',
     eyebrowColor: '#FFF0C4',
     isCoreMood: false,
+    shelfWords: ['dance', 'kicking back', 'feel-good pop'],
   },
   {
     key: 'HOLIDAY',
@@ -378,6 +403,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#FFC8C8',
     eyebrowColor: '#FFDEDE',
     isCoreMood: false,
+    shelfWords: ['throwback', 'happy'],
   },
   {
     key: 'WEEKEND',
@@ -388,6 +414,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#E2CCFF',
     eyebrowColor: '#EEDEFF',
     isCoreMood: false,
+    shelfWords: ['party today', 'dance'],
   },
   {
     key: 'WELLBEING',
@@ -398,6 +425,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#C6F7E6',
     eyebrowColor: '#DEFBF0',
     isCoreMood: false,
+    shelfWords: ['mindfulness', 'meditation', 'yoga'],
   },
   {
     key: 'WORK',
@@ -408,6 +436,7 @@ export const ALL_MOODS: readonly MoodDefinition[] = [
     stroke: '#C4D2FF',
     eyebrowColor: '#DCE4FF',
     isCoreMood: false,
+    shelfWords: ['flow', 'instrumental', 'reading'],
   },
 ] as const;
 
