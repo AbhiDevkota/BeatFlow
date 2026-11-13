@@ -24,19 +24,153 @@ export function NerdStats() {
   );
 }
 
-/** "Opus · 48 kHz · 141 kbps · Stereo · itag 251 · VISIONOS direct", as much as is known. */
-function describeStream(np: NowPlaying): string | null {
+import { Activity, X } from 'lucide-react';
+
+/**
+ * 1-to-1 Android NerdStats.Snapshot.describe().
+ * e.g. "FLAC · 24-bit · 96.0 kHz · 4608 kbps · Stereo · via Qobuz Addon"
+ */
+export function describeStream(np: NowPlaying): string | null {
   const s = np.stream;
   if (!s) return null;
   const parts = [
     s.codec,
+    s.bitDepth ? `${s.bitDepth}-bit` : null,
     s.sampleRateHz ? `${+(s.sampleRateHz / 1000).toFixed(1)} kHz` : null,
     s.bitrateKbps ? `${s.bitrateKbps} kbps` : null,
-    s.channels ? ({ 1: 'Mono', 2: 'Stereo' } as Record<number, string>)[s.channels] ?? `${s.channels} channels` : null,
-    s.itag ? `itag ${s.itag}` : null,
-    `${s.client} ${s.mode}`,
+    s.channels
+      ? s.channels === 1
+        ? 'Mono'
+        : s.channels === 2
+          ? 'Stereo'
+          : s.channels === 6
+            ? '5.1 Surround'
+            : `${s.channels} channels`
+      : null,
+    np.sourceName ? `via ${np.sourceName}` : s.itag ? `itag ${s.itag} · ${s.client} ${s.mode}` : s.client ? `via ${s.client}` : null,
+    np.upgraded ? '[Upgraded]' : null,
   ];
   return parts.filter(Boolean).join(' · ');
+}
+
+/**
+ * YouTube Music-style Stats for Nerds floating HUD overlay.
+ * Appears when showNerdStats is enabled, providing real-time telemetry
+ * for codec, bit depth, sample rate, bitrate, buffer health, and addon provider.
+ */
+export function StatsForNerdsOverlay() {
+  const show = usePlayer((s) => s.showNerdStats);
+  const setShow = usePlayer((s) => s.setShowNerdStats);
+  const np = usePlayer((s) => s.nowPlaying);
+  const status = usePlayer((s) => s.status);
+  const volume = usePlayer((s) => s.volume);
+  const muted = usePlayer((s) => s.muted);
+
+  const [bufferSec, setBufferSec] = useState<number>(0);
+  const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
+
+  useEffect(() => {
+    if (!show) return;
+    const interval = setInterval(() => {
+      const audio = document.querySelector('audio') as HTMLAudioElement | null;
+      if (audio) {
+        setCurrentTimeSec(audio.currentTime);
+        if (audio.buffered.length > 0) {
+          try {
+            const end = audio.buffered.end(audio.buffered.length - 1);
+            setBufferSec(Math.max(0, +(end - audio.currentTime).toFixed(1)));
+          } catch {}
+        }
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [show]);
+
+  if (!show || !np) return null;
+
+  const s = np.stream;
+  const rawQuality = np.sourceQuality;
+  const isUpgraded = Boolean(np.upgraded);
+  const provider =
+    np.sourceName ||
+    (np.videoId.startsWith('beatflow://local/') ? 'BeatFlow Local' : s?.client || 'YouTube Music Direct');
+
+  return (
+    <div
+      className="fixed top-12 right-6 z-[9999] w-84 rounded-xl bg-black/85 backdrop-blur-md border border-white/15 p-4 shadow-2xl text-[11px] font-mono text-white/90 select-none"
+      role="dialog"
+      aria-label="Stats for Nerds"
+    >
+      <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2.5">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+          <Activity size={14} className="text-key" />
+          <span>Stats for Nerds</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShow(false)}
+          className="grid size-5 place-items-center rounded-full hover:bg-white/15 text-white/70 hover:text-white transition-colors"
+          aria-label="Close Stats for Nerds"
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-[105px_1fr] gap-y-1.5 gap-x-2 text-[10.5px]">
+        <span className="text-white/50">Video ID / CPN:</span>
+        <span className="truncate text-white/90 font-mono" title={np.videoId}>
+          {np.videoId.slice(0, 18)}...
+        </span>
+
+        <span className="text-white/50">Audio Codec:</span>
+        <span className="text-white/95 font-medium">{s?.codec || 'Detecting...'}</span>
+
+        <span className="text-white/50">Bit Depth:</span>
+        <span className="text-white/90">{s?.bitDepth ? `${s.bitDepth}-bit` : '16-bit / Standard'}</span>
+
+        <span className="text-white/50">Sample Rate:</span>
+        <span className="text-white/90">
+          {s?.sampleRateHz ? `${+(s.sampleRateHz / 1000).toFixed(1)} kHz` : '44.1 kHz'}
+        </span>
+
+        <span className="text-white/50">Bitrate:</span>
+        <span className="text-white/90">{s?.bitrateKbps ? `${s.bitrateKbps} kbps` : 'Unknown'}</span>
+
+        <span className="text-white/50">Audio Channels:</span>
+        <span className="text-white/90">
+          {s?.channels === 6 ? '6 (Dolby Atmos 5.1)' : s?.channels === 1 ? '1 (Mono)' : '2 (Stereo)'}
+        </span>
+
+        <span className="text-white/50">Audio Provider:</span>
+        <span className="truncate text-key font-medium" title={provider}>
+          {provider}
+        </span>
+
+        <span className="text-white/50">Quality Tier:</span>
+        <span className="text-white/95 font-medium">
+          {rawQuality || (s?.bitrateKbps && s.bitrateKbps >= 1000 ? 'Lossless' : 'Standard')}
+        </span>
+
+        <span className="text-white/50">Upgrade Status:</span>
+        <span className={isUpgraded ? 'text-amber-400 font-medium' : 'text-white/70'}>
+          {isUpgraded ? 'Upgraded (Lossless Active)' : 'Original Stream'}
+        </span>
+
+        <span className="text-white/50">Buffer Health:</span>
+        <span className="text-white/90">{bufferSec} s</span>
+
+        <span className="text-white/50">Volume / Norm:</span>
+        <span className="text-white/90">
+          {muted ? '0% (Muted)' : `${Math.round(volume * 100)}%`} / 100%
+        </span>
+
+        <span className="text-white/50">Player State:</span>
+        <span className="capitalize text-white/90">
+          {status} ({currentTimeSec.toFixed(1)}s / {np.durationSec}s)
+        </span>
+      </div>
+    </div>
+  );
 }
 
 /** Automix's line: both songs' analysis while it waits, the blend once one is planned. Both sides always named. */

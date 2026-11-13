@@ -1162,16 +1162,30 @@ function applyTrack(track: LoadedTrack, from?: Track) {
   const isDolby =
     track.format.includes('Dolby') ||
     track.stream.codec?.includes('Dolby') ||
+    track.stream.qualityTier === 'DOLBY_ATMOS' ||
     Boolean(from?.sourceFormat?.isDolbyAtmos);
   const isLossless =
     track.format.includes('Lossless') ||
-    ['FLAC', 'ALAC', 'WAV', 'AIFF'].includes(track.stream.codec?.toUpperCase() ?? '') ||
+    track.stream.qualityTier === 'LOSSLESS' ||
+    track.stream.qualityTier === 'HI_RES_LOSSLESS' ||
+    ['FLAC', 'ALAC', 'WAV', 'AIFF', 'PCM'].includes(track.stream.codec?.toUpperCase() ?? '') ||
     Boolean(from?.sourceFormat?.isLossless);
+
+  const bitDepth = from?.sourceFormat?.bitDepth ?? track.stream.bitDepth ?? null;
+  const sampleRateHz = from?.sourceFormat?.sampleRateHz ?? track.stream.sampleRateHz ?? null;
+  const bitrateKbps = from?.sourceFormat?.bitrateKbps ?? track.stream.bitrateKbps ?? null;
+
+  const isHiRes =
+    isLossless &&
+    (Boolean(bitDepth && bitDepth > 16) || Boolean(sampleRateHz && sampleRateHz > 48000) || track.stream.qualityTier === 'HI_RES_LOSSLESS');
 
   const detectedQuality = isDolby
     ? 'DOLBY_ATMOS'
-    : (from?.sourceQuality as any) ??
-      (isLossless ? 'LOSSLESS' : null);
+    : (track.stream.qualityTier as any) ??
+      (from?.sourceQuality as any) ??
+      (isHiRes ? 'HI_RES_LOSSLESS' : isLossless ? 'LOSSLESS' : bitrateKbps && bitrateKbps >= 256 ? 'HIGH_QUALITY' : null);
+
+  const finalSourceName = from?.sourceName ?? track.stream.sourceName ?? (String(track.client) !== 'WEB' ? String(track.client) : null);
 
   const nowPlaying: NowPlaying = {
     videoId: track.videoId,
@@ -1185,14 +1199,16 @@ function applyTrack(track: LoadedTrack, from?: Track) {
     stream: {
       ...track.stream,
       codec: from?.sourceFormat?.codec ?? track.stream.codec,
-      sampleRateHz: from?.sourceFormat?.sampleRateHz ?? track.stream.sampleRateHz,
-      bitrateKbps: from?.sourceFormat?.bitrateKbps ?? track.stream.bitrateKbps,
+      bitDepth,
+      sampleRateHz,
+      bitrateKbps,
       channels: isDolby ? 6 : track.stream.channels,
-      client: track.client,
+      client: String(track.client),
+      sourceName: finalSourceName,
     },
     sourceQuality: detectedQuality,
-    sourceName: from?.sourceName ?? null,
-    upgraded: originalTracks.has(track.videoId) || Boolean(from?.sourceQuality),
+    sourceName: finalSourceName,
+    upgraded: originalTracks.has(track.videoId) || Boolean(from?.sourceQuality) || Boolean(track.stream.qualityTier && track.stream.qualityTier !== 'HIGH_QUALITY'),
     originalTrack: originalTracks.get(track.videoId) ?? null,
   };
   usePlayer.setState({ nowPlaying, error: null });

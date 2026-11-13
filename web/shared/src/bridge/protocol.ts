@@ -278,11 +278,11 @@ export interface BridgeMethods {
     result: any;
   };
   'addon.search': {
-    params: { baseUrl: string; query: string; quality?: string };
+    params: { baseUrl: string; query: string; quality?: string; atmos?: string };
     result: { tracks: any[] };
   };
   'addon.stream': {
-    params: { baseUrl: string; trackId: string; quality?: string };
+    params: { baseUrl: string; trackId: string; quality?: string; atmos?: string };
     result: any;
   };
   'addons.loadConfig': {

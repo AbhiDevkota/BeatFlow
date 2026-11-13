@@ -210,7 +210,23 @@ export async function searchAllEnabledAddons(query: string): Promise<{ addon: In
   return results.filter((r) => r.tracks.length > 0);
 }
 
-export async function resolveAddonStream(addonUri: string): Promise<string> {
+export interface AddonStreamInfo {
+  url: string;
+  codec: string;
+  bitDepth: number | null;
+  sampleRateHz: number | null;
+  bitrateKbps: number | null;
+  channels: number;
+  container: string | null;
+  isDolbyAtmos: boolean;
+  isLossless: boolean;
+  isHiRes: boolean;
+  isHiQuality: boolean;
+  addonName: string;
+  sourceQuality: 'DOLBY_ATMOS' | 'HI_RES_LOSSLESS' | 'LOSSLESS' | 'HIGH_QUALITY';
+}
+
+export async function resolveAddonStreamInfo(addonUri: string): Promise<AddonStreamInfo> {
   // Format: addon:{addonId}:{trackId}
   const parts = addonUri.split(':');
   if (parts.length < 3) {
@@ -229,11 +245,118 @@ export async function resolveAddonStream(addonUri: string): Promise<string> {
   const res = await bridge.call('addon.stream', {
     baseUrl: addon.baseUrl,
     trackId,
+    quality: 'lossless',
+    atmos: 'auto',
   });
 
-  const streamUrl = typeof res === 'string' ? res : res.url || res.streamUrl || res.stream || '';
+  const raw = res as any;
+  const streamUrl = typeof raw === 'string' ? raw : raw.url || raw.streamUrl || raw.stream || raw.file || '';
   if (!streamUrl) {
     throw new Error(`Addon ${addon.name} returned empty stream URL`);
   }
-  return streamUrl;
+
+  const rawCodec = String(raw.codec || raw.fileCodec || raw.format || '').toLowerCase();
+  const rawContainer = String(raw.container || raw.containerFormat || '').toLowerCase();
+  const audioQuality = String(raw.audioQuality || raw.quality || raw.streamQuality || '').toUpperCase();
+  const audioMode = String(raw.audioMode || '');
+  const audioModes = Array.isArray(raw.audioModes) ? raw.audioModes.map(String) : [];
+
+  const isDolbyAtmos =
+    raw.atmos === true ||
+    /atmos|dolby|eac3[_-]?joc|ec-?3/i.test(`${audioQuality} ${audioMode} ${audioModes.join(' ')} ${rawCodec} ${rawContainer} ${streamUrl}`);
+
+  const isLossless =
+    !isDolbyAtmos &&
+    (/flac|alac|wav|aiff|ape|wv|dsf|dff|raw/i.test(`${rawCodec} ${rawContainer} ${raw.mimeType || ''} ${streamUrl}`) ||
+      ['LOSSLESS', 'HI_RES_LOSSLESS'].includes(audioQuality));
+
+  const bitDepth =
+    typeof raw.bitDepth === 'number'
+      ? raw.bitDepth
+      : isLossless && (streamUrl.includes('24bit') || audioQuality.includes('24') || rawCodec.includes('24'))
+        ? 24
+        : isLossless
+          ? 16
+          : null;
+
+  const rawSampleRate =
+    typeof raw.sampleRate === 'number'
+      ? raw.sampleRate
+      : typeof raw.sampleRateHz === 'number'
+        ? raw.sampleRateHz
+        : null;
+  const sampleRateHz =
+    rawSampleRate !== null
+      ? rawSampleRate < 1000
+        ? Math.round(rawSampleRate * 1000)
+        : Math.round(rawSampleRate)
+      : isLossless && bitDepth === 24
+        ? 96000
+        : 44100;
+
+  const rawBitrate =
+    typeof raw.bitrate === 'number'
+      ? raw.bitrate
+      : typeof raw.bitrateKbps === 'number'
+        ? raw.bitrateKbps
+        : null;
+
+  let bitrateKbps: number;
+  if (rawBitrate && rawBitrate > 10000) {
+    bitrateKbps = Math.round(rawBitrate / 1000);
+  } else if (rawBitrate && rawBitrate > 0) {
+    bitrateKbps = Math.round(rawBitrate);
+  } else if (isDolbyAtmos) {
+    bitrateKbps = 768;
+  } else if (isLossless) {
+    bitrateKbps = bitDepth && sampleRateHz ? Math.round((bitDepth * sampleRateHz * 2) / 1000) : 1411;
+  } else {
+    bitrateKbps = 320;
+  }
+
+  const isHiRes = isLossless && (Boolean(bitDepth && bitDepth > 16) || Boolean(sampleRateHz && sampleRateHz > 48000) || /hi[-_ ]?res|24[-_ ]?bit/i.test(`${audioQuality} ${rawCodec}`));
+  const isHiQuality = !isLossless && (bitrateKbps >= 256 || /high/i.test(audioQuality));
+
+  const channels = isDolbyAtmos ? 6 : typeof raw.channels === 'number' ? raw.channels : 2;
+
+  const finalCodec = isDolbyAtmos
+    ? 'Dolby Atmos (E-AC-3)'
+    : isLossless
+      ? /alac/i.test(rawCodec)
+        ? 'ALAC'
+        : /wav/i.test(rawCodec)
+          ? 'PCM'
+          : 'FLAC'
+      : rawCodec
+        ? rawCodec.toUpperCase()
+        : 'Audio';
+
+  const sourceQuality: 'DOLBY_ATMOS' | 'HI_RES_LOSSLESS' | 'LOSSLESS' | 'HIGH_QUALITY' = isDolbyAtmos
+    ? 'DOLBY_ATMOS'
+    : isHiRes
+      ? 'HI_RES_LOSSLESS'
+      : isLossless
+        ? 'LOSSLESS'
+        : 'HIGH_QUALITY';
+
+  return {
+    url: streamUrl,
+    codec: finalCodec,
+    bitDepth,
+    sampleRateHz,
+    bitrateKbps,
+    channels,
+    container: rawContainer || null,
+    isDolbyAtmos,
+    isLossless,
+    isHiRes,
+    isHiQuality,
+    addonName: addon.name,
+    sourceQuality,
+  };
+}
+
+export async function resolveAddonStream(addonUri: string): Promise<string> {
+  const info = await resolveAddonStreamInfo(addonUri);
+  return info.url;
 }

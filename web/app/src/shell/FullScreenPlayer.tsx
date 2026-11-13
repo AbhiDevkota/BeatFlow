@@ -14,6 +14,7 @@ import {
   UpNextIcon,
 } from '@/components/icons/Transport';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
+import { PlaybackQualityLabel } from '@/components/music/PlaybackQualityLabel';
 import { SourceQualityBadge } from '@/components/music/SourceQualityBadge';
 import { FavoriteButton } from '@/components/music/FavoriteButton';
 import { BeatLoader } from '@/components/music/BeatLoader';
@@ -65,8 +66,12 @@ function Scrubber() {
           />
         </div>
       </div>
-      <div className="relative mt-0.5 flex justify-between type-[500_11px/14px] tabular-nums text-tertiary">
+      <div className="relative mt-0.5 flex items-center justify-between type-[500_11px/14px] tabular-nums text-tertiary">
         <span ref={elapsed} />
+        {/* PlaybackQualityLabel between the timestamps — 1-to-1 with Android */}
+        <div className="pointer-events-auto absolute inset-x-0 flex justify-center">
+          <PlaybackQualityLabel />
+        </div>
         <span ref={mixLabel} className="pointer-events-none absolute inset-x-0 text-center text-secondary opacity-0" aria-hidden="true">
           Mixing
         </span>
@@ -516,9 +521,6 @@ export function FullScreenPlayer() {
                   {title}
                 </PageLink>
                 {track?.explicit && <ExplicitBadge size={14} />}
-                {nowPlaying.sourceQuality && (
-                  <SourceQualityBadge quality={nowPlaying.sourceQuality} size="md" />
-                )}
               </div>
               <span className="truncate type-title-3 text-secondary">
                 {artist && <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} className={pageLink} />}

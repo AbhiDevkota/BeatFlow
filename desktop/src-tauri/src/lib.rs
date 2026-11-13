@@ -568,9 +568,10 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
     "addon.search" => {
       let base_url = params.get("baseUrl").and_then(|v| v.as_str()).ok_or("Missing baseUrl")?;
       let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
-      let quality = params.get("quality").and_then(|v| v.as_str()).unwrap_or("high");
+      let quality = params.get("quality").and_then(|v| v.as_str()).unwrap_or("lossless");
+      let atmos = params.get("atmos").and_then(|v| v.as_str()).unwrap_or("auto");
       let base = base_url.trim_end_matches('/').trim_end_matches("/manifest.json");
-      let search_url = format!("{}/search?q={}&quality={}", base, url_encode(query), quality);
+      let search_url = format!("{}/search?q={}&quality={}&atmos={}", base, url_encode(query), quality, atmos);
       let resp = client().get(&search_url).send().await.map_err(|e| e.to_string())?;
       if !resp.status().is_success() {
         return Err(format!("Addon search returned HTTP {}", resp.status()));
@@ -582,9 +583,10 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
     "addon.stream" => {
       let base_url = params.get("baseUrl").and_then(|v| v.as_str()).ok_or("Missing baseUrl")?;
       let track_id = params.get("trackId").and_then(|v| v.as_str()).ok_or("Missing trackId")?;
-      let quality = params.get("quality").and_then(|v| v.as_str()).unwrap_or("high");
+      let quality = params.get("quality").and_then(|v| v.as_str()).unwrap_or("lossless");
+      let atmos = params.get("atmos").and_then(|v| v.as_str()).unwrap_or("auto");
       let base = base_url.trim_end_matches('/').trim_end_matches("/manifest.json");
-      let stream_url = format!("{}/stream/{}?quality={}", base, track_id, quality);
+      let stream_url = format!("{}/stream/{}?quality={}&atmos={}", base, track_id, quality, atmos);
       let resp = client().get(&stream_url).send().await.map_err(|e| e.to_string())?;
       if !resp.status().is_success() {
         return Err(format!("Addon stream returned HTTP {}", resp.status()));

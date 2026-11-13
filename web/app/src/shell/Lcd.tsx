@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router';
 import { LogoMark } from '@/components/icons/LogoMark';
 import { BeatLoader } from '@/components/music/BeatLoader';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
-import { SourceQualityBadge } from '@/components/music/SourceQualityBadge';
+import { PlaybackQualityLabel } from '@/components/music/PlaybackQualityLabel';
 import { VideoSurface } from '@/components/music/VideoSurface';
 import { albumHref, artistHref } from '@/components/music/links';
 import { PrefetchLink } from '@/components/PrefetchLink';
@@ -163,9 +163,7 @@ export function Lcd() {
               {title}
             </PageLink>
             {track?.explicit && <ExplicitBadge size={11} />}
-            {nowPlaying.sourceQuality && (
-              <SourceQualityBadge quality={nowPlaying.sourceQuality} size="sm" />
-            )}
+            <PlaybackQualityLabel compact className="ms-1" />
           </div>
         ) : (
           <span className={`${titleClass} flex items-center gap-1.5`}>

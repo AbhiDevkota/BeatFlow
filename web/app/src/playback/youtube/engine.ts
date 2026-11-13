@@ -26,7 +26,7 @@ export interface LoadedTrack {
   durationSec: number;
   /** Largest first. */
   thumbnails: { url: string; width: number; height: number }[];
-  client: PlayerClientName;
+  client: PlayerClientName | string;
   /** The audio format actually selected, e.g. "251 opus 140kbps". */
   format: string;
   /** The same, field by field, for stats for nerds. */
@@ -36,14 +36,18 @@ export interface LoadedTrack {
 
 /** What stats for nerds shows about the audio stream (the phone's NerdStats.Snapshot). */
 export interface StreamStats {
-  /** "Opus", "AAC". */
+  /** "Opus", "AAC", "FLAC", "Dolby Atmos". */
   codec: string | null;
+  bitDepth?: number | null;
   itag: string | null;
   bitrateKbps: number | null;
   sampleRateHz: number | null;
   channels: number | null;
   /** "direct" (googlevideo URLs, by range) or "SABR". */
   mode: 'direct' | 'SABR';
+  sourceName?: string | null;
+  container?: string | null;
+  qualityTier?: string | null;
 }
 
 /** A music video's picture: a video-only DASH manifest over the same response's direct URLs. */
@@ -163,9 +167,55 @@ export class YouTubeEngine {
     trackLog.i(`loading at ${startSec.toFixed(1)}s`, videoId);
     try {
       if (videoId.startsWith('addon:')) {
-        const { resolveAddonStream } = await import('@/data/addons/addonStore');
-        const resolvedUrl = await resolveAddonStream(videoId);
-        return this.load(resolvedUrl, { startSec, autoplay });
+        const { resolveAddonStreamInfo } = await import('@/data/addons/addonStore');
+        const info = await resolveAddonStreamInfo(videoId);
+
+        const player = await this.ensurePlayer();
+        await player.unload();
+        this.adapter?.dispose();
+        this.adapter = null;
+        this.current = { videoId, client: info.addonName as any, signed: false };
+        this.direct = null;
+
+        this.audio.src = info.url;
+        this.audio.currentTime = startSec;
+        if (autoplay) {
+          await this.audio.play().catch((error: unknown) => {
+            if (error instanceof DOMException && error.name === 'NotAllowedError') {
+              trackLog.w('autoplay was blocked by the browser; waiting for a tap', info.url);
+            } else throw error;
+          });
+        }
+        await this.firstAudio(generation);
+
+        return {
+          videoId,
+          title: '',
+          author: '',
+          durationSec: this.audio.duration || 0,
+          thumbnails: [],
+          client: info.addonName as any,
+          format: info.isDolbyAtmos
+            ? 'Dolby Atmos'
+            : info.isHiRes
+              ? 'Hi-Res Lossless Audio'
+              : info.isLossless
+                ? 'Lossless Audio (FLAC)'
+                : 'High Quality Audio',
+          stream: {
+            codec: info.codec,
+            bitDepth: info.bitDepth,
+            sampleRateHz: info.sampleRateHz,
+            bitrateKbps: info.bitrateKbps,
+            channels: info.channels,
+            itag: null,
+            mode: 'direct',
+            sourceName: info.addonName,
+            container: info.container,
+            qualityTier: info.sourceQuality,
+          },
+          loudnessDb: null,
+        };
       }
 
       if (
@@ -201,7 +251,18 @@ export class YouTubeEngine {
           videoId.toLowerCase().includes('atmos') ||
           videoId.toLowerCase().includes('dolby');
         const isLossless = ['flac', 'alac', 'wav', 'aiff', 'aif'].includes(ext);
-        const codecLabel = isDolby ? 'Dolby Atmos' : isLossless ? ext.toUpperCase() : ext ? ext.toUpperCase() : 'Direct Audio';
+        const bitDepth = isLossless && (cleanUrl.includes('24bit') || cleanUrl.includes('24-bit')) ? 24 : isLossless ? 16 : null;
+        const sampleRateHz = isLossless && bitDepth === 24 ? 96000 : ext === 'opus' ? 48000 : 44100;
+        const bitrateKbps = isDolby ? 768 : isLossless ? (bitDepth === 24 ? 4608 : 1411) : ['mp3', 'm4a', 'aac'].includes(ext) ? 320 : 160;
+        const codecLabel = isDolby
+          ? 'Dolby Atmos (E-AC-3)'
+          : isLossless
+            ? ext === 'wav'
+              ? 'PCM'
+              : ext.toUpperCase()
+            : ext
+              ? ext.toUpperCase()
+              : 'Direct Audio';
 
         return {
           videoId,
@@ -209,15 +270,18 @@ export class YouTubeEngine {
           author: '',
           durationSec: this.audio.duration || 0,
           thumbnails: [],
-          client: 'WEB' as PlayerClientName,
+          client: videoId.startsWith('beatflow://local/') ? ('BeatFlow Local' as any) : ('WEB' as PlayerClientName),
           format: isDolby ? 'Dolby Atmos' : isLossless ? 'Lossless Audio' : videoId.startsWith('beatflow://') ? 'Local File' : 'Stream',
           stream: {
             codec: codecLabel,
-            itag: null,
-            bitrateKbps: isLossless ? 1411 : isDolby ? 768 : 320,
-            sampleRateHz: 48000,
+            bitDepth,
+            sampleRateHz,
+            bitrateKbps,
             channels: isDolby ? 6 : 2,
+            itag: null,
             mode: 'direct',
+            sourceName: videoId.startsWith('beatflow://local/') ? 'BeatFlow Local' : 'Direct Audio',
+            qualityTier: isDolby ? 'DOLBY_ATMOS' : isLossless ? (bitDepth === 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS') : bitrateKbps >= 256 ? 'HIGH_QUALITY' : null,
           },
           loudnessDb: null,
         };
