@@ -146,7 +146,7 @@ fn url_encode(input: &str) -> String {
 fn is_audio_ext(ext: &str) -> bool {
   matches!(
     ext.to_lowercase().as_str(),
-    "mp3" | "m4a" | "flac" | "wav" | "ogg" | "opus" | "aac" | "webm" | "3gp"
+    "mp3" | "m4a" | "flac" | "wav" | "ogg" | "opus" | "aac" | "webm" | "3gp" | "eac3" | "ec3" | "ac3" | "alac" | "aiff" | "aif"
   )
 }
 
@@ -159,6 +159,10 @@ fn mime_for_ext(ext: &str) -> &'static str {
     "ogg" | "opus" => "audio/ogg",
     "webm" => "audio/webm",
     "3gp" => "audio/3gpp",
+    "eac3" | "ec3" => "audio/eac3",
+    "ac3" => "audio/ac3",
+    "alac" => "audio/alac",
+    "aiff" | "aif" => "audio/aiff",
     _ => "application/octet-stream",
   }
 }
@@ -588,6 +592,25 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let text = resp.text().await.map_err(|e| e.to_string())?;
       let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON from stream: {e}"))?;
       Ok(parsed)
+    }
+    "addons.loadConfig" => {
+      let dir = get_music_dir();
+      let config_file = dir.join("addons.json");
+      if config_file.exists() {
+        let content = fs::read_to_string(&config_file).map_err(|e| e.to_string())?;
+        let parsed: Value = serde_json::from_str(&content).unwrap_or(json!([]));
+        Ok(parsed)
+      } else {
+        Ok(json!([]))
+      }
+    }
+    "addons.saveConfig" => {
+      let dir = get_music_dir();
+      let config_file = dir.join("addons.json");
+      let addons_val = params.get("addons").cloned().unwrap_or(json!([]));
+      let formatted = serde_json::to_string_pretty(&addons_val).map_err(|e| e.to_string())?;
+      fs::write(&config_file, formatted).map_err(|e| e.to_string())?;
+      Ok(json!({ "saved": true, "path": config_file.to_string_lossy() }))
     }
     _ => Err(format!("Unknown bridge method: {method}")),
   }

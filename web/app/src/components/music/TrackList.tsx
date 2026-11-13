@@ -6,6 +6,7 @@ import type { ArtistRef, Track } from '@/data/music/types';
 import { usePlayer } from '@/state/player';
 import { Artwork } from './Artwork';
 import { ExplicitBadge } from './ExplicitBadge';
+import { SourceQualityBadge } from './SourceQualityBadge';
 import { albumHref, artistHref, formatDuration } from './links';
 import { playList, playTrack, type ListContext } from './play';
 import { TrackMenu } from './TrackMenu';
@@ -148,9 +149,12 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
         <div
           className={`flex min-w-0 flex-col ${dimmed} group-data-[unavailable=matching]/row:animate-matching motion-reduce:group-data-[unavailable=matching]/row:animate-none`}
         >
-          <div className="flex min-w-0 items-center">
+          <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate type-body text-primary">{track.title}</span>
             {track.explicit && <ExplicitBadge />}
+            {track.sourceQuality && (
+              <SourceQualityBadge quality={track.sourceQuality} size="sm" />
+            )}
           </div>
           {variant === 'album' && track.artists.length > 0 && (
             <div className="truncate type-callout text-secondary">

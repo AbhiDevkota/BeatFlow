@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, Download, ListEnd, ListPlus, ListStart, Loader2, MoreHorizontal, Music, Star, Video } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Download, ListEnd, ListPlus, ListStart, Loader2, MoreHorizontal, Music, RotateCcw, Sparkles, Star, Video } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { isDesktopApp } from '@bitchord/shared/bridge';
 import { checkTrackDownloaded, deleteDownloadedTrack, downloadTrack } from '@/data/downloads/desktopDownloads';
@@ -154,8 +154,10 @@ function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void 
   if (view === 'playlists') {
     return <PlaylistChoices videoId={track.videoId} onDone={onClose} onBack={() => setView('main')} />;
   }
-  const { playNext, addToQueue, swapVersion } = usePlayer.getState();
+  const { playNext, addToQueue, swapVersion, upgradeQuality, revertToOriginal, isUpgraded } = usePlayer.getState();
   const isCurrentPlaying = usePlayer((s) => s.nowPlaying?.videoId === track.videoId);
+  const upgradingQuality = usePlayer((s) => s.upgradingQuality);
+  const trackUpgraded = isUpgraded(track.videoId);
   return (
     <>
       <MenuItem icon={<ListStart size={15} />} onSelect={() => (onClose(), playNext([track]))}>
@@ -166,15 +168,45 @@ function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void 
       </MenuItem>
       {isDesktopApp() && <DesktopDownloadItem track={track} onClose={onClose} />}
       {isCurrentPlaying && (
-        <MenuItem
-          icon={isVideoTrack(track) ? <Music size={15} /> : <Video size={15} />}
-          onSelect={async () => {
-            onClose();
-            await swapVersion();
-          }}
-        >
-          {isVideoTrack(track) ? 'Switch to Audio Version' : 'Switch to Music Video'}
-        </MenuItem>
+        <>
+          {trackUpgraded ? (
+            <MenuItem
+              icon={<RotateCcw size={15} />}
+              onSelect={async () => {
+                onClose();
+                await revertToOriginal();
+              }}
+            >
+              Revert to Original Version
+            </MenuItem>
+          ) : (
+            <MenuItem
+              icon={
+                upgradingQuality ? (
+                  <Loader2 size={15} className="animate-spin text-primary" />
+                ) : (
+                  <Sparkles size={15} className="text-amber-400" />
+                )
+              }
+              disabled={upgradingQuality}
+              onSelect={async () => {
+                onClose();
+                await upgradeQuality();
+              }}
+            >
+              {upgradingQuality ? 'Searching Higher Quality…' : 'Upgrade Quality'}
+            </MenuItem>
+          )}
+          <MenuItem
+            icon={isVideoTrack(track) ? <Music size={15} /> : <Video size={15} />}
+            onSelect={async () => {
+              onClose();
+              await swapVersion();
+            }}
+          >
+            {isVideoTrack(track) ? 'Switch to Audio Version' : 'Switch to Music Video'}
+          </MenuItem>
+        </>
       )}
       {signedIn && <AccountItems track={track} onClose={onClose} onPlaylists={() => setView('playlists')} />}
     </>

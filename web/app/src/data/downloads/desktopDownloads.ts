@@ -81,12 +81,21 @@ export async function downloadTrack(
 
   if (!audioUrl) {
     if (track.videoId.startsWith('addon:')) {
-      const { resolveAddonStream } = await import('@/data/addons/addonStore');
+      const { resolveAddonStream, getAddonById } = await import('@/data/addons/addonStore');
+      const addonId = track.videoId.split(':')[1];
+      if (addonId) {
+        const addon = getAddonById(addonId);
+        if (addon && addon.allowDownloads === false) {
+          throw new Error(`Downloads are not permitted by "${addon.name}".`);
+        }
+      }
       audioUrl = await resolveAddonStream(track.videoId);
       const cleanUrl = audioUrl.split('?')[0] ?? '';
       const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
       if (extMatch && extMatch[1]) {
         extension = extMatch[1].toLowerCase();
+      } else if (track.sourceFormat?.codec) {
+        extension = track.sourceFormat.codec.toLowerCase();
       }
     } else if (track.videoId.startsWith('http://') || track.videoId.startsWith('https://')) {
       audioUrl = track.videoId;
@@ -119,6 +128,17 @@ export async function downloadTrack(
 }
 
 export function toTrackFromDownloaded(item: DownloadedItem): Track {
+  const ext = item.fileName.split('.').pop()?.toLowerCase() ?? '';
+  const isDolby = ext === 'eac3' || ext === 'ec3' || ext === 'ac3';
+  const isLossless = ['flac', 'wav', 'alac', 'aiff'].includes(ext);
+  const sourceQuality = isDolby
+    ? 'DOLBY_ATMOS'
+    : isLossless
+      ? 'LOSSLESS'
+      : ['mp3', 'm4a', 'aac', 'opus', 'ogg'].includes(ext)
+        ? 'HIGH_QUALITY'
+        : null;
+
   return {
     videoId: item.localUrl,
     title: item.title,
@@ -129,5 +149,12 @@ export function toTrackFromDownloaded(item: DownloadedItem): Track {
     thumbnail: null,
     index: null,
     plays: null,
+    sourceQuality,
+    sourceName: 'On Device',
+    sourceFormat: {
+      codec: isDolby ? 'Dolby Atmos' : isLossless ? ext.toUpperCase() : ext.toUpperCase(),
+      isLossless,
+      isDolbyAtmos: isDolby,
+    },
   };
 }

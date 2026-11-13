@@ -1,5 +1,6 @@
 import { desktopBridge, isDesktopApp } from '@bitchord/shared/bridge';
 import type { Track } from '@/data/music/types';
+import { parseSourceQuality } from './sourceQuality';
 
 export interface InstalledAddon {
   id: string;
@@ -27,6 +28,40 @@ export function getInstalledAddons(): InstalledAddon[] {
 export function saveInstalledAddons(addons: InstalledAddon[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(addons));
+
+  // Also persist in the music folder config file (addons.json) on desktop
+  if (isDesktopApp()) {
+    try {
+      void desktopBridge().call('addons.saveConfig', { addons }).catch((err) => {
+        console.warn('[AddonStore] Failed to write addons.json in music folder:', err);
+      });
+    } catch {}
+  }
+}
+
+/**
+ * Loads addons from the music folder's `addons.json` on desktop
+ * and syncs with localStorage so the user's config file remains the single source of truth.
+ */
+export async function syncAddonsWithFolderConfig(): Promise<InstalledAddon[]> {
+  if (!isDesktopApp()) return getInstalledAddons();
+  try {
+    const bridge = desktopBridge();
+    const folderConfig = await bridge.call('addons.loadConfig', {});
+    if (Array.isArray(folderConfig) && folderConfig.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(folderConfig));
+      return folderConfig as InstalledAddon[];
+    } else {
+      const current = getInstalledAddons();
+      if (current.length > 0) {
+        await bridge.call('addons.saveConfig', { addons: current });
+      }
+      return current;
+    }
+  } catch (err) {
+    console.warn('[AddonStore] Failed to sync addons from music folder:', err);
+    return getInstalledAddons();
+  }
 }
 
 export async function fetchAddonManifest(baseUrl: string): Promise<Record<string, any>> {
@@ -77,6 +112,11 @@ export function toggleAddon(id: string, enabled: boolean): void {
   saveInstalledAddons(updated);
 }
 
+export function getAddonById(id: string): InstalledAddon | null {
+  const list = getInstalledAddons();
+  return list.find((a) => a.id === id) ?? null;
+}
+
 export async function searchAddon(addon: InstalledAddon, query: string): Promise<Track[]> {
   if (!addon.enabled || !isDesktopApp()) return [];
   const bridge = desktopBridge();
@@ -102,7 +142,32 @@ export async function searchAddon(addon: InstalledAddon, query: string): Promise
       const artistName = String(item.artist || item.author || addon.name);
       const albumName = item.album ? String(item.album) : null;
       const thumbnail = item.artwork || item.thumbnail || item.cover || null;
-      const durationSec = typeof item.duration === 'number' ? item.duration : typeof item.durationSec === 'number' ? item.durationSec : null;
+      const durationSec =
+        typeof item.duration === 'number'
+          ? item.duration
+          : typeof item.durationSec === 'number'
+            ? item.durationSec
+            : null;
+
+      const rawQualityStr = String(item.quality || item.sourceQuality || item.format || '');
+      const detectedQuality = parseSourceQuality(rawQualityStr);
+      const isDolby =
+        detectedQuality === 'DOLBY_ATMOS' ||
+        Boolean(item.isDolby || item.atmos || rawQualityStr.toUpperCase().includes('DOLBY'));
+      const isLossless =
+        detectedQuality === 'LOSSLESS' ||
+        detectedQuality === 'HI_RES_LOSSLESS' ||
+        Boolean(item.isLossless || ['flac', 'alac', 'wav'].includes(String(item.codec || '').toLowerCase()));
+
+      const finalQuality = isDolby
+        ? 'DOLBY_ATMOS'
+        : detectedQuality === 'HI_RES_LOSSLESS' || item.bitDepth > 16 || item.sampleRate > 48000
+          ? 'HI_RES_LOSSLESS'
+          : isLossless
+            ? 'LOSSLESS'
+            : detectedQuality === 'HIGH_QUALITY' || item.bitrate >= 320
+              ? 'HIGH_QUALITY'
+              : null;
 
       return {
         videoId: `addon:${addon.id}:${trackId}`,
@@ -114,6 +179,16 @@ export async function searchAddon(addon: InstalledAddon, query: string): Promise
         thumbnail,
         index: null,
         plays: null,
+        sourceQuality: finalQuality,
+        sourceName: addon.name,
+        sourceFormat: {
+          codec: item.codec || (isDolby ? 'Dolby Atmos' : isLossless ? 'FLAC' : 'Audio'),
+          bitDepth: typeof item.bitDepth === 'number' ? item.bitDepth : null,
+          sampleRateHz: typeof item.sampleRate === 'number' ? item.sampleRate : null,
+          bitrateKbps: typeof item.bitrate === 'number' ? item.bitrate : null,
+          isLossless,
+          isDolbyAtmos: isDolby,
+        },
       } as Track;
     });
   } catch (err) {
@@ -141,7 +216,7 @@ export async function resolveAddonStream(addonUri: string): Promise<string> {
   if (parts.length < 3) {
     throw new Error(`Invalid addon track URI: ${addonUri}`);
   }
-  const addonId = parts[1];
+  const addonId = parts[1]!;
   const trackId = parts.slice(2).join(':');
 
   const addons = getInstalledAddons();

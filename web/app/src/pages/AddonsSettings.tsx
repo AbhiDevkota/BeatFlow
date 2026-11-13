@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Globe, Loader2, Plus, Power, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
 import { MdOutlineExtension } from 'react-icons/md';
 import { isDesktopApp } from '@bitchord/shared/bridge';
@@ -6,6 +6,7 @@ import {
   addAddon,
   getInstalledAddons,
   removeAddon,
+  syncAddonsWithFolderConfig,
   toggleAddon,
   type InstalledAddon,
 } from '@/data/addons/addonStore';
@@ -18,6 +19,12 @@ export function AddonsSettings() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    void syncAddonsWithFolderConfig().then((synced) => {
+      setAddons(synced);
+    });
+  }, []);
 
   const refreshList = () => {
     setAddons(getInstalledAddons());

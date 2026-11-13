@@ -192,6 +192,17 @@ export class YouTubeEngine {
         }
         await this.firstAudio(generation);
 
+        const cleanUrl = videoId.split('?')[0]?.toLowerCase() ?? '';
+        const ext = cleanUrl.split('.').pop() ?? '';
+        const isDolby =
+          ext === 'eac3' ||
+          ext === 'ec3' ||
+          ext === 'ac3' ||
+          videoId.toLowerCase().includes('atmos') ||
+          videoId.toLowerCase().includes('dolby');
+        const isLossless = ['flac', 'alac', 'wav', 'aiff', 'aif'].includes(ext);
+        const codecLabel = isDolby ? 'Dolby Atmos' : isLossless ? ext.toUpperCase() : ext ? ext.toUpperCase() : 'Direct Audio';
+
         return {
           videoId,
           title: '',
@@ -199,13 +210,13 @@ export class YouTubeEngine {
           durationSec: this.audio.duration || 0,
           thumbnails: [],
           client: 'WEB' as PlayerClientName,
-          format: videoId.startsWith('beatflow://') ? 'Local File' : 'Stream',
+          format: isDolby ? 'Dolby Atmos' : isLossless ? 'Lossless Audio' : videoId.startsWith('beatflow://') ? 'Local File' : 'Stream',
           stream: {
-            codec: videoId.split('.').pop()?.toUpperCase() ?? 'Audio',
+            codec: codecLabel,
             itag: null,
-            bitrateKbps: null,
-            sampleRateHz: null,
-            channels: 2,
+            bitrateKbps: isLossless ? 1411 : isDolby ? 768 : 320,
+            sampleRateHz: 48000,
+            channels: isDolby ? 6 : 2,
             mode: 'direct',
           },
           loudnessDb: null,

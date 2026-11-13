@@ -74,6 +74,19 @@ export interface Track {
   unavailable?: 'matching' | 'missing';
   /** Whether this track is a music video rather than a catalogue audio song. */
   isVideo?: boolean;
+  /** Audio source tier: 'DOLBY_ATMOS' | 'HI_RES_LOSSLESS' | 'LOSSLESS' | 'HIGH_QUALITY' */
+  sourceQuality?: 'DOLBY_ATMOS' | 'HI_RES_LOSSLESS' | 'LOSSLESS' | 'HIGH_QUALITY' | string | null;
+  /** Addon name or provider name, if from an addon or upgraded source */
+  sourceName?: string | null;
+  /** Audio specs: bit depth (16/24), sample rate (e.g. 44100, 96000, 192000), bitrate, codec */
+  sourceFormat?: {
+    codec?: string | null;
+    bitDepth?: number | null;
+    sampleRateHz?: number | null;
+    bitrateKbps?: number | null;
+    isLossless?: boolean;
+    isDolbyAtmos?: boolean;
+  } | null;
 }
 
 export interface HeaderInfo {

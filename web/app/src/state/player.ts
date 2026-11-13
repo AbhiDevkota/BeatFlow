@@ -1,4 +1,4 @@
-import type { DetectedExtension } from '@bitchord/shared/bridge';
+import { isDesktopApp, type DetectedExtension } from '@bitchord/shared/bridge';
 import { create } from 'zustand';
 import type { Track } from '@/data/music/types';
 import { isVideoTrack, resolveAudioTrack, resolveVideoTrack } from '@/data/music/resolveAudio';
@@ -37,6 +37,14 @@ export interface NowPlaying {
   streamInfo: string | null;
   /** The audio stream field by field, once known; for stats for nerds. */
   stream: (StreamStats & { client: string }) | null;
+  /** Audio tier: 'DOLBY_ATMOS' | 'HI_RES_LOSSLESS' | 'LOSSLESS' | 'HIGH_QUALITY' */
+  sourceQuality?: 'DOLBY_ATMOS' | 'HI_RES_LOSSLESS' | 'LOSSLESS' | 'HIGH_QUALITY' | string | null;
+  /** Name of source/addon providing the stream */
+  sourceName?: string | null;
+  /** Whether the track was upgraded to higher quality from its original stream */
+  upgraded?: boolean;
+  /** Original track metadata before upgrade (for Revert) */
+  originalTrack?: Track | null;
 }
 
 export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'error';
@@ -106,6 +114,14 @@ interface PlayerState extends Settings {
   setShowNerdStats: (on: boolean) => void;
   /** Swaps between official audio song and music video version, preserving playhead position. */
   swapVersion: () => Promise<boolean>;
+  /** Whether a quality upgrade lookup is running */
+  upgradingQuality: boolean;
+  /** Searches enabled addons and upgrades current playback to Lossless/Hi-Res/Dolby Atmos */
+  upgradeQuality: () => Promise<boolean>;
+  /** Reverts an upgraded track back to its original YouTube stream */
+  revertToOriginal: () => Promise<boolean>;
+  /** Whether the track has been upgraded from its original source */
+  isUpgraded: (videoId: string) => boolean;
 }
 
 // ---- Settings, kept across visits ---------------------------------------------------
@@ -371,7 +387,19 @@ function syncAutomix() {
   });
 }
 
-function extensionReady(): boolean {
+const originalTracks = new Map<string, Track>();
+
+function extensionReady(track?: Track): boolean {
+  if (typeof window !== 'undefined' && isDesktopApp()) return true;
+  if (
+    track &&
+    (track.videoId.startsWith('beatflow://') ||
+      track.videoId.startsWith('addon:') ||
+      track.videoId.startsWith('http://') ||
+      track.videoId.startsWith('https://'))
+  ) {
+    return true;
+  }
   const detected = queryClient.getQueryData<DetectedExtension | null>(extensionQueryKey);
   return !!detected?.info.capabilities.includes('yt');
 }
@@ -387,6 +415,10 @@ function hintOf(track: Track): NowPlaying {
     durationSec: track.durationSec ?? 0,
     streamInfo: null,
     stream: null,
+    sourceQuality: track.sourceQuality ?? null,
+    sourceName: track.sourceName ?? null,
+    upgraded: originalTracks.has(track.videoId) || Boolean(track.sourceQuality),
+    originalTrack: originalTracks.get(track.videoId) ?? null,
   };
 }
 
@@ -663,6 +695,80 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     void startAt(index, { startSec: playhead, autoplay: isPlaying });
     return true;
   },
+
+  upgradingQuality: false,
+
+  isUpgraded(videoId: string) {
+    return originalTracks.has(videoId) || videoId.startsWith('addon:');
+  },
+
+  async upgradeQuality() {
+    const { queue, index, status } = get();
+    const entry = queue[index];
+    if (!entry || partyHooks?.inParty()) return false;
+    const currentTrack = entry.track;
+
+    set({ upgradingQuality: true });
+    try {
+      const { findBestQualityUpgrade } = await import('@/data/addons/qualityUpgrade');
+      const upgrade = await findBestQualityUpgrade(currentTrack);
+      if (!upgrade) {
+        set({ upgradingQuality: false });
+        return false;
+      }
+
+      const upgradedTrack: Track = {
+        ...upgrade.track,
+        title: currentTrack.title || upgrade.track.title,
+        artists: currentTrack.artists.length ? currentTrack.artists : upgrade.track.artists,
+        thumbnail: currentTrack.thumbnail || upgrade.track.thumbnail,
+        album: currentTrack.album || upgrade.track.album,
+      };
+
+      originalTracks.set(upgradedTrack.videoId, currentTrack);
+
+      const currentQueue = [...get().queue];
+      if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
+        currentQueue[index] = { ...currentQueue[index]!, track: upgradedTrack };
+        set({ queue: currentQueue });
+      }
+
+      const audioEl = getAudio();
+      const playhead = audioEl?.currentTime ?? 0;
+      const isPlaying = status === 'playing';
+
+      void startAt(index, { startSec: playhead, autoplay: isPlaying });
+      return true;
+    } catch (err) {
+      console.warn('[Player] Quality upgrade failed:', err);
+      return false;
+    } finally {
+      set({ upgradingQuality: false });
+    }
+  },
+
+  async revertToOriginal() {
+    const { queue, index, status } = get();
+    const entry = queue[index];
+    if (!entry || partyHooks?.inParty()) return false;
+    const currentTrack = entry.track;
+
+    const original = originalTracks.get(currentTrack.videoId);
+    if (!original) return false;
+
+    const currentQueue = [...get().queue];
+    if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
+      currentQueue[index] = { ...currentQueue[index]!, track: original };
+      set({ queue: currentQueue });
+    }
+
+    const audioEl = getAudio();
+    const playhead = audioEl?.currentTime ?? 0;
+    const isPlaying = status === 'playing';
+
+    void startAt(index, { startSec: playhead, autoplay: isPlaying });
+    return true;
+  },
 }));
 
 useContentSettings.subscribe((current, prev) => {
@@ -743,7 +849,7 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     }
   }
 
-  if (!extensionReady()) {
+  if (!extensionReady(currentTrack)) {
     usePlayer.setState({
       index: at,
       nowPlaying: { ...hintOf(currentTrack), title: currentTrack.title || 'Can’t play this here yet' },
@@ -1053,6 +1159,20 @@ function maybeCrossfade() {
 }
 
 function applyTrack(track: LoadedTrack, from?: Track) {
+  const isDolby =
+    track.format.includes('Dolby') ||
+    track.stream.codec?.includes('Dolby') ||
+    Boolean(from?.sourceFormat?.isDolbyAtmos);
+  const isLossless =
+    track.format.includes('Lossless') ||
+    ['FLAC', 'ALAC', 'WAV', 'AIFF'].includes(track.stream.codec?.toUpperCase() ?? '') ||
+    Boolean(from?.sourceFormat?.isLossless);
+
+  const detectedQuality = isDolby
+    ? 'DOLBY_ATMOS'
+    : (from?.sourceQuality as any) ??
+      (isLossless ? 'LOSSLESS' : null);
+
   const nowPlaying: NowPlaying = {
     videoId: track.videoId,
     // YouTube Music metadata (from the queue) beats the video's own title.
@@ -1062,7 +1182,18 @@ function applyTrack(track: LoadedTrack, from?: Track) {
     artworkUrl: from?.thumbnail ?? track.thumbnails[0]?.url ?? null,
     durationSec: track.durationSec || from?.durationSec || 0,
     streamInfo: `${track.format} via ${track.client}`,
-    stream: { ...track.stream, client: track.client },
+    stream: {
+      ...track.stream,
+      codec: from?.sourceFormat?.codec ?? track.stream.codec,
+      sampleRateHz: from?.sourceFormat?.sampleRateHz ?? track.stream.sampleRateHz,
+      bitrateKbps: from?.sourceFormat?.bitrateKbps ?? track.stream.bitrateKbps,
+      channels: isDolby ? 6 : track.stream.channels,
+      client: track.client,
+    },
+    sourceQuality: detectedQuality,
+    sourceName: from?.sourceName ?? null,
+    upgraded: originalTracks.has(track.videoId) || Boolean(from?.sourceQuality),
+    originalTrack: originalTracks.get(track.videoId) ?? null,
   };
   usePlayer.setState({ nowPlaying, error: null });
   updateMediaSession(nowPlaying);

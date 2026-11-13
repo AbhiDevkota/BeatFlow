@@ -285,6 +285,14 @@ export interface BridgeMethods {
     params: { baseUrl: string; trackId: string; quality?: string };
     result: any;
   };
+  'addons.loadConfig': {
+    params: Record<string, never>;
+    result: any[];
+  };
+  'addons.saveConfig': {
+    params: { addons: any[] };
+    result: { saved: boolean; path: string };
+  };
 }
 
 export type BridgeMethod = keyof BridgeMethods;

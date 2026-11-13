@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router';
 import { LogoMark } from '@/components/icons/LogoMark';
 import { BeatLoader } from '@/components/music/BeatLoader';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
+import { SourceQualityBadge } from '@/components/music/SourceQualityBadge';
 import { VideoSurface } from '@/components/music/VideoSurface';
 import { albumHref, artistHref } from '@/components/music/links';
 import { PrefetchLink } from '@/components/PrefetchLink';
@@ -153,7 +154,7 @@ export function Lcd() {
       <div className="flex min-w-0 flex-col transition-[filter,opacity] group-has-[[data-scrubber]:hover]/lcd:opacity-30 group-has-[[data-scrubber]:hover]/lcd:blur-[3px] group-has-[[data-dragging]]/lcd:opacity-30 group-has-[[data-dragging]]/lcd:blur-[3px]">
         {title ? (
           // The song's name opens its album; an explicit song carries the E after it.
-          <div className="flex min-w-0 items-center">
+          <div className="flex min-w-0 items-center gap-1.5">
             <PageLink
               className={`${titleClass} ${pageLink}`}
               href={albumHref(album?.id ?? null)}
@@ -162,6 +163,9 @@ export function Lcd() {
               {title}
             </PageLink>
             {track?.explicit && <ExplicitBadge size={11} />}
+            {nowPlaying.sourceQuality && (
+              <SourceQualityBadge quality={nowPlaying.sourceQuality} size="sm" />
+            )}
           </div>
         ) : (
           <span className={`${titleClass} flex items-center gap-1.5`}>
