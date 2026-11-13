@@ -557,7 +557,12 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       } else {
         format!("{}/manifest.json", base)
       };
-      let resp = client().get(&manifest_url).send().await.map_err(|e| e.to_string())?;
+      let resp = client()
+        .get(&manifest_url)
+        .header("User-Agent", "BitChord/v1.9.2")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
       if !resp.status().is_success() {
         return Err(format!("Addon manifest returned HTTP {}", resp.status()));
       }
@@ -572,7 +577,12 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let atmos = params.get("atmos").and_then(|v| v.as_str()).unwrap_or("auto");
       let base = base_url.trim_end_matches('/').trim_end_matches("/manifest.json");
       let search_url = format!("{}/search?q={}&quality={}&atmos={}", base, url_encode(query), quality, atmos);
-      let resp = client().get(&search_url).send().await.map_err(|e| e.to_string())?;
+      let resp = client()
+        .get(&search_url)
+        .header("User-Agent", "BitChord/v1.9.2")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
       if !resp.status().is_success() {
         return Err(format!("Addon search returned HTTP {}", resp.status()));
       }
@@ -587,7 +597,12 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let atmos = params.get("atmos").and_then(|v| v.as_str()).unwrap_or("auto");
       let base = base_url.trim_end_matches('/').trim_end_matches("/manifest.json");
       let stream_url = format!("{}/stream/{}?quality={}&atmos={}", base, track_id, quality, atmos);
-      let resp = client().get(&stream_url).send().await.map_err(|e| e.to_string())?;
+      let resp = client()
+        .get(&stream_url)
+        .header("User-Agent", "BitChord/v1.9.2")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
       if !resp.status().is_success() {
         return Err(format!("Addon stream returned HTTP {}", resp.status()));
       }

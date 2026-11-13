@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Check, Globe, Loader2, Plus, Power, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
+import { Check, Globe, Loader2, Plus, Power, RefreshCw, Trash2, AlertCircle, Sparkles } from 'lucide-react';
 import { MdOutlineExtension } from 'react-icons/md';
 import { isDesktopApp } from '@bitchord/shared/bridge';
 import {
   addAddon,
+  getAutoUpgradeQuality,
   getInstalledAddons,
+  getPreferDolbyAtmos,
   removeAddon,
+  setAutoUpgradeQuality,
+  setPreferDolbyAtmos,
   syncAddonsWithFolderConfig,
   toggleAddon,
   type InstalledAddon,
@@ -15,6 +19,8 @@ import { settingsUi } from './settingsStyles';
 export function AddonsSettings() {
   const isDesktop = isDesktopApp();
   const [addons, setAddons] = useState<InstalledAddon[]>(() => getInstalledAddons());
+  const [preferAtmos, setPreferAtmos] = useState<boolean>(() => getPreferDolbyAtmos());
+  const [autoUpgrade, setAutoUpgrade] = useState<boolean>(() => getAutoUpgradeQuality());
   const [urlInput, setUrlInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +86,51 @@ export function AddonsSettings() {
 
   return (
     <div className="space-y-6">
+      <section className={settingsUi.group}>
+        <div className="px-4 py-3 border-b border-quaternary/30 bg-quaternary/10 flex items-center gap-2">
+          <Sparkles size={18} className="text-primary" />
+          <span className="type-title-3 font-semibold text-primary">Playback &amp; Hi-Res Audio</span>
+        </div>
+
+        <div className={settingsUi.row}>
+          <div className={settingsUi.rowText}>
+            <span>Prefer Dolby Atmos</span>
+            <span className={settingsUi.rowDetail}>
+              Ask the hi-res sources for a Dolby Atmos copy when they offer one. Falls back to the best stereo lossless copy when not available or unsupported.
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            className={settingsUi.switch}
+            checked={preferAtmos}
+            onChange={(e) => {
+              setPreferAtmos(e.target.checked);
+              setPreferDolbyAtmos(e.target.checked);
+            }}
+            aria-label="Prefer Dolby Atmos"
+          />
+        </div>
+
+        <div className={settingsUi.row}>
+          <div className={settingsUi.rowText}>
+            <span>Automatic Hi-Res Upgrade</span>
+            <span className={settingsUi.rowDetail}>
+              Automatically upgrade songs to Lossless, Hi-Res, or Dolby Atmos from your enabled addons when available during playback.
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            className={settingsUi.switch}
+            checked={autoUpgrade}
+            onChange={(e) => {
+              setAutoUpgrade(e.target.checked);
+              setAutoUpgradeQuality(e.target.checked);
+            }}
+            aria-label="Automatic Hi-Res Upgrade"
+          />
+        </div>
+      </section>
+
       <section className={settingsUi.group}>
         <div className="px-4 py-3 border-b border-quaternary/30 bg-quaternary/10 flex items-center justify-between">
           <div className="flex items-center gap-2">

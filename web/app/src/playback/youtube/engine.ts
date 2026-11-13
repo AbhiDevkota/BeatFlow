@@ -171,14 +171,31 @@ export class YouTubeEngine {
         const info = await resolveAddonStreamInfo(videoId);
 
         const player = await this.ensurePlayer();
-        await player.unload();
         this.adapter?.dispose();
         this.adapter = null;
         this.current = { videoId, client: info.addonName as any, signed: false };
         this.direct = null;
 
-        this.audio.src = info.url;
-        this.audio.currentTime = startSec;
+        const isDash =
+          info.url.includes('.mpd') ||
+          info.container === 'mpd' ||
+          info.url.includes('manifest.mpd') ||
+          (info.isDolbyAtmos && info.url.includes('manifest'));
+
+        if (isDash) {
+          for (const scheme of ['http', 'https']) {
+            shaka.net.NetworkingEngine.registerScheme(
+              scheme,
+              shaka.net.HttpFetchPlugin.parse,
+              shaka.net.NetworkingEngine.PluginPriority.FALLBACK,
+            );
+          }
+          await player.load(info.url, startSec);
+        } else {
+          await player.unload();
+          this.audio.src = info.url;
+          this.audio.currentTime = startSec;
+        }
         if (autoplay) {
           await this.audio.play().catch((error: unknown) => {
             if (error instanceof DOMException && error.name === 'NotAllowedError') {

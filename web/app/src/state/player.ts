@@ -388,6 +388,7 @@ function syncAutomix() {
 }
 
 const originalTracks = new Map<string, Track>();
+const revertedTracks = new Set<string>();
 
 function extensionReady(track?: Track): boolean {
   if (typeof window !== 'undefined' && isDesktopApp()) return true;
@@ -708,6 +709,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     if (!entry || partyHooks?.inParty()) return false;
     const currentTrack = entry.track;
 
+    revertedTracks.delete(currentTrack.videoId);
     set({ upgradingQuality: true });
     try {
       const { findBestQualityUpgrade } = await import('@/data/addons/qualityUpgrade');
@@ -755,6 +757,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
     const original = originalTracks.get(currentTrack.videoId);
     if (!original) return false;
+    revertedTracks.add(original.videoId);
 
     const currentQueue = [...get().queue];
     if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
@@ -873,6 +876,15 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     if (!autoplay) usePlayer.setState({ status: 'paused' });
     afterTrackStarted();
     syncAutomix();
+
+    if (
+      isDesktopApp() &&
+      !currentTrack.videoId.startsWith('addon:') &&
+      !currentTrack.videoId.startsWith('beatflow://') &&
+      !revertedTracks.has(currentTrack.videoId)
+    ) {
+      void checkAutoUpgrade(currentTrack, token);
+    }
   } catch (error) {
     if (token !== loadToken || (error instanceof Error && error.name === 'SupersededError')) return;
     const message = error instanceof Error ? error.message : String(error);
@@ -884,6 +896,47 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
         if (token === loadToken) void advance(true);
       }, 1500);
     }
+  }
+}
+
+async function checkAutoUpgrade(track: Track, expectedToken: number): Promise<void> {
+  if (!isDesktopApp() || partyHooks?.inParty() || revertedTracks.has(track.videoId)) return;
+  try {
+    const { getAutoUpgradeQuality, getInstalledAddons } = await import('@/data/addons/addonStore');
+    if (!getAutoUpgradeQuality()) return;
+    const addons = getInstalledAddons().filter((a) => a.enabled);
+    if (!addons.length) return;
+
+    const { findBestQualityUpgrade } = await import('@/data/addons/qualityUpgrade');
+    const upgrade = await findBestQualityUpgrade(track);
+    if (!upgrade || loadToken !== expectedToken) return;
+
+    const state = usePlayer.getState();
+    const entry = state.queue[state.index];
+    if (!entry || entry.track.videoId !== track.videoId) return;
+
+    const upgradedTrack: Track = {
+      ...upgrade.track,
+      title: track.title || upgrade.track.title,
+      artists: track.artists.length ? track.artists : upgrade.track.artists,
+      thumbnail: track.thumbnail || upgrade.track.thumbnail,
+      album: track.album || upgrade.track.album,
+    };
+
+    originalTracks.set(upgradedTrack.videoId, track);
+    const currentQueue = [...usePlayer.getState().queue];
+    if (currentQueue[state.index] && currentQueue[state.index]!.entryId === entry.entryId) {
+      currentQueue[state.index] = { ...currentQueue[state.index]!, track: upgradedTrack };
+      usePlayer.setState({ queue: currentQueue });
+    }
+
+    const audioEl = getAudio();
+    const playhead = audioEl?.currentTime ?? 0;
+    const isPlaying = state.status === 'playing';
+
+    void startAt(state.index, { startSec: playhead, autoplay: isPlaying });
+  } catch (err) {
+    trackLog.w('background hi-res auto-upgrade skipped', String(err));
   }
 }
 

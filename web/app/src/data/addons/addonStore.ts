@@ -13,6 +13,28 @@ export interface InstalledAddon {
 }
 
 const STORAGE_KEY = 'beatflow_installed_addons';
+const ATMOS_PREF_KEY = 'beatflow_prefer_atmos';
+const AUTO_UPGRADE_KEY = 'beatflow_auto_upgrade_quality';
+
+export function getPreferDolbyAtmos(): boolean {
+  if (typeof window === 'undefined') return true;
+  return localStorage.getItem(ATMOS_PREF_KEY) !== 'false';
+}
+
+export function setPreferDolbyAtmos(prefer: boolean): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(ATMOS_PREF_KEY, prefer ? 'true' : 'false');
+}
+
+export function getAutoUpgradeQuality(): boolean {
+  if (typeof window === 'undefined') return true;
+  return localStorage.getItem(AUTO_UPGRADE_KEY) !== 'false';
+}
+
+export function setAutoUpgradeQuality(auto: boolean): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(AUTO_UPGRADE_KEY, auto ? 'true' : 'false');
+}
 
 export function getInstalledAddons(): InstalledAddon[] {
   if (typeof window === 'undefined') return [];
@@ -117,14 +139,20 @@ export function getAddonById(id: string): InstalledAddon | null {
   return list.find((a) => a.id === id) ?? null;
 }
 
-export async function searchAddon(addon: InstalledAddon, query: string): Promise<Track[]> {
+export async function searchAddon(
+  addon: InstalledAddon,
+  query: string,
+  options?: { atmos?: boolean },
+): Promise<Track[]> {
   if (!addon.enabled || !isDesktopApp()) return [];
   const bridge = desktopBridge();
   try {
+    const atmos = options?.atmos ?? getPreferDolbyAtmos();
     const raw = await bridge.call('addon.search', {
       baseUrl: addon.baseUrl,
       query,
       quality: 'high',
+      atmos: atmos ? 'auto' : 'off',
     });
 
     const rawData = raw as any;
@@ -226,7 +254,10 @@ export interface AddonStreamInfo {
   sourceQuality: 'DOLBY_ATMOS' | 'HI_RES_LOSSLESS' | 'LOSSLESS' | 'HIGH_QUALITY';
 }
 
-export async function resolveAddonStreamInfo(addonUri: string): Promise<AddonStreamInfo> {
+export async function resolveAddonStreamInfo(
+  addonUri: string,
+  options?: { atmos?: boolean },
+): Promise<AddonStreamInfo> {
   // Format: addon:{addonId}:{trackId}
   const parts = addonUri.split(':');
   if (parts.length < 3) {
@@ -241,12 +272,13 @@ export async function resolveAddonStreamInfo(addonUri: string): Promise<AddonStr
     throw new Error(`Addon with id '${addonId}' not found.`);
   }
 
+  const preferAtmos = options?.atmos ?? getPreferDolbyAtmos();
   const bridge = desktopBridge();
   const res = await bridge.call('addon.stream', {
     baseUrl: addon.baseUrl,
     trackId,
     quality: 'lossless',
-    atmos: 'auto',
+    atmos: preferAtmos ? 'auto' : 'off',
   });
 
   const raw = res as any;

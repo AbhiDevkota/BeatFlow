@@ -1,5 +1,5 @@
 import type { Track } from '@/data/music/types';
-import { getInstalledAddons, searchAddon, type InstalledAddon } from './addonStore';
+import { getInstalledAddons, getPreferDolbyAtmos, searchAddon, type InstalledAddon } from './addonStore';
 import { parseSourceQuality, type SourceQuality } from './sourceQuality';
 
 export interface QualityUpgradeResult {
@@ -8,24 +8,48 @@ export interface QualityUpgradeResult {
   quality: SourceQuality;
 }
 
-const QUALITY_RANKS: Record<SourceQuality, number> = {
+export const QUALITY_RANKS: Record<SourceQuality, number> = {
   DOLBY_ATMOS: 4,
   HI_RES_LOSSLESS: 3,
   LOSSLESS: 2,
   HIGH_QUALITY: 1,
 };
 
-function normalizeString(str: string): string {
-  return str
+/**
+ * Title cleaner ported from BitChord-PC (src/hires.rs: searchable_title).
+ * Takes packaging off (Official Video, MV, Lyrics, feat., etc.), preserving core song title.
+ */
+export function cleanSearchableTitle(title: string): string {
+  let text = title
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, ' ');
+
+  // Strip brackets containing packaging words
+  text = text.replace(/\s*[\(\[][^\)\]]*(?:official|video|music|audio|lyrics|hd|4k|hq|soundtrack|ost|remaster|visualizer|album version|explicit)[^\)\]]*[\)\]]/gi, ' ');
+  // Strip feat./ft./featuring
+  text = text.replace(/\s*(?:feat\.|feat|ft\.|ft|featuring|with)\s+.*$/gi, ' ');
+  // Strip " - Topic"
+  text = text.replace(/\s*-\s*topic/gi, ' ');
+  // Clean punctuation and double spaces
+  text = text.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  return text || title.trim();
+}
+
+/**
+ * Extracts primary artist name ported from BitChord-PC (src/hires.rs: primary_artist).
+ */
+export function getPrimaryArtist(artist: string): string {
+  return artist
+    .toLowerCase()
+    .split(/[,&\/;·|]|(?:\s+(?:feat\.|feat|ft\.|ft|x|vs\.)\s+)/i)[0]
+    ?.replace(/[^\p{L}\p{N}\s]/gu, '')
+    ?.trim() ?? '';
 }
 
 function calculateSimilarity(a: string, b: string): number {
-  const normA = normalizeString(a);
-  const normB = normalizeString(b);
+  const normA = a.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+  const normB = b.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
   if (normA === normB) return 1.0;
   if (normA.includes(normB) || normB.includes(normA)) return 0.85;
 
@@ -40,18 +64,26 @@ function calculateSimilarity(a: string, b: string): number {
 
 /**
  * Searches all enabled addons for a higher-quality copy of [track]
- * matching BeatFlow Android's QualityUpgrade.
+ * using BitChord-PC's ranking and query strategy (src/hires.rs).
  */
 export async function findBestQualityUpgrade(track: Track): Promise<QualityUpgradeResult | null> {
   const enabledAddons = getInstalledAddons().filter((a) => a.enabled);
   if (!enabledAddons.length) return null;
 
+  const preferAtmos = getPreferDolbyAtmos();
   const artistName = track.artists[0]?.name ?? '';
-  const query = `${track.title} ${artistName}`.trim();
+  const cleanTitle = cleanSearchableTitle(track.title);
+  const primaryArtist = getPrimaryArtist(artistName);
+
+  const query1 = `${cleanTitle} ${primaryArtist}`.trim();
+  const query2 = cleanTitle;
 
   const searchPromises = enabledAddons.map(async (addon) => {
     try {
-      const results = await searchAddon(addon, query);
+      let results = await searchAddon(addon, query1, { atmos: preferAtmos });
+      if (!results.length && query2 !== query1) {
+        results = await searchAddon(addon, query2, { atmos: preferAtmos });
+      }
       return { addon, results };
     } catch {
       return { addon, results: [] };
@@ -59,44 +91,52 @@ export async function findBestQualityUpgrade(track: Track): Promise<QualityUpgra
   });
 
   const allResults = await Promise.all(searchPromises);
-  const candidates: QualityUpgradeResult[] = [];
+  const scoredCandidates: { candidate: QualityUpgradeResult; score: number }[] = [];
 
   for (const { addon, results } of allResults) {
     for (const candidate of results) {
-      // 1. Check title similarity
-      const titleSim = calculateSimilarity(track.title, candidate.title);
-      if (titleSim < 0.6) continue;
+      const candidateClean = cleanSearchableTitle(candidate.title);
+      const titleSim = calculateSimilarity(cleanTitle, candidateClean);
+      if (titleSim < 0.65) continue;
 
-      // 2. Check duration if both exist (allow +/- 12 sec leeway)
+      // Check artist match
+      const candArtist = getPrimaryArtist(candidate.artists[0]?.name ?? '');
+      const artistMatches = !primaryArtist || !candArtist || candArtist.includes(primaryArtist) || primaryArtist.includes(candArtist);
+      if (!artistMatches) continue;
+
+      // Check duration tolerance (BitChord allows up to 30s diff)
+      let durationScore = 20;
       if (track.durationSec && candidate.durationSec) {
         const diff = Math.abs(track.durationSec - candidate.durationSec);
-        if (diff > 12) continue;
+        if (diff > 25) continue;
+        durationScore = Math.max(0, 20 - diff);
       }
 
-      // 3. Determine quality
+      // Determine quality tier
       const rawQuality = candidate.sourceQuality || candidate.sourceFormat?.codec || 'LOSSLESS';
       const parsedQuality = parseSourceQuality(rawQuality) ?? 'LOSSLESS';
+      const qualityRank = preferAtmos && parsedQuality === 'DOLBY_ATMOS' ? 5 : (QUALITY_RANKS[parsedQuality] ?? 1);
 
-      candidates.push({
-        addon,
-        track: {
-          ...candidate,
-          sourceQuality: parsedQuality,
-          sourceName: addon.name,
+      // Total score like BitChord: base title score + artist score + duration score + quality score
+      const score = Math.round(titleSim * 100) + (artistMatches ? 30 : 0) + durationScore + (qualityRank * 15);
+
+      scoredCandidates.push({
+        candidate: {
+          addon,
+          track: {
+            ...candidate,
+            sourceQuality: parsedQuality,
+            sourceName: addon.name,
+          },
+          quality: parsedQuality,
         },
-        quality: parsedQuality,
+        score,
       });
     }
   }
 
-  if (!candidates.length) return null;
+  if (!scoredCandidates.length) return null;
 
-  // Sort best rank first
-  candidates.sort((a, b) => {
-    const rankA = QUALITY_RANKS[a.quality] ?? 0;
-    const rankB = QUALITY_RANKS[b.quality] ?? 0;
-    return rankB - rankA;
-  });
-
-  return candidates[0] ?? null;
+  scoredCandidates.sort((a, b) => b.score - a.score);
+  return scoredCandidates[0]!.candidate;
 }

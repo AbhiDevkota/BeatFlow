@@ -19,7 +19,6 @@ import { SidePanel } from './SidePanel';
 import { Sidebar } from './Sidebar';
 import { WindowControls } from './WindowControls';
 import { OverlayScrollbar } from './OverlayScrollbar';
-import { StatsForNerdsOverlay } from './NerdStats';
 
 const mobile = isMobileBrowser();
 const desktop = isDesktopApp();
@@ -123,7 +122,6 @@ export function AppShell() {
         <SidePanel />
       </div>
       {banner}
-      <StatsForNerdsOverlay />
       {fullScreen && (
         <Suspense fallback={null}>
           <FullScreenPlayer />

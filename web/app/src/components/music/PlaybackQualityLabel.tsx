@@ -1,23 +1,30 @@
+import { useState } from 'react';
 import { Headphones } from 'lucide-react';
 import { usePlayer } from '@/state/player';
 import { DolbyAtmosIcon, LosslessWaveIcon } from './SourceQualityBadge';
+import { AudioQualityMenu } from './AudioQualityMenu';
 
 export interface PlaybackQualityLabelProps {
   compact?: boolean;
   className?: string;
+  menuAlign?: 'center' | 'left';
 }
 
 /**
- * 1-to-1 Android PlaybackQualityLabel.
- * Positioned cleanly between elapsed and remaining timestamps under the seek bar.
+ * 1-to-1 BitChord-PC / Apple Music / BeatFlow Android PlaybackQualityLabel.
+ * Positioned cleanly between elapsed and remaining timestamps under the seek bar,
+ * and as an inline quality icon in the mini player.
  * Has sweeping shimmer for Lossless / Dolby Atmos / Hi-Res Lossless,
- * breathing pulse for Upgrading Quality, and toggles Stats for Nerds on click.
+ * breathing pulse for Upgrading Quality, and opens the Audio Quality menu on click.
  */
-export function PlaybackQualityLabel({ compact = false, className = '' }: PlaybackQualityLabelProps) {
+export function PlaybackQualityLabel({
+  compact = false,
+  className = '',
+  menuAlign = compact ? 'left' : 'center',
+}: PlaybackQualityLabelProps) {
   const nowPlaying = usePlayer((s) => s.nowPlaying);
   const upgradingQuality = usePlayer((s) => s.upgradingQuality);
-  const showNerdStats = usePlayer((s) => s.showNerdStats);
-  const setShowNerdStats = usePlayer((s) => s.setShowNerdStats);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   if (!nowPlaying && !upgradingQuality) return null;
 
@@ -54,8 +61,8 @@ export function PlaybackQualityLabel({ compact = false, className = '' }: Playba
     return null;
   }
 
-  const iconSize = compact ? 11 : 13;
-  const waveSize = compact ? 12 : 14;
+  const iconSize = compact ? 12 : 13;
+  const waveSize = compact ? 13 : 14;
 
   let iconNode = null;
   let text = '';
@@ -78,7 +85,7 @@ export function PlaybackQualityLabel({ compact = false, className = '' }: Playba
     iconNode = <LosslessWaveIcon size={waveSize} className="text-white/85" />;
     textClass = 'animate-lossless-shimmer font-medium';
   } else if (isHiQuality) {
-    text = 'High Quality';
+    text = bitrateKbps && bitrateKbps >= 320 ? '320 kbps' : 'High Quality';
     iconNode = <Headphones size={iconSize} className="text-white/45" />;
     textClass = 'text-white/45 font-medium';
   }
@@ -95,15 +102,21 @@ export function PlaybackQualityLabel({ compact = false, className = '' }: Playba
     .join(' · ');
 
   return (
-    <button
-      type="button"
-      onClick={() => setShowNerdStats(!showNerdStats)}
-      className={`inline-flex items-center gap-1.5 cursor-pointer select-none text-[11px] leading-none tracking-tight hover:opacity-100 transition-opacity duration-150 focus:outline-hidden ${className}`}
-      title={details ? `${details} (Click for Stats for Nerds)` : 'Click to toggle Stats for Nerds'}
-      aria-label={`Audio quality: ${text}. Click to toggle Stats for Nerds.`}
-    >
-      {iconNode}
-      <span className={textClass}>{text}</span>
-    </button>
+    <div className="relative inline-flex items-center">
+      <button
+        type="button"
+        onClick={() => setMenuOpen(!menuOpen)}
+        className={`inline-flex items-center gap-1.5 cursor-pointer select-none text-[11px] leading-none tracking-tight hover:opacity-100 transition-opacity duration-150 focus:outline-hidden ${className}`}
+        title={details ? `${details} (Click for audio quality specs)` : 'Click for audio quality specs'}
+        aria-label={`Audio quality: ${text}. Click for audio quality specs.`}
+        aria-haspopup="dialog"
+        aria-expanded={menuOpen}
+      >
+        {iconNode}
+        {!compact && <span className={textClass}>{text}</span>}
+      </button>
+
+      {menuOpen && <AudioQualityMenu align={menuAlign} onClose={() => setMenuOpen(false)} />}
+    </div>
   );
 }
