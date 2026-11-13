@@ -195,11 +195,16 @@ export class YouTubeEngine {
         if (isDash) {
           try {
             trackLog.i(`[Shaka DASH] Loading manifest into Shaka Player: ${info.url}`, videoId);
+            const netEngine = player.getNetworkingEngine();
+            if (netEngine) {
+              netEngine.clearAllRequestFilters();
+              netEngine.clearAllResponseFilters();
+            }
             for (const scheme of ['http', 'https']) {
               shaka.net.NetworkingEngine.registerScheme(
                 scheme,
                 shaka.net.HttpFetchPlugin.parse,
-                shaka.net.NetworkingEngine.PluginPriority.FALLBACK,
+                shaka.net.NetworkingEngine.PluginPriority.PREFERRED,
               );
             }
             if (player.getMediaElement() !== this.audio) {

@@ -28,6 +28,17 @@ function shouldRouteViaDesktopBridge(url: URL): boolean {
     if (url.pathname.startsWith('/api/jnn/')) return false;
     return true;
   }
+  // External addon hosts, streaming CDNs, manifests, and audio segments
+  if (
+    host.includes('tidal.com') ||
+    host.includes('devs.surf') ||
+    url.pathname.includes('/mediatracks/') ||
+    url.pathname.endsWith('.mpd') ||
+    url.pathname.endsWith('.m3u8') ||
+    url.search.includes('manifest.mpd')
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -85,9 +96,19 @@ export function installDesktopFetch(): void {
       }
     }
 
+    const isAddonOrExternal =
+      url.hostname.includes('tidal.com') ||
+      url.hostname.includes('devs.surf') ||
+      url.pathname.includes('/mediatracks/') ||
+      url.pathname.endsWith('.mpd') ||
+      url.pathname.endsWith('.m3u8') ||
+      url.search.includes('manifest.mpd');
+
+    const bridgeMethod = isAddonOrExternal ? 'addon.fetch' : 'yt.fetch';
+
     try {
       const response = await bridge.call(
-        'yt.fetch',
+        bridgeMethod as any,
         {
           url: url.toString(),
           method: method as 'GET' | 'HEAD' | 'POST',
@@ -99,9 +120,18 @@ export function installDesktopFetch(): void {
       );
 
       const payload = response.bodyEncoding === 'base64' ? fastBase64ToUint8Array(response.body) : response.body;
+      const cleanHeaders = new Headers();
+      if (response.headers) {
+        for (const [k, v] of Object.entries(response.headers)) {
+          try {
+            cleanHeaders.set(k, String(v));
+          } catch {}
+        }
+      }
+
       return new Response(response.status === 204 || response.status === 304 ? null : (payload as unknown as BodyInit), {
         status: response.status,
-        headers: response.headers,
+        headers: cleanHeaders,
       });
     } catch (err) {
       console.warn('[Desktop Fetch] Bridge call failed, trying fallback:', err);

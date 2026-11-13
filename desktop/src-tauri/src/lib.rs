@@ -248,6 +248,7 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   let is_yt = is_youtube || params.url.contains("youtube.com") || params.url.contains("googlevideo.com");
   let is_apple = params.url.contains("amp-api.music.apple.com");
   let is_musixmatch = params.url.contains("musixmatch.com");
+  let is_tidal = params.url.contains("tidal.com");
   if params.url.contains("music.youtube.com/youtubei/") {
     req = req
       .header("Origin", "https://music.youtube.com")
@@ -274,6 +275,11 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
       .header("Referer", "https://music.apple.com/");
   } else if is_musixmatch {
     req = req.header("Cookie", "mxm_bab=AB");
+  } else if is_tidal {
+    req = req
+      .header("Origin", "https://listen.tidal.com")
+      .header("Referer", "https://listen.tidal.com/")
+      .header("User-Agent", hires::USER_AGENT);
   }
 
   if let Some(headers) = params.headers {
@@ -293,6 +299,19 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
       if is_apple
         && (k.eq_ignore_ascii_case("origin")
           || k.eq_ignore_ascii_case("referer"))
+      {
+        continue;
+      }
+      if is_tidal
+        && (k.eq_ignore_ascii_case("origin")
+          || k.eq_ignore_ascii_case("referer")
+          || k.eq_ignore_ascii_case("x-origin"))
+      {
+        continue;
+      }
+      // Drop any localhost/tauri origin for external media/addon requests
+      if (k.eq_ignore_ascii_case("origin") || k.eq_ignore_ascii_case("referer"))
+        && (v.contains("localhost") || v.contains("tauri:") || v.contains("127.0.0.1"))
       {
         continue;
       }
@@ -949,6 +968,12 @@ pub fn run() {
               .header("User-Agent", hires::USER_AGENT)
               .header("Accept", "*/*")
               .header("Accept-Encoding", "identity");
+
+            if target_url.contains("tidal.com") {
+              request_builder = request_builder
+                .header("Origin", "https://listen.tidal.com")
+                .header("Referer", "https://listen.tidal.com/");
+            }
 
             if let Some(ref range) = range_header {
               request_builder = request_builder.header("Range", range);
