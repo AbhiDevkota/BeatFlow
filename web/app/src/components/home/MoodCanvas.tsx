@@ -158,6 +158,61 @@ for (let k = 0; k <= SPIRAL_COUNT; k++) {
   });
 }
 
+// Pre-compute ECG polyline distances for continuous, subpixel pulse sweep
+const ECG_RAW: Array<[number, number]> = [
+  [0, 0.55],
+  [0.28, 0.55],
+  [0.36, 0.42],
+  [0.44, 0.76],
+  [0.52, 0.18],
+  [0.6, 0.84],
+  [0.67, 0.55],
+  [1, 0.55],
+];
+
+interface EcgSeg {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  start: number;
+  len: number;
+}
+
+const ECG_SEGS: EcgSeg[] = [];
+let totalEcgLen = 0;
+for (let i = 0; i < ECG_RAW.length - 1; i++) {
+  const p1 = ECG_RAW[i]!;
+  const p2 = ECG_RAW[i + 1]!;
+  const dx = p2[0] - p1[0];
+  const dy = p2[1] - p1[1];
+  const len = Math.hypot(dx, dy);
+  ECG_SEGS.push({
+    x1: p1[0],
+    y1: p1[1],
+    x2: p2[0],
+    y2: p2[1],
+    start: totalEcgLen,
+    len,
+  });
+  totalEcgLen += len;
+}
+
+function getEcgPoint(d: number): { x: number; y: number } {
+  const clamped = Math.max(0, Math.min(totalEcgLen, d));
+  for (const seg of ECG_SEGS) {
+    if (clamped <= seg.start + seg.len) {
+      const t = seg.len > 0 ? (clamped - seg.start) / seg.len : 0;
+      return {
+        x: seg.x1 + (seg.x2 - seg.x1) * t,
+        y: seg.y1 + (seg.y2 - seg.y1) * t,
+      };
+    }
+  }
+  const last = ECG_RAW[ECG_RAW.length - 1]!;
+  return { x: last[0], y: last[1] };
+}
+
 export interface MoodCanvasProps {
   moodKey: TopPickMoodKey;
   strokeColor: string;
@@ -476,66 +531,84 @@ export function MoodCanvas({
 
         case 'EVENING': {
           const horizon = 0.62;
-          const sink = 0.1 * (0.5 - 0.5 * Math.cos(TAU * phase));
+          const sink = 0.14 * (0.5 - 0.5 * Math.cos(TAU * phase));
+          const clipY = f.top - side;
+          const clipH = f.y(horizon) - clipY;
+
           ctx.save();
           ctx.beginPath();
-          ctx.rect(f.left - side, f.top - side, side * 3, side * horizon);
+          ctx.rect(f.left - side, clipY, side * 3, clipH);
           ctx.clip();
+
+          // Sinking sun disc dipping below horizon line
           ctx.beginPath();
           ctx.arc(f.x(0.5), f.y(horizon - 0.02 + sink), side * 0.26, 0, TAU);
           ctx.stroke();
           ctx.restore();
 
+          // Horizon line
           ctx.beginPath();
           ctx.moveTo(f.x(0.04), f.y(horizon));
           ctx.lineTo(f.x(0.96), f.y(horizon));
+          ctx.stroke();
+
+          // Shimmering reflection lines
+          const shimmer = 0.75 + 0.25 * (0.5 + 0.5 * wave(phase, 0.2));
+          ctx.save();
+          ctx.globalAlpha = shimmer;
+          ctx.beginPath();
           ctx.moveTo(f.x(0.2), f.y(horizon + 0.11));
           ctx.lineTo(f.x(0.8), f.y(horizon + 0.11));
           ctx.moveTo(f.x(0.36), f.y(horizon + 0.22));
           ctx.lineTo(f.x(0.64), f.y(horizon + 0.22));
           ctx.stroke();
+          ctx.restore();
           break;
         }
 
         case 'FITNESS': {
-          const pts = [
-            [0, 0.55],
-            [0.28, 0.55],
-            [0.36, 0.42],
-            [0.44, 0.76],
-            [0.52, 0.18],
-            [0.6, 0.84],
-            [0.67, 0.55],
-            [1, 0.55],
-          ];
+          // Dim background ECG trace
           ctx.save();
-          ctx.globalAlpha = 0.3;
+          ctx.globalAlpha = 0.25;
           ctx.beginPath();
-          pts.forEach(([x, y], idx) => {
-            if (idx === 0) ctx.moveTo(f.x(x!), f.y(y!));
-            else ctx.lineTo(f.x(x!), f.y(y!));
+          ECG_RAW.forEach(([x, y], idx) => {
+            if (idx === 0) ctx.moveTo(f.x(x), f.y(y));
+            else ctx.lineTo(f.x(x), f.y(y));
           });
           ctx.stroke();
           ctx.restore();
 
-          // Active bright ECG head
-          const headX = (phase * 1.4) % 1.4;
-          const leftX = Math.max(0, headX - 0.4);
-          const rightX = Math.min(1, headX);
-          if (rightX > leftX) {
+          // Continuous, subpixel smooth bright pulse head
+          const head = phase * 1.4 * totalEcgLen;
+          const tail = Math.max(0, head - 0.45 * totalEcgLen);
+          const effectiveHead = Math.min(totalEcgLen, head);
+
+          if (effectiveHead > tail) {
+            ctx.save();
+            ctx.lineWidth = strokeWidth * 1.35;
+            ctx.strokeStyle = strokeColor;
             ctx.beginPath();
-            let started = false;
-            pts.forEach(([x, y]) => {
-              if (x! >= leftX && x! <= rightX) {
-                if (!started) {
-                  ctx.moveTo(f.x(x!), f.y(y!));
-                  started = true;
-                } else {
-                  ctx.lineTo(f.x(x!), f.y(y!));
-                }
+            const startPt = getEcgPoint(tail);
+            ctx.moveTo(f.x(startPt.x), f.y(startPt.y));
+            for (let i = 0; i < ECG_SEGS.length; i++) {
+              const seg = ECG_SEGS[i]!;
+              const segEndDist = seg.start + seg.len;
+              if (segEndDist > tail && segEndDist < effectiveHead) {
+                ctx.lineTo(f.x(seg.x2), f.y(seg.y2));
               }
-            });
+            }
+            const endPt = getEcgPoint(effectiveHead);
+            ctx.lineTo(f.x(endPt.x), f.y(endPt.y));
             ctx.stroke();
+
+            // Bright glowing pulse point at the leading head
+            if (effectiveHead < totalEcgLen) {
+              ctx.fillStyle = strokeColor;
+              ctx.beginPath();
+              ctx.arc(f.x(endPt.x), f.y(endPt.y), strokeWidth * 0.9, 0, TAU);
+              ctx.fill();
+            }
+            ctx.restore();
           }
           break;
         }
@@ -554,7 +627,8 @@ export function MoodCanvas({
         }
 
         case 'HOME': {
-          const house = [
+          // House outline
+          const house: ReadonlyArray<readonly [number, number]> = [
             [0.5, 0.1],
             [0.94, 0.5],
             [0.82, 0.5],
@@ -565,8 +639,8 @@ export function MoodCanvas({
           ];
           ctx.beginPath();
           house.forEach(([x, y], idx) => {
-            if (idx === 0) ctx.moveTo(f.x(x!), f.y(y!));
-            else ctx.lineTo(f.x(x!), f.y(y!));
+            if (idx === 0) ctx.moveTo(f.x(x), f.y(y));
+            else ctx.lineTo(f.x(x), f.y(y));
           });
           ctx.closePath();
           ctx.stroke();
@@ -574,10 +648,43 @@ export function MoodCanvas({
           // Door
           ctx.strokeRect(f.x(0.41), f.y(0.66), side * 0.18, side * 0.26);
 
-          // Glowing window
+          // Chimney on the roof
+          ctx.strokeRect(f.x(0.7), f.y(0.2), side * 0.08, side * 0.14);
+
+          // Cozy smoke curling up from the chimney
+          for (let i = 0; i < 2; i++) {
+            const u = (phase + i * 0.5) % 1;
+            const py = f.y(0.18 - 0.18 * u);
+            const px = f.x(0.74 + 0.035 * Math.sin(TAU * u));
+            const r = side * (0.02 + 0.035 * u);
+            ctx.save();
+            ctx.globalAlpha = Math.sin(Math.PI * u) * 0.65;
+            ctx.beginPath();
+            ctx.arc(px, py, r, 0, TAU);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Warm breathing window light with radiant glow
           const glow = 0.5 + 0.5 * wave(phase, 0);
+          const wx = f.x(0.32);
+          const wy = f.y(0.61);
+
+          // Soft radial light halo cast around the window
+          const halo = ctx.createRadialGradient(wx, wy, side * 0.03, wx, wy, side * 0.22);
+          halo.addColorStop(0, strokeColor);
+          halo.addColorStop(1, 'transparent');
           ctx.save();
-          ctx.globalAlpha = 0.15 + 0.45 * glow;
+          ctx.globalAlpha = 0.35 * glow;
+          ctx.fillStyle = halo;
+          ctx.beginPath();
+          ctx.arc(wx, wy, side * 0.22, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+
+          // Bright window pane
+          ctx.save();
+          ctx.globalAlpha = 0.25 + 0.65 * glow;
           ctx.fillRect(f.x(0.27), f.y(0.56), side * 0.1, side * 0.1);
           ctx.restore();
           ctx.strokeRect(f.x(0.27), f.y(0.56), side * 0.1, side * 0.1);
@@ -586,17 +693,23 @@ export function MoodCanvas({
 
         case 'MORNING': {
           const horizon = 0.72;
-          const sunCenter = f.at(0.5, horizon - 0.03 - 0.05 * (0.5 + 0.5 * wave(phase, 0)));
+          const sunCenter = f.at(0.5, horizon - 0.03 - 0.08 * (0.5 + 0.5 * wave(phase, 0)));
+          const clipY = f.top - side;
+          const clipH = f.y(horizon) - clipY;
+
           ctx.save();
           ctx.beginPath();
-          ctx.rect(f.left - side, f.top - side, side * 3, side * horizon);
+          ctx.rect(f.left - side, clipY, side * 3, clipH);
           ctx.clip();
+
+          // Sun semi-circle
           ctx.beginPath();
           ctx.arc(sunCenter.x, sunCenter.y, side * 0.2, 0, TAU);
           ctx.stroke();
 
+          // 9 Radiant sun rays rotating with the morning light
           for (let k = 0; k < 9; k++) {
-            const angle = Math.PI + ((k + 0.5) * Math.PI) / 9 + phase * 0.35;
+            const angle = Math.PI + ((k + 0.5) * Math.PI) / 9 + phase * 0.45;
             const ax = sunCenter.x + side * 0.28 * Math.cos(angle);
             const ay = sunCenter.y + side * 0.28 * Math.sin(angle);
             const bx = sunCenter.x + side * 0.38 * Math.cos(angle);
@@ -608,6 +721,7 @@ export function MoodCanvas({
           }
           ctx.restore();
 
+          // Horizon line
           ctx.beginPath();
           ctx.moveTo(f.x(0.04), f.y(horizon));
           ctx.lineTo(f.x(0.96), f.y(horizon));
