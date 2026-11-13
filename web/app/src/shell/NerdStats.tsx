@@ -30,22 +30,29 @@ export function NerdStats() {
  */
 export function describeStream(np: NowPlaying): string | null {
   const s = np.stream;
-  if (!s) return null;
+  if (!s && !np.sourceQuality && !np.sourceName) return null;
+  const isDolby = np.sourceQuality === 'DOLBY_ATMOS' || s?.codec?.toLowerCase().includes('dolby');
+  const codec = s?.codec || (isDolby ? 'Dolby Atmos (E-AC-3)' : np.sourceQuality ? 'FLAC' : null);
+  const bitDepth = s?.bitDepth;
+  const sampleRateHz = s?.sampleRateHz;
+  const bitrateKbps = s?.bitrateKbps;
+  const channels = s?.channels ?? (isDolby ? 6 : 2);
+
   const parts = [
-    s.codec,
-    s.bitDepth ? `${s.bitDepth}-bit` : null,
-    s.sampleRateHz ? `${+(s.sampleRateHz / 1000).toFixed(1)} kHz` : null,
-    s.bitrateKbps ? `${s.bitrateKbps} kbps` : null,
-    s.channels
-      ? s.channels === 1
+    codec,
+    bitDepth ? `${bitDepth}-bit` : null,
+    sampleRateHz ? `${+(sampleRateHz / 1000).toFixed(1)} kHz` : null,
+    bitrateKbps ? `${bitrateKbps} kbps` : null,
+    channels
+      ? channels === 1
         ? 'Mono'
-        : s.channels === 2
+        : channels === 2
           ? 'Stereo'
-          : s.channels === 6
+          : channels === 6
             ? '5.1 Surround'
-            : `${s.channels} channels`
+            : `${channels} channels`
       : null,
-    np.sourceName ? `via ${np.sourceName}` : s.itag ? `itag ${s.itag} · ${s.client} ${s.mode}` : s.client ? `via ${s.client}` : null,
+    np.sourceName ? `via ${np.sourceName}` : s?.itag ? `itag ${s.itag} · ${s.client} ${s.mode}` : s?.client ? `via ${s.client}` : null,
     np.upgraded ? '[Upgraded]' : null,
   ];
   return parts.filter(Boolean).join(' · ');

@@ -293,6 +293,10 @@ export interface BridgeMethods {
     params: { addons: any[] };
     result: { saved: boolean; path: string };
   };
+  'engine.setAddons': {
+    params: { addons: any[] };
+    result: { count: number };
+  };
   'engine.getStreamInfo': {
     params: Record<string, never>;
     result: any;

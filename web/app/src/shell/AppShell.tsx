@@ -58,6 +58,15 @@ export function AppShell() {
     window.addEventListener('beatflow:deeplink', onCustomEvent);
     return () => window.removeEventListener('beatflow:deeplink', onCustomEvent);
   }, [navigate]);
+
+  // Synchronize addons with folder config (addons.json) and warm up the Rust engine on desktop
+  useEffect(() => {
+    if (desktop) {
+      void import('@/data/addons/addonStore').then((m) => {
+        void m.syncAddonsWithFolderConfig();
+      });
+    }
+  }, []);
   // Listen Together: pick a party back up after a reload, and keep the player in step with it.
   useEffect(() => {
     resumeSession();

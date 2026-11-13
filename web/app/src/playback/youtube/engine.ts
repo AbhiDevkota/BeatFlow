@@ -183,7 +183,7 @@ export class YouTubeEngine {
           (info.isDolbyAtmos && info.url.includes('manifest'));
 
         if (isDash) {
-          for (const scheme of ['http', 'https']) {
+          for (const scheme of ['http', 'https', 'beatflow']) {
             shaka.net.NetworkingEngine.registerScheme(
               scheme,
               shaka.net.HttpFetchPlugin.parse,

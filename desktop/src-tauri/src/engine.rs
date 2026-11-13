@@ -23,8 +23,10 @@ pub struct TrackPayload {
 
 pub struct BeatflowEngine {
     pub http: reqwest::Client,
+    pub addons: Arc<RwLock<Vec<InstalledAddon>>>,
     pub active_stream: Arc<RwLock<Option<StreamInfo>>>,
     pub original_tracks: Arc<RwLock<HashMap<String, TrackPayload>>>,
+    pub upgraded_streams: Arc<RwLock<HashMap<String, StreamInfo>>>,
     pub reverted_tracks: Arc<RwLock<HashSet<String>>>,
     pub prefer_atmos: Arc<RwLock<bool>>,
     pub auto_upgrade: Arc<RwLock<bool>>,
@@ -38,14 +40,27 @@ impl BeatflowEngine {
             .build()
             .unwrap_or_default();
 
+        let initial_addons = crate::load_addons_from_disk();
+
         Self {
             http,
+            addons: Arc::new(RwLock::new(initial_addons)),
             active_stream: Arc::new(RwLock::new(None)),
             original_tracks: Arc::new(RwLock::new(HashMap::new())),
+            upgraded_streams: Arc::new(RwLock::new(HashMap::new())),
             reverted_tracks: Arc::new(RwLock::new(HashSet::new())),
             prefer_atmos: Arc::new(RwLock::new(true)),
             auto_upgrade: Arc::new(RwLock::new(true)),
         }
+    }
+
+    pub async fn set_addons(&self, addons: Vec<InstalledAddon>) {
+        let mut slot = self.addons.write().await;
+        *slot = addons;
+    }
+
+    pub async fn get_addons(&self) -> Vec<InstalledAddon> {
+        self.addons.read().await.clone()
     }
 
     pub async fn set_prefer_atmos(&self, on: bool) {
@@ -63,11 +78,25 @@ impl BeatflowEngine {
     }
 
     /// Resolves stream specifications for an addon track URI (`addon:{addonId}:{trackId}`).
-    pub async fn resolve_addon_stream(&self, addon_uri: &str, addons: &[InstalledAddon]) -> anyhow::Result<StreamInfo> {
+    pub async fn resolve_addon_stream(&self, addon_uri: &str, addons_override: Option<&[InstalledAddon]>) -> anyhow::Result<StreamInfo> {
         let parts: Vec<&str> = addon_uri.split(':').collect();
         anyhow::ensure!(parts.len() >= 3, "invalid addon track uri: {}", addon_uri);
         let addon_id = parts[1];
         let track_id = parts[2..].join(":");
+
+        // If this track was already upgraded and cached, return it directly
+        if let Some(cached) = self.upgraded_streams.read().await.get(&track_id) {
+            let mut active = self.active_stream.write().await;
+            *active = Some(cached.clone());
+            return Ok(cached.clone());
+        }
+
+        let owned_addons = if addons_override.is_none() {
+            Some(self.addons.read().await.clone())
+        } else {
+            None
+        };
+        let addons: &[InstalledAddon] = addons_override.unwrap_or_else(|| owned_addons.as_deref().unwrap());
 
         let addon = addons.iter().find(|a| a.id == addon_id)
             .ok_or_else(|| anyhow::anyhow!("addon '{}' not found", addon_id))?;
@@ -83,7 +112,7 @@ impl BeatflowEngine {
             title: "".to_string(),
             artist: "".to_string(),
             duration: None,
-            quality: "LOSSLESS".to_string(),
+            quality: manifest.quality.clone(),
             format: "FLAC".to_string(),
             atmos: prefer_atmos,
             stream_url: None,
@@ -102,12 +131,19 @@ impl BeatflowEngine {
     pub async fn upgrade_quality(
         &self,
         track: TrackPayload,
-        addons: &[InstalledAddon],
+        addons_override: Option<&[InstalledAddon]>,
     ) -> anyhow::Result<Option<StreamInfo>> {
         {
             let mut reverted = self.reverted_tracks.write().await;
             reverted.remove(&track.video_id);
         }
+
+        let owned_addons = if addons_override.is_none() {
+            Some(self.addons.read().await.clone())
+        } else {
+            None
+        };
+        let addons: &[InstalledAddon] = addons_override.unwrap_or_else(|| owned_addons.as_deref().unwrap());
 
         let prefer_atmos = *self.prefer_atmos.read().await;
         let stream = hires::find_best_upgrade(
@@ -123,6 +159,9 @@ impl BeatflowEngine {
             let mut orig = self.original_tracks.write().await;
             orig.insert(track.video_id.clone(), track.clone());
 
+            let mut up = self.upgraded_streams.write().await;
+            up.insert(track.video_id.clone(), s.clone());
+
             let mut active = self.active_stream.write().await;
             *active = Some(s.clone());
         }
@@ -136,6 +175,10 @@ impl BeatflowEngine {
             let mut reverted = self.reverted_tracks.write().await;
             reverted.insert(video_id.to_string());
         }
+        {
+            let mut up = self.upgraded_streams.write().await;
+            up.remove(video_id);
+        }
 
         let orig = self.original_tracks.read().await.get(video_id).cloned();
         let mut active = self.active_stream.write().await;
@@ -147,7 +190,7 @@ impl BeatflowEngine {
     pub async fn check_auto_upgrade(
         &self,
         track: TrackPayload,
-        addons: &[InstalledAddon],
+        addons_override: Option<&[InstalledAddon]>,
     ) -> anyhow::Result<Option<StreamInfo>> {
         if !*self.auto_upgrade.read().await {
             return Ok(None);
@@ -159,6 +202,6 @@ impl BeatflowEngine {
             return Ok(None);
         }
 
-        self.upgrade_quality(track, addons).await
+        self.upgrade_quality(track, addons_override).await
     }
 }

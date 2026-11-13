@@ -1,7 +1,7 @@
 //! High-resolution audio & addon engine ported from BitChord-PC (src/hires.rs).
 //!
 //! Provides title cleaning, candidate ranking, Dolby Atmos extraction, and parallel
-//! addon stream resolution for BitFlow Desktop.
+//! addon stream resolution for BeatFlow Desktop.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -16,6 +16,7 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 pub const SEARCH_LIMIT: usize = 25;
 pub const STREAM_TRIES: usize = 3;
+pub const UNKNOWN_SIZE: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +34,8 @@ pub struct StreamInfo {
     pub hires: bool,
     pub badge: String,
     pub url: String,
+    #[serde(default)]
+    pub direct_url: Option<String>,
     pub container: Option<String>,
     pub duration_ms: u64,
 }
@@ -170,7 +173,11 @@ impl AddonClient {
             Err(e) if e.to_string().contains("not found") => Value::Null,
             Err(e) => return Err(e),
         };
-        let stated_url = json.get("url").and_then(Value::as_str).unwrap_or("").trim().to_owned();
+        let stated_url = json.get("url").and_then(Value::as_str)
+            .or_else(|| json.get("streamUrl").and_then(Value::as_str))
+            .or_else(|| json.get("streamURL").and_then(Value::as_str))
+            .or_else(|| json.get("file").and_then(Value::as_str))
+            .unwrap_or("").trim().to_owned();
         let stated_url = if stated_url.is_empty() {
             candidate.stream_url.clone().unwrap_or_default()
         } else {
@@ -224,6 +231,14 @@ impl AddonClient {
 
         let badge = StreamInfo::compute_badge(is_atmos, is_hires, is_lossless, bitrate_kbps);
 
+        // Proxy the stream through beatflow://stream?url=... so Webview <audio> plays it with
+        // User-Agent: BitChord/v1.9.2, full CORS support, and byte-range seeking without 403 UA_BLOCKED.
+        let play_url = if stated_url.starts_with("http://") || stated_url.starts_with("https://") {
+            format!("beatflow://stream?url={}", url_encode(&stated_url))
+        } else {
+            stated_url.clone()
+        };
+
         Ok(Some(StreamInfo {
             source: manifest.name.clone().unwrap_or_else(|| host_of(&self.base)),
             host: host_of(&stated_url),
@@ -237,11 +252,31 @@ impl AddonClient {
             lossless: is_lossless,
             hires: is_hires,
             badge,
-            url: stated_url,
+            url: play_url,
+            direct_url: Some(stated_url),
             container,
             duration_ms,
         }))
     }
+}
+
+pub fn url_encode(input: &str) -> String {
+    let mut encoded = String::new();
+    for b in input.bytes() {
+        if (b >= b'a' && b <= b'z')
+            || (b >= b'A' && b <= b'Z')
+            || (b >= b'0' && b <= b'9')
+            || b == b'-'
+            || b == b'_'
+            || b == b'.'
+            || b == b'~'
+        {
+            encoded.push(b as char);
+        } else {
+            encoded.push_str(&format!("%{:02X}", b));
+        }
+    }
+    encoded
 }
 
 pub fn normalize_base(raw: &str) -> String {
@@ -344,7 +379,11 @@ fn parse_candidate(v: &Value) -> Option<Candidate> {
         quality: v.get("audioQuality").and_then(Value::as_str).unwrap_or("").trim().to_owned(),
         format: v.get("format").and_then(Value::as_str).unwrap_or("").trim().to_owned(),
         atmos: json_is_atmos(v),
-        stream_url: v.get("streamURL").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned),
+        stream_url: v.get("streamURL").and_then(Value::as_str)
+            .or_else(|| v.get("streamUrl").and_then(Value::as_str))
+            .or_else(|| v.get("url").and_then(Value::as_str))
+            .or_else(|| v.get("file").and_then(Value::as_str))
+            .map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned),
     })
 }
 
@@ -392,30 +431,28 @@ fn number_before(text: &str, unit: &str) -> Option<f64> {
     while let Some(found) = lower[from..].find(unit) {
         let at = from + found;
         let mut end = at;
-        while end > 0 && lower[..end].ends_with(' ') {
+        while end > 0 && matches!(lower.as_bytes()[end - 1], b' ' | b'-') {
             end -= 1;
         }
         let mut start = end;
-        while start > 0 {
-            let ch = lower[..start].chars().last()?;
-            if ch.is_ascii_digit() || ch == '.' || ch == ',' {
-                start -= ch.len_utf8();
-            } else {
-                break;
-            }
+        while start > 0 && (lower.as_bytes()[start - 1].is_ascii_digit() || lower.as_bytes()[start - 1] == b'.') {
+            start -= 1;
         }
-        if start < end {
-            let slice = &lower[start..end].replace(',', "");
-            if let Ok(n) = slice.parse::<f64>() {
-                return Some(n);
-            }
+        if start < end
+            && let Ok(n) = lower[start..end].trim_matches('.').parse::<f64>()
+            && n > 0.0
+        {
+            return Some(n);
         }
         from = at + unit.len();
+        if from >= lower.len() {
+            break;
+        }
     }
     None
 }
 
-// ── Searchable Title & Ranking ────────────────────────────────────────────────
+// ── Title / Artist Cleaning & Matching (1-to-1 BitChord-PC) ──────────────────
 
 pub fn searchable_title(title: &str, artist: &str) -> String {
     let (words, versions) = title_parts(title, artist);
@@ -431,9 +468,7 @@ pub fn primary_artist(artist: &str) -> String {
     artist.to_ascii_lowercase().split([',', '&', '/', ';', '·', '|']).next().unwrap_or("").trim().to_owned()
 }
 
-type TitleParts = (String, Vec<String>);
-
-fn title_parts(raw: &str, artist: &str) -> TitleParts {
+pub fn title_parts(raw: &str, artist: &str) -> (String, Vec<String>) {
     let mut versions = BTreeSet::new();
     let mut text = raw.to_ascii_lowercase().replace('&', " and ");
     for _ in 0..3 {
@@ -505,6 +540,49 @@ fn is_artist_name(text: &str, artist: &str) -> bool {
     words.iter().all(|w| credited.contains(w))
 }
 
+pub fn artist_names(value: &str) -> Vec<Vec<String>> {
+    let normalized = value.to_ascii_lowercase().trim().to_owned();
+    if normalized.is_empty() || matches!(normalized.as_str(), "unknown" | "unknown artist" | "unknown artist(s)") {
+        return Vec::new();
+    }
+    normalized
+        .split([',', '&', '/', ';', '·', '|'])
+        .map(|name| {
+            let mut parts: Vec<String> = name.split([' ', '.']).map(clean).filter(|w| w.len() > 1).collect();
+            if parts.is_empty() {
+                parts = vec![name.trim().to_owned()];
+            }
+            parts
+        })
+        .collect::<Vec<Vec<String>>>()
+        .into_iter()
+        .filter(|parts| parts.iter().any(|w| !w.is_empty()))
+        .collect()
+}
+
+pub fn same_artist(first: &[String], second: &[String]) -> bool {
+    if contains_words(first, second) || contains_words(second, first) {
+        return true;
+    }
+    ordered_subset(first, second) || ordered_subset(second, first)
+}
+
+fn ordered_subset(shorter: &[String], longer: &[String]) -> bool {
+    if shorter.is_empty() || shorter.len() >= longer.len() {
+        return false;
+    }
+    let mut at = 0;
+    for word in shorter {
+        let Some(pos) = longer[at..].iter().position(|w| w == word) else { return false };
+        at += pos + 1;
+    }
+    true
+}
+
+fn contains_words(outer: &[String], inner: &[String]) -> bool {
+    !inner.is_empty() && inner.len() <= outer.len() && (0..=outer.len() - inner.len()).any(|start| outer[start..start + inner.len()] == *inner)
+}
+
 fn clean(word: &str) -> String {
     word.chars().filter(|c| c.is_ascii_alphanumeric()).collect()
 }
@@ -516,56 +594,46 @@ const VERSION_WORDS: &[&str] = &[
 ];
 
 pub fn rank(candidates: Vec<Candidate>, title: &str, artist: &str, duration: Option<u32>, prefer_atmos: bool) -> Vec<Candidate> {
-    let (wanted_title, wanted_versions) = title_parts(title, artist);
-    let mut scored: Vec<(i32, Candidate)> = candidates
-        .into_iter()
-        .filter_map(|c| {
-            let score = score_candidate(&c, &wanted_title, &wanted_versions, artist, duration, prefer_atmos)?;
-            Some((score, c))
-        })
-        .collect();
-    scored.sort_by(|(sa, _), (sb, _)| sb.cmp(sa));
-    scored.into_iter().map(|(_, c)| c).collect()
+    let mut scored: Vec<(Candidate, i32)> = candidates.into_iter().filter_map(|c| score(&c, title, artist, duration, prefer_atmos).map(|s| (c, s))).collect();
+    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.into_iter().map(|(c, _)| c).collect()
 }
 
-fn score_candidate(candidate: &Candidate, wanted_title: &str, wanted_versions: &[String], artist: &str, duration: Option<u32>, prefer_atmos: bool) -> Option<i32> {
-    let (cand_title, cand_versions) = title_parts(&candidate.title, &candidate.artist);
-    if wanted_title.is_empty() || cand_title.is_empty() {
+fn score(candidate: &Candidate, title: &str, artist: &str, duration: Option<u32>, prefer_atmos: bool) -> Option<i32> {
+    let wanted = title_parts(title, artist);
+    let got = title_parts(&candidate.title, &candidate.artist);
+    if wanted.0.is_empty() {
         return None;
     }
-    if wanted_title != cand_title && !cand_title.contains(wanted_title) && !wanted_title.contains(&cand_title) {
+    if wanted.0 != got.0 && !got.0.contains(&wanted.0) && !wanted.0.contains(&got.0) {
         return None;
     }
-    if wanted_versions != cand_versions {
+    if wanted.1 != got.1 {
         return None;
     }
-    let cand_primary = primary_artist(&candidate.artist);
-    let wanted_primary = primary_artist(artist);
-    let artist_match = wanted_primary.is_empty() || cand_primary.is_empty() || cand_primary.contains(&wanted_primary) || wanted_primary.contains(&cand_primary);
-    if !artist_match {
+    let target_artists = artist_names(artist);
+    let candidate_artists = artist_names(&candidate.artist);
+    if !target_artists.is_empty()
+        && (candidate_artists.is_empty() || !target_artists.iter().any(|w| candidate_artists.iter().any(|g| same_artist(w, g))))
+    {
         return None;
     }
-
+    if let (Some(wanted), Some(got)) = (duration, candidate.duration)
+        && wanted.abs_diff(got) > 30
+    {
+        return None;
+    }
+    let artist_score = match (target_artists.is_empty() || candidate_artists.is_empty(), target_artists == candidate_artists) {
+        (true, _) => 0,
+        (false, true) => 30,
+        (false, false) => 20,
+    };
     let duration_score = match (duration, candidate.duration) {
-        (Some(w), Some(g)) => {
-            let diff = w.abs_diff(g);
-            if diff > 30 {
-                return None;
-            }
-            (20 - diff as i32).max(0)
-        }
-        _ => 10,
+        (Some(wanted), Some(got)) => (20 - wanted.abs_diff(got) as i32).max(0),
+        _ => 0,
     };
-
-    let quality_score = if candidate.atmos {
-        if prefer_atmos { 50 } else { 20 }
-    } else if has_lossless_word(&candidate.quality) || has_lossless_word(&candidate.format) {
-        30
-    } else {
-        10
-    };
-
-    Some(100 + duration_score + quality_score)
+    let atmos_score = if prefer_atmos && candidate.atmos { 15 } else { 0 };
+    Some(100 + artist_score + duration_score + atmos_score)
 }
 
 // ── Multi-Addon Orchestrator ───────────────────────────────────────────────────
@@ -638,4 +706,79 @@ pub async fn find_best_upgrade(
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base_is_normalized_like_the_addon_protocol() {
+        assert_eq!(normalize_base(" https://music.example/addon/ "), "https://music.example/addon");
+        assert_eq!(normalize_base("https://music.example/addon/manifest.json"), "https://music.example/addon");
+        assert_eq!(normalize_base("https://music.example/addon/MANIFEST.JSON"), "https://music.example/addon");
+        assert_eq!(normalize_base("https://music.example"), "https://music.example");
+    }
+
+    #[test]
+    fn quality_labels_are_read() {
+        assert_eq!(number_before("Hi-Res FLAC 24-bit 96 kHz", "khz"), Some(96.0));
+        assert_eq!(number_before("Hi-Res FLAC 24-bit 96 kHz", "bit"), Some(24.0));
+        assert_eq!(number_before("320 kbps", "kbps"), Some(320.0));
+        assert_eq!(number_before("lossless", "kbps"), None);
+    }
+
+    #[test]
+    fn a_row_matches_only_its_own_recording() {
+        let target = |title: &str| Candidate {
+            id: "1".into(),
+            title: title.into(),
+            artist: "Carly Rae Jepsen".into(),
+            duration: Some(200),
+            quality: String::new(),
+            format: String::new(),
+            atmos: false,
+            stream_url: None,
+        };
+        let pick = |title: &str| rank(vec![target(title)], "Call Me Maybe", "Carly Rae Jepsen", Some(202), false).len();
+        assert_eq!(pick("Call Me Maybe"), 1);
+        assert_eq!(pick("Call Me Maybe (Live at Wembley)"), 0);
+        assert_eq!(pick("Call Me Maybe (Official Audio)"), 1);
+    }
+
+    #[test]
+    fn a_copy_without_the_artist_is_not_the_song() {
+        let row = |artist: &str| Candidate {
+            id: "1".into(),
+            title: "Call Me Maybe".into(),
+            artist: artist.into(),
+            duration: Some(200),
+            quality: String::new(),
+            format: String::new(),
+            atmos: false,
+            stream_url: None,
+        };
+        let pick = |artist: &str| rank(vec![row(artist)], "Call Me Maybe", "Carly Rae Jepsen", Some(202), false).len();
+        assert_eq!(pick(""), 0);
+        assert_eq!(pick("Someone Else"), 0);
+        assert_eq!(pick("Carly Rae Jepsen"), 1);
+        assert_eq!(pick("Carly Jepsen"), 1);
+    }
+
+    #[test]
+    fn the_badge_says_what_the_stream_is() {
+        assert_eq!(StreamInfo::compute_badge(false, false, true, Some(1411)), "Lossless");
+        assert_eq!(StreamInfo::compute_badge(false, true, true, Some(4608)), "Hi-Res Lossless");
+        assert_eq!(StreamInfo::compute_badge(false, false, false, Some(320)), "320 kbps");
+        assert_eq!(StreamInfo::compute_badge(true, false, false, Some(768)), "Dolby Atmos");
+    }
+
+    #[test]
+    fn atmos_rows_are_read_off_the_names_addons_use() {
+        let row = |json: Value| json_is_atmos(&json);
+        assert!(row(serde_json::json!({"audioMode": "DOLBY_ATMOS"})));
+        assert!(row(serde_json::json!({"audioModes": ["STEREO", "DOLBY_ATMOS"]})));
+        assert!(row(serde_json::json!({"quality": "E-AC-3 JOC"})));
+        assert!(!row(serde_json::json!({"audioMode": "STEREO", "format": "FLAC"})));
+    }
 }

@@ -20,7 +20,7 @@ pub fn engine() -> &'static BeatflowEngine {
   ENGINE.get_or_init(BeatflowEngine::new)
 }
 
-fn load_addons_from_disk() -> Vec<InstalledAddon> {
+pub fn load_addons_from_disk() -> Vec<InstalledAddon> {
   let dir = get_music_dir();
   let config_file = dir.join("addons.json");
   if config_file.exists() {
@@ -150,6 +150,7 @@ fn url_decode(input: &str) -> String {
   String::from_utf8_lossy(&bytes).into_owned()
 }
 
+#[allow(dead_code)]
 fn url_encode(input: &str) -> String {
   let mut encoded = String::new();
   for b in input.bytes() {
@@ -577,72 +578,49 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
     }
     "addon.manifest" => {
       let base_url = params.get("baseUrl").and_then(|v| v.as_str()).ok_or("Missing baseUrl")?;
-      let base = base_url.trim_end_matches('/');
-      let manifest_url = if base.ends_with("/manifest.json") {
-        base.to_string()
-      } else {
-        format!("{}/manifest.json", base)
-      };
-      let resp = client()
-        .get(&manifest_url)
-        .header("User-Agent", "BitChord/v1.9.2")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-      if !resp.status().is_success() {
-        return Err(format!("Addon manifest returned HTTP {}", resp.status()));
-      }
-      let text = resp.text().await.map_err(|e| e.to_string())?;
-      let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON manifest: {e}"))?;
-      Ok(parsed)
+      let addon_client = hires::AddonClient::new(base_url).ok_or("Invalid addon baseUrl")?;
+      let _manifest = addon_client.manifest(client()).await.map_err(|e| e.to_string())?;
+      let manifest_url = format!("{}/manifest.json", addon_client.base);
+      let json = hires::get_json(client(), &manifest_url).await.map_err(|e| e.to_string())?;
+      Ok(json)
     }
     "addon.search" => {
       let base_url = params.get("baseUrl").and_then(|v| v.as_str()).ok_or("Missing baseUrl")?;
       let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
-      let quality = params.get("quality").and_then(|v| v.as_str()).unwrap_or("lossless");
-      let atmos = params.get("atmos").and_then(|v| v.as_str()).unwrap_or("auto");
-      let base = base_url.trim_end_matches('/').trim_end_matches("/manifest.json");
-      let search_url = format!("{}/search?q={}&quality={}&atmos={}", base, url_encode(query), quality, atmos);
-      let resp = client()
-        .get(&search_url)
-        .header("User-Agent", "BitChord/v1.9.2")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-      if !resp.status().is_success() {
-        return Err(format!("Addon search returned HTTP {}", resp.status()));
-      }
-      let text = resp.text().await.map_err(|e| e.to_string())?;
-      let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON from search: {e}"))?;
-      Ok(parsed)
+      let atmos = params.get("atmos").and_then(|v| v.as_str()).map(|s| s != "off").unwrap_or(true);
+      let addon_client = hires::AddonClient::new(base_url).ok_or("Invalid addon baseUrl")?;
+      let manifest = addon_client.manifest(client()).await.map_err(|e| e.to_string())?;
+      let candidates = addon_client.search(client(), &manifest, query, atmos).await.map_err(|e| e.to_string())?;
+      Ok(json!(candidates))
     }
     "addon.stream" => {
       let base_url = params.get("baseUrl").and_then(|v| v.as_str()).ok_or("Missing baseUrl")?;
       let track_id = params.get("trackId").and_then(|v| v.as_str()).ok_or("Missing trackId")?;
-      let quality = params.get("quality").and_then(|v| v.as_str()).unwrap_or("lossless");
-      let atmos = params.get("atmos").and_then(|v| v.as_str()).unwrap_or("auto");
-      let base = base_url.trim_end_matches('/').trim_end_matches("/manifest.json");
-      let stream_url = format!("{}/stream/{}?quality={}&atmos={}", base, track_id, quality, atmos);
-      let resp = client()
-        .get(&stream_url)
-        .header("User-Agent", "BitChord/v1.9.2")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-      if !resp.status().is_success() {
-        return Err(format!("Addon stream returned HTTP {}", resp.status()));
-      }
-      let text = resp.text().await.map_err(|e| e.to_string())?;
-      let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON from stream: {e}"))?;
-      Ok(parsed)
+      let atmos = params.get("atmos").and_then(|v| v.as_str()).map(|s| s != "off").unwrap_or(true);
+      let addon_client = hires::AddonClient::new(base_url).ok_or("Invalid addon baseUrl")?;
+      let manifest = addon_client.manifest(client()).await.map_err(|e| e.to_string())?;
+      let candidate = hires::Candidate {
+        id: track_id.to_string(),
+        title: String::new(),
+        artist: String::new(),
+        duration: None,
+        quality: manifest.quality.clone(),
+        format: String::new(),
+        atmos,
+        stream_url: None,
+      };
+      let stream_info = addon_client.stream(client(), &manifest, &candidate, atmos).await.map_err(|e| e.to_string())?;
+      let stream_info = stream_info.ok_or("Addon returned no playable stream")?;
+      Ok(json!(stream_info))
     }
     "addons.loadConfig" => {
       let dir = get_music_dir();
       let config_file = dir.join("addons.json");
       if config_file.exists() {
         let content = fs::read_to_string(&config_file).map_err(|e| e.to_string())?;
-        let parsed: Value = serde_json::from_str(&content).unwrap_or(json!([]));
-        Ok(parsed)
+        let parsed: Vec<InstalledAddon> = serde_json::from_str(&content).unwrap_or_default();
+        engine().set_addons(parsed.clone()).await;
+        Ok(json!(parsed))
       } else {
         Ok(json!([]))
       }
@@ -653,7 +631,16 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let addons_val = params.get("addons").cloned().unwrap_or(json!([]));
       let formatted = serde_json::to_string_pretty(&addons_val).map_err(|e| e.to_string())?;
       fs::write(&config_file, formatted).map_err(|e| e.to_string())?;
+      if let Ok(addons) = serde_json::from_value::<Vec<InstalledAddon>>(addons_val) {
+        engine().set_addons(addons).await;
+      }
       Ok(json!({ "saved": true, "path": config_file.to_string_lossy() }))
+    }
+    "engine.setAddons" => {
+      let addons_val = params.get("addons").cloned().unwrap_or(json!([]));
+      let addons: Vec<InstalledAddon> = serde_json::from_value(addons_val).unwrap_or_default();
+      engine().set_addons(addons.clone()).await;
+      Ok(json!({ "count": addons.len() }))
     }
     "engine.getStreamInfo" => {
       let info = engine().get_stream_info().await;
@@ -677,7 +664,6 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let thumbnail = params.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
       let album = params.get("album").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-      let addons = load_addons_from_disk();
       let track = TrackPayload {
         video_id: video_id.clone(),
         title,
@@ -688,13 +674,13 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       };
 
       if video_id.starts_with("addon:") {
-        let stream = engine().resolve_addon_stream(&video_id, &addons).await.map_err(|e| e.to_string())?;
+        let stream = engine().resolve_addon_stream(&video_id, None).await.map_err(|e| e.to_string())?;
         Ok(json!({
           "stream": stream,
           "isAddon": true
         }))
       } else {
-        let upgrade = engine().check_auto_upgrade(track, &addons).await.unwrap_or(None);
+        let upgrade = engine().check_auto_upgrade(track, None).await.unwrap_or(None);
         Ok(json!({
           "upgrade": upgrade,
           "isAddon": false
@@ -718,8 +704,7 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
         album,
       };
 
-      let addons = load_addons_from_disk();
-      let upgraded_stream = engine().upgrade_quality(track, &addons).await.map_err(|e| e.to_string())?;
+      let upgraded_stream = engine().upgrade_quality(track, None).await.map_err(|e| e.to_string())?;
 
       Ok(json!({
         "upgraded": upgraded_stream.is_some(),
@@ -869,95 +854,180 @@ pub fn run() {
   }
 
   tauri::Builder::default()
-    .register_uri_scheme_protocol("beatflow", |_app, req| {
+    .register_asynchronous_uri_scheme_protocol("beatflow", |_ctx, req, responder| {
       let uri = req.uri().to_string();
-      log::info!("Handling beatflow protocol request: {}", uri);
+      let method = req.method().to_string();
+      let range_header = req.headers().get("range").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
-      // Handle beatflow://local/<filename> or beatflow://localhost/local/<filename>
-      if uri.contains("/local/") || uri.starts_with("beatflow://local/") {
-        let raw_file = if let Some(idx) = uri.find("/local/") {
-          &uri[idx + 7..]
-        } else {
-          uri.trim_start_matches("beatflow://local/")
-        };
-        let file_name = url_decode(raw_file);
-        let music_dir = get_music_dir();
-        let target_file = music_dir.join(&file_name);
+      tauri::async_runtime::spawn(async move {
+        if method == "OPTIONS" {
+          let resp = tauri::http::Response::builder()
+            .status(204)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+            .header("Access-Control-Allow-Headers", "*")
+            .body(Vec::new())
+            .unwrap();
+          responder.respond(resp);
+          return;
+        }
 
-        if target_file.exists() && target_file.is_file() {
-          if let Ok(mut f) = fs::File::open(&target_file) {
-            let file_size = f.metadata().map(|m| m.len()).unwrap_or(0);
-            let ext = target_file.extension().and_then(|e| e.to_str()).unwrap_or("");
-            let mime = mime_for_ext(ext);
-
-            // Handle range header for seekable media
-            let range_header = req.headers().get("range").and_then(|v| v.to_str().ok());
-            if let Some(range_str) = range_header {
-              if let Some(range_part) = range_str.strip_prefix("bytes=") {
-                let parts: Vec<&str> = range_part.split('-').collect();
-                let start: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
-                let end: u64 = parts
-                  .get(1)
-                  .and_then(|s| s.parse().ok())
-                  .unwrap_or(file_size.saturating_sub(1));
-                let end = end.min(file_size.saturating_sub(1));
-
-                if start <= end && start < file_size {
-                  let chunk_len = end - start + 1;
-                  let mut buffer = vec![0u8; chunk_len as usize];
-                  if f.seek(SeekFrom::Start(start)).is_ok() && f.read_exact(&mut buffer).is_ok() {
-                    return tauri::http::Response::builder()
-                      .status(206)
-                      .header("Content-Type", mime)
-                      .header("Content-Range", format!("bytes {}-{}/{}", start, end, file_size))
-                      .header("Content-Length", chunk_len.to_string())
-                      .header("Accept-Ranges", "bytes")
-                      .header("Access-Control-Allow-Origin", "*")
-                      .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-                      .body(buffer)
-                      .unwrap();
-                  }
-                }
+        // Handle beatflow://stream?url=<target> or beatflow://localhost/stream?url=<target>
+        if uri.contains("/stream?") || uri.starts_with("beatflow://stream?") {
+          let query = if let Some(idx) = uri.find('?') {
+            &uri[idx + 1..]
+          } else {
+            ""
+          };
+          let mut target_url = String::new();
+          for pair in query.split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+              if k == "url" {
+                target_url = url_decode(v);
+                break;
               }
             }
+          }
 
-            // Full content
-            let mut buffer = Vec::new();
-            if f.read_to_end(&mut buffer).is_ok() {
-              return tauri::http::Response::builder()
-                .status(200)
-                .header("Content-Type", mime)
-                .header("Content-Length", buffer.len().to_string())
-                .header("Accept-Ranges", "bytes")
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-                .body(buffer)
-                .unwrap();
+          if !target_url.is_empty() {
+            let mut request_builder = client()
+              .get(&target_url)
+              .header("User-Agent", hires::USER_AGENT);
+
+            if let Some(ref range) = range_header {
+              request_builder = request_builder.header("Range", range);
+            }
+
+            match request_builder.send().await {
+              Ok(upstream_resp) => {
+                let status = upstream_resp.status().as_u16();
+                let ct = upstream_resp.headers().get("content-type").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+                let cr = upstream_resp.headers().get("content-range").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+                let bytes = upstream_resp.bytes().await.unwrap_or_default().to_vec();
+
+                let mut resp_builder = tauri::http::Response::builder()
+                  .status(status)
+                  .header("Access-Control-Allow-Origin", "*")
+                  .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                  .header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
+                  .header("Accept-Ranges", "bytes")
+                  .header("Content-Length", bytes.len().to_string());
+
+                if let Some(content_type) = ct {
+                  resp_builder = resp_builder.header("Content-Type", content_type);
+                }
+                if let Some(content_range) = cr {
+                  resp_builder = resp_builder.header("Content-Range", content_range);
+                }
+
+                responder.respond(resp_builder.body(bytes).unwrap());
+                return;
+              }
+              Err(err) => {
+                log::warn!("Stream proxy request failed for {}: {}", target_url, err);
+                let resp = tauri::http::Response::builder()
+                  .status(502)
+                  .header("Access-Control-Allow-Origin", "*")
+                  .header("Content-Type", "text/plain")
+                  .body(format!("Proxy error: {err}").into_bytes())
+                  .unwrap();
+                responder.respond(resp);
+                return;
+              }
             }
           }
         }
 
-        return tauri::http::Response::builder()
-          .status(404)
-          .header("Access-Control-Allow-Origin", "*")
-          .header("Content-Type", "text/plain")
-          .body("File not found in BeatFlow music folder".as_bytes().to_vec())
-          .unwrap();
-      }
+        // Handle beatflow://local/<filename> or beatflow://localhost/local/<filename>
+        if uri.contains("/local/") || uri.starts_with("beatflow://local/") {
+          let raw_file = if let Some(idx) = uri.find("/local/") {
+            &uri[idx + 7..]
+          } else {
+            uri.trim_start_matches("beatflow://local/")
+          };
+          let file_name = url_decode(raw_file);
+          let music_dir = get_music_dir();
+          let target_file = music_dir.join(&file_name);
 
-      let json = json!({
-        "status": "ok",
-        "uri": uri,
-        "scheme": "beatflow"
+          if target_file.exists() && target_file.is_file() {
+            if let Ok(mut f) = fs::File::open(&target_file) {
+              let file_size = f.metadata().map(|m| m.len()).unwrap_or(0);
+              let ext = target_file.extension().and_then(|e| e.to_str()).unwrap_or("");
+              let mime = mime_for_ext(ext);
+
+              if let Some(ref range_str) = range_header {
+                if let Some(range_part) = range_str.strip_prefix("bytes=") {
+                  let parts: Vec<&str> = range_part.split('-').collect();
+                  let start: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+                  let end: u64 = parts
+                    .get(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(file_size.saturating_sub(1));
+                  let end = end.min(file_size.saturating_sub(1));
+
+                  if start <= end && start < file_size {
+                    let chunk_len = end - start + 1;
+                    let mut buffer = vec![0u8; chunk_len as usize];
+                    if f.seek(SeekFrom::Start(start)).is_ok() && f.read_exact(&mut buffer).is_ok() {
+                      let resp = tauri::http::Response::builder()
+                        .status(206)
+                        .header("Content-Type", mime)
+                        .header("Content-Range", format!("bytes {}-{}/{}", start, end, file_size))
+                        .header("Content-Length", chunk_len.to_string())
+                        .header("Accept-Ranges", "bytes")
+                        .header("Access-Control-Allow-Origin", "*")
+                        .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                        .body(buffer)
+                        .unwrap();
+                      responder.respond(resp);
+                      return;
+                    }
+                  }
+                }
+              }
+
+              let mut buffer = Vec::new();
+              if f.read_to_end(&mut buffer).is_ok() {
+                let resp = tauri::http::Response::builder()
+                  .status(200)
+                  .header("Content-Type", mime)
+                  .header("Content-Length", buffer.len().to_string())
+                  .header("Accept-Ranges", "bytes")
+                  .header("Access-Control-Allow-Origin", "*")
+                  .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                  .body(buffer)
+                  .unwrap();
+                responder.respond(resp);
+                return;
+              }
+            }
+          }
+
+          let resp = tauri::http::Response::builder()
+            .status(404)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Type", "text/plain")
+            .body("File not found in BeatFlow music folder".as_bytes().to_vec())
+            .unwrap();
+          responder.respond(resp);
+          return;
+        }
+
+        let json = json!({
+          "status": "ok",
+          "uri": uri,
+          "scheme": "beatflow"
+        });
+        let body = serde_json::to_vec(&json).unwrap_or_default();
+        let resp = tauri::http::Response::builder()
+          .status(200)
+          .header("Access-Control-Allow-Origin", "*")
+          .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+          .header("Content-Type", "application/json")
+          .body(body)
+          .unwrap();
+        responder.respond(resp);
       });
-      let body = serde_json::to_vec(&json).unwrap_or_default();
-      tauri::http::Response::builder()
-        .status(200)
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        .header("Content-Type", "application/json")
-        .body(body)
-        .unwrap()
     })
     .invoke_handler(tauri::generate_handler![
       bridge_call,

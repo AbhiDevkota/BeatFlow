@@ -67,6 +67,7 @@ export function saveInstalledAddons(addons: InstalledAddon[]): void {
       void desktopBridge().call('addons.saveConfig', { addons }).catch((err) => {
         console.warn('[AddonStore] Failed to write addons.json in music folder:', err);
       });
+      void desktopBridge().call('engine.setAddons', { addons }).catch(() => {});
     } catch {}
   }
 }
@@ -82,11 +83,13 @@ export async function syncAddonsWithFolderConfig(): Promise<InstalledAddon[]> {
     const folderConfig = await bridge.call('addons.loadConfig', {});
     if (Array.isArray(folderConfig) && folderConfig.length > 0) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(folderConfig));
+      void bridge.call('engine.setAddons', { addons: folderConfig }).catch(() => {});
       return folderConfig as InstalledAddon[];
     } else {
       const current = getInstalledAddons();
       if (current.length > 0) {
         await bridge.call('addons.saveConfig', { addons: current });
+        void bridge.call('engine.setAddons', { addons: current }).catch(() => {});
       }
       return current;
     }
@@ -331,9 +334,12 @@ export async function resolveAddonStreamInfo(
   });
 
   const raw = res as any;
-  const streamUrl = typeof raw === 'string' ? raw : raw.url || raw.streamUrl || raw.stream || raw.file || '';
+  let streamUrl = typeof raw === 'string' ? raw : raw.url || raw.streamUrl || raw.stream || raw.file || '';
   if (!streamUrl) {
     throw new Error(`Addon ${addon.name} returned empty stream URL`);
+  }
+  if (isDesktopApp() && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
+    streamUrl = `beatflow://stream?url=${encodeURIComponent(streamUrl)}`;
   }
 
   const rawCodec = String(raw.codec || raw.fileCodec || raw.format || '').toLowerCase();
