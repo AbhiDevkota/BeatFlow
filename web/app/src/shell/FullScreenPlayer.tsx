@@ -15,6 +15,7 @@ import {
 } from '@/components/icons/Transport';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
 import { FavoriteButton } from '@/components/music/FavoriteButton';
+import { BeatLoader } from '@/components/music/BeatLoader';
 import { TrackMenu } from '@/components/music/TrackMenu';
 import { albumHref } from '@/components/music/links';
 import { MotionArtwork } from '@/components/music/MotionArtwork';
@@ -84,6 +85,7 @@ const skip = `${transportButton} size-12 text-primary`;
 function Transport() {
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
   const playing = usePlayer((s) => s.status === 'playing' || s.status === 'buffering');
+  const isBuffering = usePlayer((s) => s.status === 'buffering' || s.status === 'loading');
   const hasNext = usePlayer((s) => s.index + 1 < s.queue.length || s.repeat !== 'off' || (s.autoplay && s.index >= 0));
   const shuffle = usePlayer((s) => s.shuffle);
   const repeat = usePlayer((s) => s.repeat);
@@ -105,7 +107,13 @@ function Transport() {
         </div>
 
         <button className={`${transportButton} size-14 text-primary`} disabled={!hasTrack} aria-label={playing ? 'Pause' : 'Play'} onClick={togglePlay}>
-          {playing ? <PauseIcon size={46} /> : <PlayIcon size={46} />}
+          {isBuffering ? (
+            <BeatLoader size={28} />
+          ) : playing ? (
+            <PauseIcon size={46} />
+          ) : (
+            <PlayIcon size={46} />
+          )}
         </button>
 
         <div className="grid size-12 place-items-center">

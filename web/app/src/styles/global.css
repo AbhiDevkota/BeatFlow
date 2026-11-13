@@ -49,6 +49,10 @@
   --animate-eq-bar-1: eq-1 0.75s ease-in-out infinite alternate;
   --animate-eq-bar-2: eq-2 0.85s ease-in-out 0.15s infinite alternate;
   --animate-eq-bar-3: eq-3 0.7s ease-in-out 0.3s infinite alternate;
+  --animate-beat-buffer-1: beat-buffer-1 0.95s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
+  --animate-beat-buffer-2: beat-buffer-2 0.95s cubic-bezier(0.45, 0.05, 0.55, 0.95) -0.22s infinite alternate;
+  --animate-beat-buffer-3: beat-buffer-3 0.95s cubic-bezier(0.45, 0.05, 0.55, 0.95) -0.44s infinite alternate;
+  --animate-beat-buffer-4: beat-buffer-4 0.95s cubic-bezier(0.45, 0.05, 0.55, 0.95) -0.66s infinite alternate;
 
   /* Station and Mood animations matching Android BeatFlow */
   --animate-station-breath: station-breath 9s ease-in-out infinite alternate;
@@ -174,6 +178,26 @@
   @keyframes eq-3 {
     0% { transform: scaleY(0.4); }
     100% { transform: scaleY(0.95); }
+  }
+  @keyframes beat-buffer-1 {
+    0% { transform: scaleY(0.25); opacity: 0.45; }
+    50% { transform: scaleY(0.85); opacity: 0.85; }
+    100% { transform: scaleY(0.35); opacity: 0.55; }
+  }
+  @keyframes beat-buffer-2 {
+    0% { transform: scaleY(0.35); opacity: 0.55; }
+    50% { transform: scaleY(1); opacity: 1; }
+    100% { transform: scaleY(0.25); opacity: 0.45; }
+  }
+  @keyframes beat-buffer-3 {
+    0% { transform: scaleY(0.22); opacity: 0.4; }
+    50% { transform: scaleY(0.9); opacity: 0.95; }
+    100% { transform: scaleY(0.42); opacity: 0.6; }
+  }
+  @keyframes beat-buffer-4 {
+    0% { transform: scaleY(0.4); opacity: 0.6; }
+    50% { transform: scaleY(0.75); opacity: 0.8; }
+    100% { transform: scaleY(0.2); opacity: 0.4; }
   }
 
   /* Station and Mood keyframes */

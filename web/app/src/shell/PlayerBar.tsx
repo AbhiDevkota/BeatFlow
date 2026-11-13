@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BeatLoader } from '@/components/music/BeatLoader';
 import {
   BackwardIcon,
   ForwardIcon,
@@ -38,6 +39,7 @@ export function PlayerBar() {
     return entry && entry.videoId === s.nowPlaying?.videoId ? entry : null;
   });
   const playing = usePlayer((s) => s.status === 'playing' || s.status === 'buffering');
+  const isBuffering = usePlayer((s) => s.status === 'buffering' || s.status === 'loading');
   const hasNext = usePlayer((s) => s.index + 1 < s.queue.length || s.repeat !== 'off' || (s.autoplay && s.index >= 0));
   const shuffle = usePlayer((s) => s.shuffle);
   const repeat = usePlayer((s) => s.repeat);
@@ -64,7 +66,13 @@ export function PlayerBar() {
               <BackwardIcon size={26} />
             </button>
             <button className={transport} disabled={!hasTrack} aria-label={playing ? 'Pause' : 'Play'} onClick={togglePlay}>
-              {playing ? <PauseIcon size={28} /> : <PlayIcon size={28} />}
+              {isBuffering ? (
+                <BeatLoader size={18} />
+              ) : playing ? (
+                <PauseIcon size={28} />
+              ) : (
+                <PlayIcon size={28} />
+              )}
             </button>
             <button className={transport} disabled={!hasTrack || !hasNext} aria-label="Next" onClick={next}>
               <ForwardIcon size={26} />

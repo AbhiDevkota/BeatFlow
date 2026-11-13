@@ -1,6 +1,7 @@
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { PlayIcon } from '@/components/icons/Transport';
 import { PlayingBars } from '@/components/home/PlayingBars';
+import { BeatLoader } from '@/components/music/BeatLoader';
 import type { MusicItem } from '@/data/music/types';
 import { Artwork } from './Artwork';
 import { ExplicitBadge } from './ExplicitBadge';
@@ -64,7 +65,8 @@ function PlayPlatter({ item }: { item: MusicItem }) {
 function LockupArtwork({ item, width, aspect }: { item: MusicItem; width: number; aspect: number }) {
   const href = hrefFor(item);
   const current = usePlayer((s) => s.nowPlaying?.videoId === item.id);
-  const isPlaying = usePlayer((s) => s.nowPlaying?.videoId === item.id && (s.status === 'playing' || s.status === 'buffering'));
+  const isPlaying = usePlayer((s) => s.nowPlaying?.videoId === item.id && s.status === 'playing');
+  const isBuffering = usePlayer((s) => s.nowPlaying?.videoId === item.id && (s.status === 'buffering' || s.status === 'loading'));
 
   return (
     <div className="group/art relative rounded-artwork-md">
@@ -74,10 +76,10 @@ function LockupArtwork({ item, width, aspect }: { item: MusicItem; width: number
       ) : (
         <button className={overlayLink} aria-label={`Play ${item.title}`} onClick={() => playTrack(item)} />
       )}
-      {/* Playing bars indicator matching Android's SearchPlayingBars */}
-      {isPlaying && (
+      {/* Playing or buffering bars indicator */}
+      {(isPlaying || isBuffering) && (
         <div className="pointer-events-none absolute inset-0 z-2 grid place-items-center group-hover/art:opacity-0 transition-opacity">
-          <PlayingBars size={28} />
+          {isBuffering ? <BeatLoader size={26} color="#ffffff" /> : <PlayingBars size={28} />}
         </div>
       )}
       {/* Hover scrim and platter (report §2: --lockupHoverBGColor, opacity .1s ease-in). */}

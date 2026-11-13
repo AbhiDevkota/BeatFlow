@@ -1,7 +1,8 @@
 // Registers <am-lyrics>.
 import '@uimaxbai/am-lyrics/am-lyrics.js';
-import { Check, ChevronLeft, ChevronRight, ListMusic, Loader2, Minus, MoreHorizontal, Settings2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ListMusic, Minus, MoreHorizontal, Settings2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { BeatLoader } from '@/components/music/BeatLoader';
 import { useCanvas } from '@/data/spotify/canvas';
 import { getBridge } from '@/extension/bridge';
 import { Menu, MenuHeader, MenuItem, MenuSeparator } from '@/components/Menu';
@@ -91,27 +92,31 @@ const HIDE_DOWNLOAD = '.download-controls { display: none !important; }';
 
 /**
  * Moves translate and pronounce (romanization) buttons to the downside, centered,
- * as a floating glass pill that smoothly appears on mouse hover and hides otherwise.
+ * as a floating glass pill that smoothly appears on mouse movement / hover and hides
+ * when idle or when not hovering over lyrics.
  */
 const DOWNSIDE_CONTROLS =
   ':host { transform: translateZ(0) !important; }' +
   ' .lyrics-header { display: flex !important; position: fixed !important; inset: auto auto 24px 50% !important;' +
-  ' transform: translateX(-50%) !important; z-index: 20 !important; width: auto !important; height: auto !important;' +
-  ' padding: 0 !important; margin: 0 !important; opacity: 0.45 !important; pointer-events: auto !important;' +
-  ' transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important; }' +
-  ' :host(:hover) .lyrics-header, :host(:focus-within) .lyrics-header, .lyrics-container:hover .lyrics-header, .lyrics-header:hover {' +
-  ' opacity: 1 !important; pointer-events: auto !important; }' +
-  ' .header-controls { display: flex !important; align-items: center !important; gap: 6px !important;' +
-  ' padding: 4px 8px !important; border-radius: 9999px !important; background: rgba(24, 24, 27, 0.72) !important;' +
+  ' transform: translateX(-50%) translateY(10px) !important; z-index: 20 !important; width: auto !important; height: auto !important;' +
+  ' padding: 0 !important; margin: 0 !important; opacity: 0 !important; pointer-events: none !important;' +
+  ' transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important; }' +
+  ' :host([data-controls-visible]) .lyrics-header, .lyrics-header:hover, .lyrics-header:focus-within {' +
+  ' opacity: 1 !important; pointer-events: auto !important; transform: translateX(-50%) translateY(0) !important; }' +
+  ' .header-controls { display: flex !important; align-items: center !important; gap: 8px !important;' +
+  ' padding: 6px 12px !important; border-radius: 9999px !important; background: rgba(18, 18, 22, 0.85) !important;' +
   ' backdrop-filter: blur(24px) saturate(200%) !important; -webkit-backdrop-filter: blur(24px) saturate(200%) !important;' +
-  ' border: 0.5px solid rgba(255, 255, 255, 0.16) !important; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36) !important; }' +
-  ' .header-controls .download-button { width: 34px !important; height: 34px !important; border-radius: 50% !important;' +
-  ' color: rgba(255, 255, 255, 0.85) !important; background: transparent !important; display: inline-flex !important;' +
+  ' border: 1px solid rgba(255, 255, 255, 0.28) !important; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 1px rgba(255, 255, 255, 0.4) !important; }' +
+  ' .header-controls .download-button { width: 38px !important; height: 38px !important; border-radius: 50% !important;' +
+  ' color: #ffffff !important; background: rgba(255, 255, 255, 0.12) !important; display: inline-flex !important;' +
   ' align-items: center !important; justify-content: center !important; cursor: pointer !important;' +
-  ' transition: color 0.15s ease, background 0.15s ease, transform 0.12s ease !important; }' +
-  ' .header-controls .download-button:hover { color: #ffffff !important; background: rgba(255, 255, 255, 0.16) !important;' +
-  ' transform: scale(1.05) !important; }' +
-  ' .header-controls .download-button.active { color: #ffffff !important; background: rgba(255, 255, 255, 0.28) !important; }';
+  ' transition: color 0.15s ease, background 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease !important; }' +
+  ' .header-controls .download-button svg { width: 20px !important; height: 20px !important; stroke: #ffffff !important; color: #ffffff !important;' +
+  ' stroke-width: 2.2 !important; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)) !important; }' +
+  ' .header-controls .download-button:hover { color: #ffffff !important; background: rgba(255, 255, 255, 0.25) !important;' +
+  ' transform: scale(1.08) !important; }' +
+  ' .header-controls .download-button.active { color: #ffffff !important; background: rgba(255, 255, 255, 0.38) !important;' +
+  ' box-shadow: 0 0 14px rgba(255, 255, 255, 0.35) !important; }';
 
 /**
  * am-lyrics, exactly as it is, fed our TTML and a steered clock (prompt §10.2).
@@ -145,27 +150,70 @@ function LyricsView({ ttml, full }: { ttml: string; full: boolean }) {
       if (typeof timestamp === 'number') usePlayer.getState().seek(timestamp / 1000);
     };
     el.addEventListener('line-click', onLineClick);
+
+    // Fade-in on hover/mouse move and auto-hide on 2.5s idle
+    let idleTimer: number | undefined;
+    const hidePills = () => {
+      el.removeAttribute('data-controls-visible');
+    };
+    const showPills = () => {
+      el.setAttribute('data-controls-visible', 'true');
+      if (idleTimer) window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(hidePills, 2500);
+    };
+
+    const unmounted = new AbortController();
+    const target = host.current;
+
+    el.addEventListener('pointermove', showPills, { passive: true, signal: unmounted.signal });
+    el.addEventListener('pointerdown', showPills, { passive: true, signal: unmounted.signal });
+    el.addEventListener('pointerleave', () => {
+      if (idleTimer) window.clearTimeout(idleTimer);
+      hidePills();
+    }, { passive: true, signal: unmounted.signal });
+
+    if (target) {
+      target.addEventListener('pointermove', showPills, { passive: true, signal: unmounted.signal });
+      target.addEventListener('pointerdown', showPills, { passive: true, signal: unmounted.signal });
+      target.addEventListener('pointerleave', () => {
+        if (idleTimer) window.clearTimeout(idleTimer);
+        hidePills();
+      }, { passive: true, signal: unmounted.signal });
+    }
+
     host.current?.append(el);
     element.current = el;
-    const unmounted = new AbortController();
     void Promise.resolve(el.updateComplete).then(() => {
       const root = el.shadowRoot;
       if (!root) return;
       const sheet = new CSSStyleSheet();
       sheet.replaceSync(HIDE_FOOTER + FAR_LINES + FULL_SIZE + HIDE_DOWNLOAD + DOWNSIDE_CONTROLS);
       root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+
+      const header = root.querySelector('.lyrics-header');
+      if (header) {
+        header.addEventListener('pointerenter', () => {
+          if (idleTimer) window.clearTimeout(idleTimer);
+          el.setAttribute('data-controls-visible', 'true');
+        }, { signal: unmounted.signal });
+        header.addEventListener('pointerleave', () => {
+          if (idleTimer) window.clearTimeout(idleTimer);
+          idleTimer = window.setTimeout(hidePills, 2500);
+        }, { signal: unmounted.signal });
+      }
+
       // The full-screen column fades its top edge, but am-lyrics' toolbar
       // (romanize, translate, download) sits at the top of the same scroller
       // until the lines push it away. The fade grows with the scroll instead,
       // so the toolbar is never under it.
       const scroller = root.querySelector('.lyrics-container');
-      const target = host.current;
       if (!full || !scroller || !target) return;
       const fade = () => target.style.setProperty('--lyrics-top-fade', `${Math.min(scroller.scrollTop, 80)}px`);
       fade();
       scroller.addEventListener('scroll', fade, { passive: true, signal: unmounted.signal });
     });
     return () => {
+      if (idleTimer) window.clearTimeout(idleTimer);
       unmounted.abort();
       el.removeEventListener('line-click', onLineClick);
       el.remove();
@@ -330,7 +378,7 @@ function ProviderPicker({ current, full }: { current: LyricsSourceId | null; ful
                     checked={picked === id}
                     trailing={
                       state === 'pending' ? (
-                        <Loader2 size={13} className="animate-spin" />
+                        <BeatLoader size={13} />
                       ) : state === 'found' ? (
                         <Check size={13} />
                       ) : state === 'missing' ? (
@@ -477,7 +525,7 @@ export function LyricsPanel({ variant = 'panel' }: { variant?: 'panel' | 'full' 
         </div>
       ) : (lyrics.isPending && lyrics.fetchStatus !== 'idle') || (result && !fontReady) ? (
         <div className={empty}>
-          <Loader2 size={20} className="animate-spin" />
+          <BeatLoader size={26} />
         </div>
       ) : result ? (
         <LyricsView ttml={result.ttml} full={full} />

@@ -1,8 +1,9 @@
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { LogoMark } from '@/components/icons/LogoMark';
 import { PlayingBars } from '@/components/home/PlayingBars';
+import { BeatLoader } from '@/components/music/BeatLoader';
 import { shelfHeader, shelfSection } from '@/components/shelf';
 import type { TopPickItem } from '@/lib/homeLayout';
 import { playMoodStation } from '@/lib/playMood';
@@ -203,7 +204,7 @@ export function TopPicksShelf({ picks }: TopPicksShelfProps) {
                   {/* BeatFlow Logo Badge (Top-Right): Loader | Playing Bars | Logo */}
                   <div className="absolute top-3 right-3 z-2 size-6 grid place-items-center rounded-full bg-black/30 backdrop-blur-md text-white/90">
                     {isLoading ? (
-                      <Loader2 size={13} className="animate-spin text-white" />
+                      <BeatLoader size={14} color="#ffffff" />
                     ) : isCurrentPlaying ? (
                       <PlayingBars size={18} className="bg-transparent" />
                     ) : (

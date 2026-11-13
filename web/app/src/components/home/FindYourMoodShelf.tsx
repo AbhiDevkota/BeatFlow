@@ -1,7 +1,8 @@
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LogoMark } from '@/components/icons/LogoMark';
 import { PlayingBars } from '@/components/home/PlayingBars';
+import { BeatLoader } from '@/components/music/BeatLoader';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { shelfHeader, shelfSection } from '@/components/shelf';
 import { CORE_MOODS, type MoodDefinition } from '@/lib/homeLayout';
@@ -117,7 +118,7 @@ export function FindYourMoodShelf() {
                     {/* BeatFlow Badge (Top-Right): Loader | Playing Bars | Logo */}
                     <div className="absolute top-2.5 right-2.5 size-5.5 grid place-items-center rounded-full bg-black/25 text-white/95 backdrop-blur-xs">
                       {isLoading ? (
-                        <Loader2 size={13} className="animate-spin text-white" />
+                        <BeatLoader size={14} color="#ffffff" />
                       ) : isCurrentPlaying ? (
                         <PlayingBars size={18} className="bg-transparent" />
                       ) : (

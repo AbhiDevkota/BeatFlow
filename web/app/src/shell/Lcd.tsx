@@ -2,6 +2,7 @@ import { Maximize2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { LogoMark } from '@/components/icons/LogoMark';
+import { BeatLoader } from '@/components/music/BeatLoader';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
 import { VideoSurface } from '@/components/music/VideoSurface';
 import { albumHref, artistHref } from '@/components/music/links';
@@ -163,7 +164,10 @@ export function Lcd() {
             {track?.explicit && <ExplicitBadge size={11} />}
           </div>
         ) : (
-          <span className={titleClass}>{status === 'loading' ? 'Loading…' : ''}</span>
+          <span className={`${titleClass} flex items-center gap-1.5`}>
+            {status === 'loading' && <BeatLoader size={12} />}
+            <span>{status === 'loading' ? 'Loading…' : ''}</span>
+          </span>
         )}
         {status === 'error' ? (
           <span className="truncate type-callout-medium text-key">{error}</span>
