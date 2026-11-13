@@ -31,5 +31,6 @@ describe('resolveDeepLink', () => {
     expect(resolveDeepLink('beatflow://library/songs')).toBe('/library/songs');
     expect(resolveDeepLink('beatflow://downloads')).toBe('/downloads');
     expect(resolveDeepLink('beatflow://spotify')).toBe('/spotify');
+    expect(resolveDeepLink('beatflow://moods')).toBe('/moods');
   });
 });

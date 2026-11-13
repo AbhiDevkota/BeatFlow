@@ -86,6 +86,11 @@ export function resolveDeepLink(rawUrl: string): string | null {
     return `/${path}`;
   }
 
+  // 11. Moods: beatflow://moods
+  if (path === 'moods' || path.startsWith('moods/')) {
+    return `/${path}`;
+  }
+
   // Generic fallback if path is provided
   if (path) {
     return `/${path}${search}`;

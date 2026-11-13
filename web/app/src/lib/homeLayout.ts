@@ -90,7 +90,28 @@ export type TopPickMoodKey =
   | 'FEEL_GOOD'
   | 'FOCUS'
   | 'HEARTBREAK'
-  | 'LOVE';
+  | 'LOVE'
+  | 'AFTER_HOURS'
+  | 'ALONE_TIME'
+  | 'CHILL'
+  | 'COMMUTING'
+  | 'EATING_COOKING'
+  | 'EVENING'
+  | 'FITNESS'
+  | 'GAMING'
+  | 'HOME'
+  | 'MORNING'
+  | 'MOTIVATION'
+  | 'OUTDOORS'
+  | 'PARTY'
+  | 'SLEEP'
+  | 'SOCIAL'
+  | 'SPORTS'
+  | 'SUMMERTIME'
+  | 'HOLIDAY'
+  | 'WEEKEND'
+  | 'WELLBEING'
+  | 'WORK';
 
 export interface MoodDefinition {
   key: TopPickMoodKey;
@@ -100,74 +121,298 @@ export interface MoodDefinition {
   background: string;
   stroke: string;
   eyebrowColor: string;
+  isCoreMood?: boolean;
 }
 
-/** Apple's seven Find Your Mood stations, with exact colors from Android BeatFlow. */
-export const CORE_MOODS: readonly MoodDefinition[] = [
+/** All 28 Find Your Mood stations and activities matching Android BeatFlow TopPickMood.entries. */
+export const ALL_MOODS: readonly MoodDefinition[] = [
+  // Core Find Your Mood stations (7)
   {
     key: 'ENERGY',
     title: 'Energy',
-    subtitle: 'High energy beats to keep you moving',
+    subtitle: 'High-voltage tracks to keep you moving.',
     params: 'ggMPOg1uX2lRZUZiMnNrQnJW',
     background: '#1EBD38',
     stroke: '#E2F6A2',
     eyebrowColor: '#E8FF9C',
+    isCoreMood: true,
   },
   {
     key: 'RELAX',
     title: 'Relax',
-    subtitle: 'Calm sounds to unwind and decompress',
+    subtitle: 'Easy, soothing sounds to slow things down.',
     params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
     background: '#31AFF3',
     stroke: '#B4E9FF',
     eyebrowColor: '#D6F3FF',
+    isCoreMood: true,
   },
   {
     key: 'FEELING_BLUE',
     title: 'Feeling Blue',
-    subtitle: 'Comforting tracks for melancholic moments',
+    subtitle: 'Sad songs for when you need them.',
     params: 'ggMPOg1uX0JLQ0gySWZKZVY1',
     background: '#253AB2',
     stroke: '#6CC4FF',
     eyebrowColor: '#A9DBFF',
+    isCoreMood: true,
   },
   {
     key: 'FEEL_GOOD',
-    title: 'Feel-Good',
-    subtitle: 'Upbeat tracks to brighten your day',
+    title: 'Feel Good',
+    subtitle: 'Bright, upbeat songs to lift the day.',
     params: 'ggMPOg1uXzZQbDB5eThLRTQ3',
     background: '#F2A900',
     stroke: '#FFE8A0',
     eyebrowColor: '#FFF27A',
+    isCoreMood: true,
   },
   {
     key: 'FOCUS',
     title: 'Focus',
-    subtitle: 'Concentration music without distraction',
+    subtitle: 'Steady music to keep you in the zone.',
     params: 'ggMPOg1uX0NvNGNhWThMYWRh',
     background: '#F28400',
     stroke: '#FFD6A4',
     eyebrowColor: '#FFE2B8',
+    isCoreMood: true,
   },
   {
     key: 'HEARTBREAK',
     title: 'Heartbreak',
-    subtitle: 'Songs for emotional healing',
+    subtitle: 'Breakup anthems, one tear at a time.',
     params: 'ggMPOg1uX0JLQ0gySWZKZVY1',
     background: '#EA3520',
     stroke: '#FFA690',
     eyebrowColor: '#FFC9BC',
+    isCoreMood: true,
   },
   {
     key: 'LOVE',
     title: 'Love',
-    subtitle: 'Romantic melodies and passionate rhythms',
+    subtitle: 'Romantic songs for the moment.',
     params: 'ggMPOg1uX0FzQ2FhZWtUY211',
     background: '#F34CA0',
     stroke: '#FFB8DC',
     eyebrowColor: '#FFD0EA',
+    isCoreMood: true,
+  },
+
+  // Moods and Activities (21)
+  {
+    key: 'AFTER_HOURS',
+    title: 'After Hours',
+    subtitle: 'Late-night grooves for when the city goes quiet.',
+    params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
+    background: '#3A1F78',
+    stroke: '#C9B6FF',
+    eyebrowColor: '#DCC8FF',
+    isCoreMood: false,
+  },
+  {
+    key: 'ALONE_TIME',
+    title: 'Alone Time',
+    subtitle: 'Mellow songs for time to yourself.',
+    params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
+    background: '#2C6E8C',
+    stroke: '#A9E2F5',
+    eyebrowColor: '#C5EFFB',
+    isCoreMood: false,
+  },
+  {
+    key: 'CHILL',
+    title: 'Chill',
+    subtitle: 'Laid-back sounds to take it easy.',
+    params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
+    background: '#138A86',
+    stroke: '#A6F0E6',
+    eyebrowColor: '#C6F7F0',
+    isCoreMood: false,
+  },
+  {
+    key: 'COMMUTING',
+    title: 'Commuting',
+    subtitle: 'The right soundtrack for the road.',
+    params: 'ggMPOg1uX044Z2o5WERLckpU',
+    background: '#17855F',
+    stroke: '#A8EFD0',
+    eyebrowColor: '#C8F7E0',
+    isCoreMood: false,
+  },
+  {
+    key: 'EATING_COOKING',
+    title: 'Eating & Cooking',
+    subtitle: 'Warm, easy music for the kitchen and the table.',
+    params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
+    background: '#D9621A',
+    stroke: '#FFD3A8',
+    eyebrowColor: '#FFE4C8',
+    isCoreMood: false,
+  },
+  {
+    key: 'EVENING',
+    title: 'Evening',
+    subtitle: 'Gentle songs to wind the day down.',
+    params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
+    background: '#2A3A8C',
+    stroke: '#B8C6FF',
+    eyebrowColor: '#D4DEFF',
+    isCoreMood: false,
+  },
+  {
+    key: 'FITNESS',
+    title: 'Fitness',
+    subtitle: 'Hard-hitting tracks to push you further.',
+    params: 'ggMPOg1uX09LWkhnTjRGRUJh',
+    background: '#8DB014',
+    stroke: '#EFFFA8',
+    eyebrowColor: '#F5FFC4',
+    isCoreMood: false,
+  },
+  {
+    key: 'GAMING',
+    title: 'Gaming',
+    subtitle: 'Soundtracks to level up to.',
+    params: 'ggMPOg1uX3NmUVV4Vzl3WGQ0',
+    background: '#239A2A',
+    stroke: '#B8FFB0',
+    eyebrowColor: '#D4FFCE',
+    isCoreMood: false,
+  },
+  {
+    key: 'HOME',
+    title: 'Home',
+    subtitle: 'Easy listening for a slow day in.',
+    params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
+    background: '#0E8A6C',
+    stroke: '#A8F2DB',
+    eyebrowColor: '#C8F9E8',
+    isCoreMood: false,
+  },
+  {
+    key: 'MORNING',
+    title: 'Morning',
+    subtitle: 'Bright songs to start the day right.',
+    params: 'ggMPOg1uXzZQbDB5eThLRTQ3',
+    background: '#F08C1A',
+    stroke: '#FFE2A6',
+    eyebrowColor: '#FFEDC4',
+    isCoreMood: false,
+  },
+  {
+    key: 'MOTIVATION',
+    title: 'Motivation',
+    subtitle: 'Anthems to get you up and going.',
+    params: 'ggMPOg1uX2lRZUZiMnNrQnJW',
+    background: '#C01E4A',
+    stroke: '#FFB3C6',
+    eyebrowColor: '#FFD0DE',
+    isCoreMood: false,
+  },
+  {
+    key: 'OUTDOORS',
+    title: 'Outdoors',
+    subtitle: 'Music for fresh air and open roads.',
+    params: 'ggMPOg1uX09LWkhnTjRGRUJh',
+    background: '#4C8A1E',
+    stroke: '#D4F5A8',
+    eyebrowColor: '#E4F9C4',
+    isCoreMood: false,
+  },
+  {
+    key: 'PARTY',
+    title: 'Party',
+    subtitle: 'Crowd-pleasers to keep the night going.',
+    params: 'ggMPOg1uX0pmQ0s2V0JRclZs',
+    background: '#C2287A',
+    stroke: '#FFFFE0',
+    eyebrowColor: '#FFF5E8',
+    isCoreMood: false,
+  },
+  {
+    key: 'SLEEP',
+    title: 'Sleep',
+    subtitle: 'Soft, calming sounds to drift off to.',
+    params: 'ggMPOg1uX1MxaFQ3Z0JMZkN4',
+    background: '#26266E',
+    stroke: '#C2C6FF',
+    eyebrowColor: '#D8DCFF',
+    isCoreMood: false,
+  },
+  {
+    key: 'SOCIAL',
+    title: 'Social',
+    subtitle: 'Songs everyone in the room will know.',
+    params: 'ggMPOg1uX0pmQ0s2V0JRclZs',
+    background: '#E0507A',
+    stroke: '#FFD0DE',
+    eyebrowColor: '#FFE2EB',
+    isCoreMood: false,
+  },
+  {
+    key: 'SPORTS',
+    title: 'Sports',
+    subtitle: 'Game-day energy, start to finish.',
+    params: 'ggMPOg1uX2lRZUZiMnNrQnJW',
+    background: '#1C6CD0',
+    stroke: '#B8D8FF',
+    eyebrowColor: '#D0E4FF',
+    isCoreMood: false,
+  },
+  {
+    key: 'SUMMERTIME',
+    title: 'Summertime Sounds',
+    subtitle: 'Sunny songs for long, warm days.',
+    params: 'ggMPOg1uXzZQbDB5eThLRTQ3',
+    background: '#FF8C00',
+    stroke: '#FFE6A8',
+    eyebrowColor: '#FFF0C4',
+    isCoreMood: false,
+  },
+  {
+    key: 'HOLIDAY',
+    title: 'Holiday',
+    subtitle: 'Festive favourites for the season.',
+    params: 'ggMPOg1uXzZQbDB5eThLRTQ3',
+    background: '#C62828',
+    stroke: '#FFC8C8',
+    eyebrowColor: '#FFDEDE',
+    isCoreMood: false,
+  },
+  {
+    key: 'WEEKEND',
+    title: 'Weekend',
+    subtitle: 'Feel-good music for your days off.',
+    params: 'ggMPOg1uX0pmQ0s2V0JRclZs',
+    background: '#7A3CC2',
+    stroke: '#E2CCFF',
+    eyebrowColor: '#EEDEFF',
+    isCoreMood: false,
+  },
+  {
+    key: 'WELLBEING',
+    title: 'Wellbeing',
+    subtitle: 'Calm music for mindfulness and yoga.',
+    params: 'ggMPOg1uX1JOQWZFeDByc2Jm',
+    background: '#36A98A',
+    stroke: '#C6F7E6',
+    eyebrowColor: '#DEFBF0',
+    isCoreMood: false,
+  },
+  {
+    key: 'WORK',
+    title: 'Work',
+    subtitle: 'Steady instrumentals to get things done.',
+    params: 'ggMPOg1uX0NvNGNhWThMYWRh',
+    background: '#3E63C9',
+    stroke: '#C4D2FF',
+    eyebrowColor: '#DCE4FF',
+    isCoreMood: false,
   },
 ] as const;
+
+/** Apple's seven Find Your Mood stations, with exact colors from Android BeatFlow. */
+export const CORE_MOODS: readonly MoodDefinition[] = ALL_MOODS.slice(0, 7);
 
 /** Chooses a mood station based on the current hour of the day. */
 export function pickMoodForNow(date = new Date()): MoodDefinition {

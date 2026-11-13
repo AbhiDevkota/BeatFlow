@@ -45,7 +45,7 @@ export function FindYourMoodShelf() {
       <div className={`${shelfHeader} justify-between`}>
         <h2 className="type-title-2-emphasized">Find Your Mood</h2>
         <PrefetchLink
-          to="/explore"
+          to="/moods"
           className="group/all inline-flex items-center gap-0.5 text-sm font-medium text-key-accent hover:underline"
         >
           Show all
