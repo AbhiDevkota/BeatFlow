@@ -183,16 +183,22 @@ export class YouTubeEngine {
           (info.isDolbyAtmos && info.url.includes('manifest'));
 
         if (isDash) {
-          for (const scheme of ['http', 'https', 'beatflow']) {
+          for (const scheme of ['http', 'https']) {
             shaka.net.NetworkingEngine.registerScheme(
               scheme,
               shaka.net.HttpFetchPlugin.parse,
               shaka.net.NetworkingEngine.PluginPriority.FALLBACK,
             );
           }
+          if (player.getMediaElement() !== this.audio) {
+            await player.attach(this.audio);
+          }
           await player.load(info.url, startSec);
         } else {
           await player.unload();
+          try {
+            await player.detach();
+          } catch {}
           this.audio.src = info.url;
           if (startSec > 0) {
             const applySeek = () => {
@@ -254,6 +260,9 @@ export class YouTubeEngine {
       ) {
         const player = await this.ensurePlayer();
         await player.unload();
+        try {
+          await player.detach();
+        } catch {}
         this.adapter?.dispose();
         this.adapter = null;
         this.current = { videoId, client: 'WEB' as PlayerClientName, signed: false };

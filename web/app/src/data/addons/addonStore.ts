@@ -334,12 +334,9 @@ export async function resolveAddonStreamInfo(
   });
 
   const raw = res as any;
-  let streamUrl = typeof raw === 'string' ? raw : raw.url || raw.streamUrl || raw.stream || raw.file || '';
+  const streamUrl = typeof raw === 'string' ? raw : raw.url || raw.streamUrl || raw.stream || raw.file || '';
   if (!streamUrl) {
     throw new Error(`Addon ${addon.name} returned empty stream URL`);
-  }
-  if (isDesktopApp() && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
-    streamUrl = `beatflow://stream?url=${encodeURIComponent(streamUrl)}`;
   }
 
   const rawCodec = String(raw.codec || raw.fileCodec || raw.format || '').toLowerCase();

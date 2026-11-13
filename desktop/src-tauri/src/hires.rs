@@ -231,13 +231,7 @@ impl AddonClient {
 
         let badge = StreamInfo::compute_badge(is_atmos, is_hires, is_lossless, bitrate_kbps);
 
-        // Proxy the stream through beatflow://stream?url=... so Webview <audio> plays it with
-        // User-Agent: BitChord/v1.9.2, full CORS support, and byte-range seeking without 403 UA_BLOCKED.
-        let play_url = if stated_url.starts_with("http://") || stated_url.starts_with("https://") {
-            format!("beatflow://stream?url={}", url_encode(&stated_url))
-        } else {
-            stated_url.clone()
-        };
+        let play_url = stated_url.clone();
 
         Ok(Some(StreamInfo {
             source: manifest.name.clone().unwrap_or_else(|| host_of(&self.base)),
