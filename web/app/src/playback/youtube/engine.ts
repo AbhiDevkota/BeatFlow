@@ -194,7 +194,18 @@ export class YouTubeEngine {
         } else {
           await player.unload();
           this.audio.src = info.url;
-          this.audio.currentTime = startSec;
+          if (startSec > 0) {
+            const applySeek = () => {
+              try {
+                this.audio.currentTime = startSec;
+              } catch {}
+            };
+            if (this.audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+              applySeek();
+            } else {
+              this.audio.addEventListener('loadedmetadata', applySeek, { once: true });
+            }
+          }
         }
         if (autoplay) {
           await this.audio.play().catch((error: unknown) => {
@@ -249,7 +260,18 @@ export class YouTubeEngine {
         this.direct = null;
 
         this.audio.src = videoId;
-        this.audio.currentTime = startSec;
+        if (startSec > 0) {
+          const applySeek = () => {
+            try {
+              this.audio.currentTime = startSec;
+            } catch {}
+          };
+          if (this.audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+            applySeek();
+          } else {
+            this.audio.addEventListener('loadedmetadata', applySeek, { once: true });
+          }
+        }
         if (autoplay) {
           await this.audio.play().catch((error: unknown) => {
             if (error instanceof DOMException && error.name === 'NotAllowedError') {
@@ -565,19 +587,36 @@ export class YouTubeEngine {
   /** Resolves once the element has data to play, or rejects after the timeout. */
   private firstAudio(generation: number): Promise<void> {
     const audio = this.audio;
-    if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return Promise.resolve();
+    if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA || (!audio.paused && audio.currentTime > 0)) {
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
-      const done = () => {
+      let settled = false;
+      const cleanup = () => {
         clearTimeout(timer);
         audio.removeEventListener('canplay', done);
+        audio.removeEventListener('playing', done);
+        audio.removeEventListener('timeupdate', done);
+      };
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
         if (generation !== this.generation) reject(new SupersededError('Replaced by a newer load'));
         else resolve();
       };
       const timer = setTimeout(() => {
-        audio.removeEventListener('canplay', done);
-        reject(new Error(`no audio within ${FIRST_AUDIO_TIMEOUT_MS / 1000}s`));
+        if (settled) return;
+        cleanup();
+        if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA || !audio.paused) {
+          resolve();
+        } else {
+          reject(new Error(`no audio within ${FIRST_AUDIO_TIMEOUT_MS / 1000}s`));
+        }
       }, FIRST_AUDIO_TIMEOUT_MS);
       audio.addEventListener('canplay', done);
+      audio.addEventListener('playing', done);
+      audio.addEventListener('timeupdate', done);
     });
   }
 

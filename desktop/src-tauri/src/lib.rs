@@ -872,27 +872,35 @@ pub fn run() {
           return;
         }
 
-        // Handle beatflow://stream?url=<target> or beatflow://localhost/stream?url=<target>
-        if uri.contains("/stream?") || uri.starts_with("beatflow://stream?") {
-          let query = if let Some(idx) = uri.find('?') {
-            &uri[idx + 1..]
-          } else {
-            ""
-          };
+        // Handle beatflow://stream?url=<target> or beatflow://stream/?url=<target> or beatflow://localhost/stream?url=<target>
+        let is_stream = uri.contains("stream") && uri.contains("url=");
+        if is_stream {
           let mut target_url = String::new();
-          for pair in query.split('&') {
-            if let Some((k, v)) = pair.split_once('=') {
-              if k == "url" {
-                target_url = url_decode(v);
-                break;
-              }
+          if let Some(idx) = uri.find("url=") {
+            let raw_val = &uri[idx + 4..];
+            let val = if let Some(amp_idx) = raw_val.find('&') {
+              &raw_val[..amp_idx]
+            } else {
+              raw_val
+            };
+            target_url = url_decode(val);
+            if target_url.starts_with("http%3A") || target_url.starts_with("https%3A") {
+              target_url = url_decode(&target_url);
             }
           }
 
           if !target_url.is_empty() {
-            let mut request_builder = client()
-              .get(&target_url)
-              .header("User-Agent", hires::USER_AGENT);
+            let is_head = method == "HEAD";
+            let req_builder = if is_head {
+              client().head(&target_url)
+            } else {
+              client().get(&target_url)
+            };
+
+            let mut request_builder = req_builder
+              .header("User-Agent", hires::USER_AGENT)
+              .header("Accept", "*/*")
+              .header("Accept-Encoding", "identity");
 
             if let Some(ref range) = range_header {
               request_builder = request_builder.header("Range", range);
@@ -903,7 +911,85 @@ pub fn run() {
                 let status = upstream_resp.status().as_u16();
                 let ct = upstream_resp.headers().get("content-type").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
                 let cr = upstream_resp.headers().get("content-range").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
-                let bytes = upstream_resp.bytes().await.unwrap_or_default().to_vec();
+                let cl = upstream_resp.headers().get("content-length").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+                let bytes = if is_head {
+                  Vec::new()
+                } else {
+                  upstream_resp.bytes().await.unwrap_or_default().to_vec()
+                };
+
+                let effective_mime = if let Some(ref content_type) = ct {
+                  if content_type.is_empty()
+                    || content_type.contains("octet-stream")
+                    || content_type.contains("text/plain")
+                    || content_type.contains("text/html")
+                  {
+                    let clean_path = target_url.split('?').next().unwrap_or("").split('#').next().unwrap_or("");
+                    let ext = clean_path.rsplit('.').next().unwrap_or("");
+                    if is_audio_ext(ext) {
+                      mime_for_ext(ext).to_string()
+                    } else if target_url.contains(".mpd") {
+                      "application/dash+xml".to_string()
+                    } else if target_url.contains(".m3u8") {
+                      "application/vnd.apple.mpegurl".to_string()
+                    } else {
+                      "audio/flac".to_string()
+                    }
+                  } else {
+                    content_type.clone()
+                  }
+                } else {
+                  let clean_path = target_url.split('?').next().unwrap_or("").split('#').next().unwrap_or("");
+                  let ext = clean_path.rsplit('.').next().unwrap_or("");
+                  if is_audio_ext(ext) {
+                    mime_for_ext(ext).to_string()
+                  } else if target_url.contains(".mpd") {
+                    "application/dash+xml".to_string()
+                  } else {
+                    "audio/flac".to_string()
+                  }
+                };
+
+                // If client requested a byte range but upstream returned 200 OK (did not slice), slice manually
+                if !is_head {
+                  if let Some(ref range) = range_header {
+                    if status == 200 && range.starts_with("bytes=") {
+                      let range_part = range.trim_start_matches("bytes=").trim();
+                      let parts: Vec<&str> = range_part.split('-').collect();
+                      let file_size = bytes.len() as u64;
+                      let start: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+                      let end: u64 = parts
+                        .get(1)
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(file_size.saturating_sub(1));
+                      let end = end.min(file_size.saturating_sub(1));
+
+                      if start <= end && start < file_size {
+                        let chunk_len = (end - start + 1) as usize;
+                        let sliced = bytes[start as usize..start as usize + chunk_len].to_vec();
+                        let resp = tauri::http::Response::builder()
+                          .status(206)
+                          .header("Access-Control-Allow-Origin", "*")
+                          .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                          .header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
+                          .header("Accept-Ranges", "bytes")
+                          .header("Content-Type", effective_mime)
+                          .header("Content-Range", format!("bytes {}-{}/{}", start, end, file_size))
+                          .header("Content-Length", chunk_len.to_string())
+                          .body(sliced)
+                          .unwrap();
+                        responder.respond(resp);
+                        return;
+                      }
+                    }
+                  }
+                }
+
+                let content_len = if is_head {
+                  cl.unwrap_or_else(|| bytes.len().to_string())
+                } else {
+                  bytes.len().to_string()
+                };
 
                 let mut resp_builder = tauri::http::Response::builder()
                   .status(status)
@@ -911,11 +997,9 @@ pub fn run() {
                   .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
                   .header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
                   .header("Accept-Ranges", "bytes")
-                  .header("Content-Length", bytes.len().to_string());
+                  .header("Content-Type", effective_mime)
+                  .header("Content-Length", content_len);
 
-                if let Some(content_type) = ct {
-                  resp_builder = resp_builder.header("Content-Type", content_type);
-                }
                 if let Some(content_range) = cr {
                   resp_builder = resp_builder.header("Content-Range", content_range);
                 }
@@ -939,9 +1023,10 @@ pub fn run() {
         }
 
         // Handle beatflow://local/<filename> or beatflow://localhost/local/<filename>
-        if uri.contains("/local/") || uri.starts_with("beatflow://local/") {
-          let raw_file = if let Some(idx) = uri.find("/local/") {
-            &uri[idx + 7..]
+        let is_local = uri.contains("local/") || uri.starts_with("beatflow://local");
+        if is_local {
+          let raw_file = if let Some(idx) = uri.find("local/") {
+            &uri[idx + 6..]
           } else {
             uri.trim_start_matches("beatflow://local/")
           };

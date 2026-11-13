@@ -737,7 +737,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
       const audioEl = getAudio();
       const playhead = audioEl?.currentTime ?? 0;
-      const isPlaying = status === 'playing';
+      const isPlaying = status !== 'paused';
 
       void startAt(index, { startSec: playhead, autoplay: isPlaying });
       return true;
@@ -939,7 +939,7 @@ async function checkAutoUpgrade(track: Track, expectedToken: number): Promise<vo
 
     const audioEl = getAudio();
     const playhead = audioEl?.currentTime ?? 0;
-    const isPlaying = state.status === 'playing';
+    const isPlaying = state.status !== 'paused';
 
     void startAt(state.index, { startSec: playhead, autoplay: isPlaying });
   } catch (err) {
