@@ -61,7 +61,7 @@ export async function fetchTrackAudio(videoId: string, signal?: AbortSignal): Pr
 const MAX_REFUSALS = 2;
 
 /** A deciphered direct URL for the track's best audio (or the same itag, when resuming). */
-async function resolveAudioUrl(videoId: string, itag?: number): Promise<{ url: URL; total: number; itag: number; musicVideo: boolean }> {
+export async function resolveAudioUrl(videoId: string, itag?: number): Promise<{ url: URL; total: number; itag: number; musicVideo: boolean }> {
   const { info, client, yt } = await resolveAsPlayerWould(videoId);
   const audio = (info.streaming_data?.adaptive_formats ?? []).filter(
     (f) => f.has_audio && !f.has_video && (f.url || f.signature_cipher || f.cipher) && !f.is_drc,

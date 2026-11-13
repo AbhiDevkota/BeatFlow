@@ -225,6 +225,66 @@ export interface BridgeMethods {
     params: { track: DiscordNowPlaying | null; options: DiscordPresenceOptions };
     result: Record<string, never>;
   };
+  'downloads.getFolder': {
+    params: Record<string, never>;
+    result: { path: string; isDev: boolean; folderName: string };
+  };
+  'downloads.openFolder': {
+    params: Record<string, never>;
+    result: { opened: boolean };
+  };
+  'downloads.list': {
+    params: Record<string, never>;
+    result: Array<{
+      id: string;
+      videoId: string;
+      fileName: string;
+      filePath: string;
+      title: string;
+      artist: string;
+      extension: string;
+      sizeBytes: number;
+      modifiedMs: number;
+      localUrl: string;
+    }>;
+  };
+  'downloads.downloadTrack': {
+    params: {
+      audioUrl: string;
+      title: string;
+      artist?: string;
+      videoId?: string;
+      extension?: string;
+    };
+    result: {
+      success: boolean;
+      fileName: string;
+      filePath: string;
+      localUrl: string;
+      videoId: string;
+      bytesDownloaded: number;
+    };
+  };
+  'downloads.deleteTrack': {
+    params: { fileName: string };
+    result: { deleted: boolean; fileName?: string; reason?: string };
+  };
+  'downloads.checkExists': {
+    params: { title?: string; artist?: string; fileName?: string };
+    result: { exists: boolean; fileName: string | null };
+  };
+  'addon.manifest': {
+    params: { baseUrl: string };
+    result: any;
+  };
+  'addon.search': {
+    params: { baseUrl: string; query: string; quality?: string };
+    result: { tracks: any[] };
+  };
+  'addon.stream': {
+    params: { baseUrl: string; trackId: string; quality?: string };
+    result: any;
+  };
 }
 
 export type BridgeMethod = keyof BridgeMethods;

@@ -62,6 +62,7 @@ import {
   SpotifyIntegration,
   Toggle,
 } from './IntegrationSettings';
+import { AddonsSettings } from './AddonsSettings';
 import { settingsUi } from './settingsStyles';
 
 const LyricsSettings = lazy(() => import('@/shell/LyricsSettings').then((m) => ({ default: m.LyricsSettings })));
@@ -70,6 +71,7 @@ export type SettingsCategoryKey =
   | 'playback'
   | 'content-preferences'
   | 'audio-quality'
+  | 'sources-addons'
   | 'appearance'
   | 'lyrics'
   | 'storage'
@@ -101,6 +103,13 @@ const CATEGORIES: CategoryMeta[] = [
     title: 'Audio Quality',
     subtitle: 'Streaming quality, direct source streaming, studio cuts, history',
     icon: SlidersHorizontal,
+  },
+  {
+    key: 'sources-addons',
+    title: 'Sources & Addons',
+    subtitle: 'Custom streaming sources, community addons, and audio providers',
+    icon: MdOutlineExtension,
+    badge: 'Desktop',
   },
   {
     key: 'appearance',
@@ -1177,6 +1186,10 @@ export default function SettingsPage() {
       </div>
     ), 'about');
 
+    check('Addons & Sources', ['addon', 'addons', 'sources', 'stream', 'custom sources', 'manifest', 'desktop addons', 'plugin', 'extensions'], (
+      <AddonsSettings key="addons-settings-search" />
+    ), 'sources-addons');
+
     return matches;
   }, [
     searching,
@@ -1303,6 +1316,7 @@ export default function SettingsPage() {
             {activeCategory === 'playback' && renderPlaybackGroup()}
             {activeCategory === 'content-preferences' && renderContentPreferencesGroup()}
             {activeCategory === 'audio-quality' && renderAudioQualityGroup()}
+            {activeCategory === 'sources-addons' && <AddonsSettings />}
             {activeCategory === 'appearance' && renderAppearanceGroup()}
             {activeCategory === 'lyrics' && renderLyricsGroup()}
             {activeCategory === 'storage' && renderStorageGroup()}

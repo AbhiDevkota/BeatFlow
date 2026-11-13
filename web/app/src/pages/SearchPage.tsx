@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import { MdOutlineExtension } from 'react-icons/md';
+import { isDesktopApp } from '@bitchord/shared/bridge';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { Artwork } from '@/components/music/Artwork';
 import { CategoryTiles } from '@/components/music/CategoryTiles';
@@ -6,10 +9,12 @@ import { hrefFor } from '@/components/music/links';
 import { playTrack, toTrack } from '@/components/music/play';
 import { SearchField } from '@/components/music/SearchField';
 import { Shelves } from '@/components/music/ShelfView';
+import { TrackList } from '@/components/music/TrackList';
 import { TrackMenu } from '@/components/music/TrackMenu';
 import { EmptyState, LoadError, NeedsExtension } from '@/components/music/States';
+import { searchAllEnabledAddons, type InstalledAddon } from '@/data/addons/addonStore';
 import { useCategories, useSearch, useYouTubeReady } from '@/data/music/queries';
-import type { MusicItem, SearchResults, Shelf } from '@/data/music/types';
+import type { MusicItem, SearchResults, Shelf, Track } from '@/data/music/types';
 import { SkeletonBlock, SkeletonLine } from '@/components/Skeleton';
 import { ShelfSkeleton } from '@/skeletons/ShelfSkeleton';
 
@@ -109,16 +114,56 @@ function ResultsSkeleton() {
 
 function Results({ query }: { query: string }) {
   const search = useSearch(query);
-  if (search.isError) return <LoadError error={search.error} onRetry={() => void search.refetch()} />;
-  if (!search.data) return <ResultsSkeleton />;
+  const [addonResults, setAddonResults] = useState<{ addon: InstalledAddon; tracks: Track[] }[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    if (!isDesktopApp() || !query.trim()) {
+      setAddonResults([]);
+      return;
+    }
+    searchAllEnabledAddons(query).then((res) => {
+      if (active) setAddonResults(res);
+    });
+    return () => {
+      active = false;
+    };
+  }, [query]);
+
+  if (search.isError && addonResults.length === 0) {
+    return <LoadError error={search.error} onRetry={() => void search.refetch()} />;
+  }
+  if (!search.data && addonResults.length === 0) return <ResultsSkeleton />;
+
   const results = search.data;
-  const shelves = shelvesFor(results);
-  if (!results.top.length && !shelves.length) {
+  const shelves = results ? shelvesFor(results) : [];
+
+  if ((!results || (!results.top.length && !shelves.length)) && !addonResults.length) {
     return <EmptyState title="No Results" detail={`Try a new search for something other than “${query}”.`} />;
   }
+
   return (
     <>
-      {results.top.length > 0 && (
+      {addonResults.length > 0 && (
+        <section aria-label="Addon Results" className="mb-6">
+          {addonResults.map(({ addon, tracks }) => (
+            <div key={addon.id} className="mb-6">
+              <div className="flex items-center gap-2 mx-(--body-gutter) mt-4 mb-2">
+                <MdOutlineExtension size={18} className="text-primary" />
+                <h2 className="type-title-2-emphasized">{addon.name}</h2>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                  Source Addon
+                </span>
+              </div>
+              <div className="mx-(--body-gutter)">
+                <TrackList tracks={tracks} variant="playlist" source={{ title: addon.name, type: 'playlist', id: addon.id }} />
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {results && results.top.length > 0 && (
         <section aria-label="Top Results">
           <h2 className={sectionTitle}>Top Results</h2>
           <div className={topGrid}>
@@ -128,7 +173,7 @@ function Results({ query }: { query: string }) {
           </div>
         </section>
       )}
-      <Shelves shelves={shelves} />
+      {shelves.length > 0 && <Shelves shelves={shelves} />}
     </>
   );
 }

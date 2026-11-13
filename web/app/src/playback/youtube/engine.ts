@@ -162,6 +162,56 @@ export class YouTubeEngine {
     const started = performance.now();
     trackLog.i(`loading at ${startSec.toFixed(1)}s`, videoId);
     try {
+      if (videoId.startsWith('addon:')) {
+        const { resolveAddonStream } = await import('@/data/addons/addonStore');
+        const resolvedUrl = await resolveAddonStream(videoId);
+        return this.load(resolvedUrl, { startSec, autoplay });
+      }
+
+      if (
+        videoId.startsWith('beatflow://') ||
+        videoId.startsWith('http://') ||
+        videoId.startsWith('https://') ||
+        videoId.startsWith('blob:')
+      ) {
+        const player = await this.ensurePlayer();
+        await player.unload();
+        this.adapter?.dispose();
+        this.adapter = null;
+        this.current = { videoId, client: 'WEB' as PlayerClientName, signed: false };
+        this.direct = null;
+
+        this.audio.src = videoId;
+        this.audio.currentTime = startSec;
+        if (autoplay) {
+          await this.audio.play().catch((error: unknown) => {
+            if (error instanceof DOMException && error.name === 'NotAllowedError') {
+              trackLog.w('autoplay was blocked by the browser; waiting for a tap', videoId);
+            } else throw error;
+          });
+        }
+        await this.firstAudio(generation);
+
+        return {
+          videoId,
+          title: '',
+          author: '',
+          durationSec: this.audio.duration || 0,
+          thumbnails: [],
+          client: 'WEB' as PlayerClientName,
+          format: videoId.startsWith('beatflow://') ? 'Local File' : 'Stream',
+          stream: {
+            codec: videoId.split('.').pop()?.toUpperCase() ?? 'Audio',
+            itag: null,
+            bitrateKbps: null,
+            sampleRateHz: null,
+            channels: 2,
+            mode: 'direct',
+          },
+          loudnessDb: null,
+        };
+      }
+
       const player = await this.ensurePlayer();
       this.yt ??= await timed('InnerTube session', videoId, getInnertube);
       void botguard.init().catch((error: unknown) => trackLog.w(`BotGuard init failed: ${String(error)}`, videoId));
@@ -224,6 +274,10 @@ export class YouTubeEngine {
   ): Promise<LoadedTrack> {
     const { videoId, client, info, signed } = resolved;
     await player.unload();
+    if (this.audio.getAttribute('src')) {
+      this.audio.removeAttribute('src');
+      this.audio.load();
+    }
     this.adapter?.dispose();
     this.adapter = null;
     this.current = { videoId, client, signed };

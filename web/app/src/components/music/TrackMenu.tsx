@@ -1,5 +1,7 @@
-import { ChevronLeft, ChevronRight, ListEnd, ListPlus, ListStart, MoreHorizontal, Music, Star, Video } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Download, ListEnd, ListPlus, ListStart, Loader2, MoreHorizontal, Music, Star, Video } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { isDesktopApp } from '@bitchord/shared/bridge';
+import { checkTrackDownloaded, deleteDownloadedTrack, downloadTrack } from '@/data/downloads/desktopDownloads';
 import { Menu, MenuHeader, MenuItem, MenuSeparator, type MenuPlacement } from '@/components/Menu';
 import { isVideoTrack } from '@/data/music/resolveAudio';
 import {
@@ -77,6 +79,75 @@ function AccountItems({ track, onClose, onPlaylists }: { track: Track; onClose: 
   );
 }
 
+function DesktopDownloadItem({ track, onClose }: { track: Track; onClose: () => void }) {
+  const [status, setStatus] = useState<'checking' | 'not_downloaded' | 'downloading' | 'downloaded'>('checking');
+  const [downloadedFile, setDownloadedFile] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const artist = track.artists.map((a) => a.name).join(', ');
+    checkTrackDownloaded(track.title, artist).then((res) => {
+      if (active) {
+        if (res.exists) {
+          setStatus('downloaded');
+          setDownloadedFile(res.fileName ?? null);
+        } else {
+          setStatus('not_downloaded');
+        }
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [track.title, track.artists]);
+
+  if (!isDesktopApp() || status === 'checking') return null;
+
+  if (status === 'downloading') {
+    return (
+      <MenuItem icon={<Loader2 size={15} className="animate-spin text-primary" />} disabled onSelect={() => {}}>
+        Downloading…
+      </MenuItem>
+    );
+  }
+
+  if (status === 'downloaded') {
+    return (
+      <MenuItem
+        icon={<Check size={15} className="text-primary" />}
+        onSelect={async () => {
+          if (downloadedFile) {
+            await deleteDownloadedTrack(downloadedFile);
+            setStatus('not_downloaded');
+          }
+          onClose();
+        }}
+      >
+        Downloaded (Remove)
+      </MenuItem>
+    );
+  }
+
+  return (
+    <MenuItem
+      icon={<Download size={15} />}
+      onSelect={async () => {
+        setStatus('downloading');
+        try {
+          await downloadTrack(track);
+          setStatus('downloaded');
+        } catch (e) {
+          console.error('Download error:', e);
+          setStatus('not_downloaded');
+        }
+        onClose();
+      }}
+    >
+      Download
+    </MenuItem>
+  );
+}
+
 function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void }) {
   const [view, setView] = useState<'main' | 'playlists'>('main');
   const signedIn = useSignedIn();
@@ -93,6 +164,7 @@ function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void 
       <MenuItem icon={<ListEnd size={15} />} onSelect={() => (onClose(), addToQueue([track]))}>
         Add to Queue
       </MenuItem>
+      {isDesktopApp() && <DesktopDownloadItem track={track} onClose={onClose} />}
       {isCurrentPlaying && (
         <MenuItem
           icon={isVideoTrack(track) ? <Music size={15} /> : <Video size={15} />}
