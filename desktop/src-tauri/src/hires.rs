@@ -642,6 +642,7 @@ pub async fn find_best_upgrade(
 ) -> anyhow::Result<Option<StreamInfo>> {
     let enabled_addons: Vec<&InstalledAddon> = addons.iter().filter(|a| a.enabled).collect();
     if enabled_addons.is_empty() {
+        println!("[BeatFlow Engine] ℹ️ No addons enabled for quality upgrade");
         return Ok(None);
     }
 
@@ -658,6 +659,11 @@ pub async fn find_best_upgrade(
         queries.push(title.to_string());
     }
 
+    println!(
+        "[BeatFlow Engine] 🔍 Upgrading: \"{}\" - \"{}\" | searchable: \"{}\" (primary: \"{}\", prefer_atmos: {}) across {} addon(s)",
+        title, artist, searchable, primary, prefer_atmos, enabled_addons.len()
+    );
+
     let passes = if prefer_atmos {
         vec![(true, true), (false, false)]
     } else {
@@ -668,30 +674,70 @@ pub async fn find_best_upgrade(
 
     for (search_atmos, stream_atmos) in passes {
         for query in &queries {
+            println!("[BeatFlow Engine] 🔎 Addon query: \"{}\" (atmos pass: {})", query, search_atmos);
             let mut tasks = tokio::task::JoinSet::new();
             for addon in &enabled_addons {
                 let client = match AddonClient::new(&addon.base_url) {
                     Some(c) => Arc::new(c),
-                    None => continue,
+                    None => {
+                        println!("[BeatFlow Engine] ⚠️ Invalid base_url for addon: {}", addon.id);
+                        continue;
+                    }
                 };
                 let http = http.clone();
                 let q = query.clone();
+                let addon_name = addon.name.clone();
                 tasks.spawn(async move {
-                    let manifest = client.manifest(&http).await.ok()?;
-                    let candidates = client.search(&http, &manifest, &q, search_atmos).await.ok()?;
+                    let manifest = match client.manifest(&http).await {
+                        Ok(m) => m,
+                        Err(e) => {
+                            println!("[BeatFlow Engine] ⚠️ Addon \"{}\" manifest failed: {:#}", addon_name, e);
+                            return None;
+                        }
+                    };
+                    let candidates = match client.search(&http, &manifest, &q, search_atmos).await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            println!("[BeatFlow Engine] ⚠️ Addon \"{}\" search failed for \"{}\": {:#}", addon_name, q, e);
+                            return None;
+                        }
+                    };
+                    println!("[BeatFlow Engine] 📦 Addon \"{}\" returned {} candidate(s)", manifest.name.as_deref().unwrap_or(&addon_name), candidates.len());
                     Some((client, manifest, candidates))
                 });
             }
 
             while let Some(res) = tasks.join_next().await {
                 if let Ok(Some((client, manifest, candidates))) = res {
+                    let addon_label = manifest.name.as_deref().unwrap_or("addon");
                     let ranked = rank(candidates, title, artist, duration_sec, stream_atmos);
-                    for candidate in ranked.into_iter().take(STREAM_TRIES) {
+                    println!("[BeatFlow Engine] 🏆 Ranked {} matching candidate(s) from \"{}\"", ranked.len(), addon_label);
+
+                    for (idx, candidate) in ranked.into_iter().take(STREAM_TRIES).enumerate() {
                         if !tried.insert(candidate.id.clone()) {
                             continue;
                         }
-                        if let Ok(Some(stream)) = client.stream(http, &manifest, &candidate, stream_atmos).await {
-                            return Ok(Some(stream));
+                        println!(
+                            "[BeatFlow Engine] 🎯 Candidate #{}: \"{}\" - \"{}\" (id: {}, quality: {}, atmos: {})",
+                            idx + 1, candidate.title, candidate.artist, candidate.id, candidate.quality, candidate.atmos
+                        );
+                        println!("[BeatFlow Engine] 📡 Requesting stream for candidate \"{}\" (atmos: {})...", candidate.id, stream_atmos);
+
+                        match client.stream(http, &manifest, &candidate, stream_atmos).await {
+                            Ok(Some(stream)) => {
+                                println!("[BeatFlow Engine] 🟢 Stream resolved successfully!");
+                                println!("[BeatFlow Engine]    Stream URL: {}", stream.url);
+                                println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", stream.codec, stream.container);
+                                println!("[BeatFlow Engine]    BitDepth: {:?} | SampleRate: {:?} | Bitrate: {:?}", stream.bit_depth, stream.sample_rate, stream.bitrate_kbps);
+                                println!("[BeatFlow Engine]    Atmos: {} | Lossless: {} | HiRes: {} | Badge: {}", stream.atmos, stream.lossless, stream.hires, stream.badge);
+                                return Ok(Some(stream));
+                            }
+                            Ok(None) => {
+                                println!("[BeatFlow Engine] ⚠️ Candidate \"{}\" returned no playable stream", candidate.id);
+                            }
+                            Err(e) => {
+                                println!("[BeatFlow Engine] ❌ Stream request failed for candidate \"{}\": {:#}", candidate.id, e);
+                            }
                         }
                     }
                 }
@@ -699,6 +745,7 @@ pub async fn find_best_upgrade(
         }
     }
 
+    println!("[BeatFlow Engine] ℹ️ Finished search passes; no higher-quality stream found for \"{}\"", title);
     Ok(None)
 }
 

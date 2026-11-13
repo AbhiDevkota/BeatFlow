@@ -167,8 +167,13 @@ export class YouTubeEngine {
     trackLog.i(`loading at ${startSec.toFixed(1)}s`, videoId);
     try {
       if (videoId.startsWith('addon:')) {
+        trackLog.i(`[Addon Playback] Resolving stream for URI: ${videoId}`, videoId);
         const { resolveAddonStreamInfo } = await import('@/data/addons/addonStore');
         const info = await resolveAddonStreamInfo(videoId);
+
+        trackLog.i(`[Addon Playback] Stream resolved successfully!`, videoId);
+        trackLog.i(`[Addon Playback] STREAM URL: ${info.url}`, videoId);
+        trackLog.i(`[Addon Playback] Codec: ${info.codec} | Container: ${info.container} | Atmos: ${info.isDolbyAtmos} | Lossless: ${info.isLossless}`, videoId);
 
         const player = await this.ensurePlayer();
         this.adapter?.dispose();
@@ -183,10 +188,13 @@ export class YouTubeEngine {
           info.url.includes('manifest.mpd') ||
           (info.isDolbyAtmos && info.url.includes('manifest'));
 
+        trackLog.i(`[Addon Playback] Transport mode: isDash=${isDash}`, videoId);
+
         await player.unload();
 
         if (isDash) {
           try {
+            trackLog.i(`[Shaka DASH] Loading manifest into Shaka Player: ${info.url}`, videoId);
             for (const scheme of ['http', 'https']) {
               shaka.net.NetworkingEngine.registerScheme(
                 scheme,
@@ -199,12 +207,21 @@ export class YouTubeEngine {
             }
             await player.load(info.url, startSec);
             const variants = player.getVariantTracks();
+            trackLog.i(`[Shaka DASH] Manifest loaded! Available variant tracks: ${variants.length}`, videoId);
+            for (const v of variants) {
+              trackLog.i(`[Shaka DASH]   - Track #${v.id}: codecs="${v.codecs}", mime="${v.mimeType}", bw=${v.bandwidth}`, videoId);
+            }
+
             if (variants.length > 0) {
               const best = variants.slice().sort((a, b) => (b.bandwidth ?? 0) - (a.bandwidth ?? 0))[0]!;
+              trackLog.i(`[Shaka DASH] Activating variant #${best.id} (codecs="${best.codecs}", bw=${best.bandwidth})`, videoId);
               player.selectVariantTrack(best, true);
+            } else {
+              trackLog.w(`[Shaka DASH] ⚠️ Warning: 0 playable variant tracks found in manifest!`, videoId);
             }
           } catch (dashErr) {
-            trackLog.w(`Shaka DASH load failed, trying direct playback: ${String(dashErr)}`, info.url);
+            trackLog.e(`[Shaka DASH Load Error] ${String(dashErr)}`, videoId);
+            trackLog.w(`[Addon Playback] Attempting fallback to direct audio element...`, videoId);
             try {
               await player.detach();
             } catch {}
@@ -223,6 +240,7 @@ export class YouTubeEngine {
             }
           }
         } else {
+          trackLog.i(`[Direct Audio] Loading audio URL directly: ${info.url}`, videoId);
           try {
             await player.detach();
           } catch {}
@@ -240,14 +258,36 @@ export class YouTubeEngine {
             }
           }
         }
+
+        const onAudioError = () => {
+          const err = this.audio.error;
+          trackLog.e(`[HTMLAudioElement Error] code=${err?.code}, message="${err?.message || ''}"`, videoId);
+        };
+        const onWaiting = () => {
+          trackLog.w(`[HTMLAudioElement] Waiting / buffering (readyState: ${this.audio.readyState}, currentTime: ${this.audio.currentTime.toFixed(2)}s)`, videoId);
+        };
+        const onPlaying = () => {
+          trackLog.i(`[HTMLAudioElement] Playback running! (currentTime: ${this.audio.currentTime.toFixed(2)}s)`, videoId);
+        };
+
+        this.audio.addEventListener('error', onAudioError, { once: true });
+        this.audio.addEventListener('waiting', onWaiting, { once: true });
+        this.audio.addEventListener('playing', onPlaying, { once: true });
+
         if (autoplay) {
+          trackLog.i(`[Addon Playback] Requesting audio.play()...`, videoId);
           await this.audio.play().catch((error: unknown) => {
             if (error instanceof DOMException && error.name === 'NotAllowedError') {
               trackLog.w('autoplay was blocked by the browser; waiting for a tap', info.url);
-            } else throw error;
+            } else {
+              trackLog.e(`[Addon Playback] audio.play() failed: ${String(error)}`, videoId);
+              throw error;
+            }
           });
         }
+        trackLog.i(`[Addon Playback] Waiting for first audio frames...`, videoId);
         await this.firstAudio(generation);
+        trackLog.i(`[Addon Playback] First audio frames verified! Playback active.`, videoId);
 
         return {
           videoId,

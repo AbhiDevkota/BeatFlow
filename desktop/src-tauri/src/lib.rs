@@ -355,8 +355,21 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
 
 #[tauri::command]
 async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
-  println!("[Rust Bridge] IPC bridge_call: {}", method);
+  if method != "app.log" && method != "log" {
+    println!("[Rust Bridge] IPC bridge_call: {}", method);
+  }
   match method.as_str() {
+    "app.log" | "log" => {
+      let level = params.get("level").and_then(|v| v.as_str()).unwrap_or("INFO");
+      let message = params.get("message").and_then(|v| v.as_str()).unwrap_or("");
+      let about = params.get("about").and_then(|v| v.as_str());
+      if let Some(ab) = about {
+        println!("[Web Player {}][{}] {}", level.to_uppercase(), ab, message);
+      } else {
+        println!("[Web Player {}] {}", level.to_uppercase(), message);
+      }
+      Ok(json!({}))
+    }
     "ping" => Ok(json!({
       "version": "1.9.2",
       "protocol": 1,
@@ -664,6 +677,8 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let thumbnail = params.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
       let album = params.get("album").and_then(|v| v.as_str()).map(|s| s.to_string());
 
+      println!("[BeatFlow Engine] >>> engine.loadTrack: videoId=\"{}\", title=\"{}\"", video_id, title);
+
       let track = TrackPayload {
         video_id: video_id.clone(),
         title,
@@ -674,13 +689,28 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       };
 
       if video_id.starts_with("addon:") {
-        let stream = engine().resolve_addon_stream(&video_id, None).await.map_err(|e| e.to_string())?;
-        Ok(json!({
-          "stream": stream,
-          "isAddon": true
-        }))
+        println!("[BeatFlow Engine] 🔗 Resolving addon stream URI: {}", video_id);
+        match engine().resolve_addon_stream(&video_id, None).await {
+          Ok(stream) => {
+            println!("[BeatFlow Engine] ✅ Addon Stream Loaded!");
+            println!("[BeatFlow Engine]    Source: {}", stream.source);
+            println!("[BeatFlow Engine]    Stream URL: {}", stream.url);
+            println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", stream.codec, stream.container);
+            Ok(json!({
+              "stream": stream,
+              "isAddon": true
+            }))
+          }
+          Err(e) => {
+            println!("[BeatFlow Engine] ❌ resolve_addon_stream failed: {:#}", e);
+            Err(e.to_string())
+          }
+        }
       } else {
         let upgrade = engine().check_auto_upgrade(track, None).await.unwrap_or(None);
+        if let Some(ref u) = upgrade {
+          println!("[BeatFlow Engine] 🚀 Auto-upgrade available: {} -> {}", u.source, u.url);
+        }
         Ok(json!({
           "upgrade": upgrade,
           "isAddon": false
@@ -695,6 +725,8 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let thumbnail = params.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
       let album = params.get("album").and_then(|v| v.as_str()).map(|s| s.to_string());
 
+      println!("[BeatFlow Engine] >>> engine.upgradeQuality requested: \"{}\" - \"{}\" (videoId: {})", title, artist, video_id);
+
       let track = TrackPayload {
         video_id,
         title,
@@ -704,7 +736,23 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
         album,
       };
 
-      let upgraded_stream = engine().upgrade_quality(track, None).await.map_err(|e| e.to_string())?;
+      let upgraded_stream = match engine().upgrade_quality(track, None).await {
+        Ok(s) => s,
+        Err(e) => {
+          println!("[BeatFlow Engine] ❌ upgrade_quality error: {:#}", e);
+          return Err(e.to_string());
+        }
+      };
+
+      if let Some(ref s) = upgraded_stream {
+        println!("[BeatFlow Engine] ✅ Stream upgrade successful!");
+        println!("[BeatFlow Engine]    Source: {}", s.source);
+        println!("[BeatFlow Engine]    Codec: {} ({:?})", s.codec, s.container);
+        println!("[BeatFlow Engine]    Quality: {} (badge: {})", s.quality, s.badge);
+        println!("[BeatFlow Engine]    Stream URL: {}", s.url);
+      } else {
+        println!("[BeatFlow Engine] ℹ️ No stream upgrade available for this track (keeping YouTube stream)");
+      }
 
       Ok(json!({
         "upgraded": upgraded_stream.is_some(),

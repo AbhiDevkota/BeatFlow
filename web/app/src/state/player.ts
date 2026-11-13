@@ -709,12 +709,14 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     if (!entry || partyHooks?.inParty()) return false;
     const currentTrack = entry.track;
 
+    trackLog.i(`[Player] Initiating quality upgrade for "${currentTrack.title}" (${currentTrack.videoId})`, currentTrack.videoId);
     revertedTracks.delete(currentTrack.videoId);
     set({ upgradingQuality: true });
     try {
       const { findBestQualityUpgrade } = await import('@/data/addons/qualityUpgrade');
       const upgrade = await findBestQualityUpgrade(currentTrack);
       if (!upgrade) {
+        trackLog.w(`[Player] Quality upgrade found no alternative stream for "${currentTrack.title}"`, currentTrack.videoId);
         set({ upgradingQuality: false });
         return false;
       }
@@ -726,6 +728,11 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
         thumbnail: currentTrack.thumbnail || upgrade.track.thumbnail,
         album: currentTrack.album || upgrade.track.album,
       };
+
+      trackLog.i(
+        `[Player] Applying upgraded track: "${upgradedTrack.title}" (${upgradedTrack.videoId}) [Quality: ${upgradedTrack.sourceQuality}]`,
+        upgradedTrack.videoId,
+      );
 
       originalTracks.set(upgradedTrack.videoId, currentTrack);
 
@@ -742,6 +749,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       void startAt(index, { startSec: playhead, autoplay: isPlaying });
       return true;
     } catch (err) {
+      trackLog.e(`[Player] Quality upgrade failed: ${String(err)}`, currentTrack.videoId);
       console.warn('[Player] Quality upgrade failed:', err);
       return false;
     } finally {

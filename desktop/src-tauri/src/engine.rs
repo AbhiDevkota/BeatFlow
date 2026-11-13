@@ -84,15 +84,22 @@ impl BeatflowEngine {
         let addon_id = parts[1];
         let track_id = parts[2..].join(":");
 
+        println!("[BeatFlow Engine] 🔗 Resolving addon stream for URI: {}", addon_uri);
+
         // If this track was already upgraded and cached, return it directly
         {
             let up = self.upgraded_streams.read().await;
             if let Some(cached) = up.get(&track_id).or_else(|| up.get(addon_uri)) {
+                println!("[BeatFlow Engine] ⚡ Using cached stream for {}", addon_uri);
+                println!("[BeatFlow Engine]    Stream URL: {}", cached.url);
+                println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", cached.codec, cached.container);
                 let mut active = self.active_stream.write().await;
                 *active = Some(cached.clone());
                 return Ok(cached.clone());
             }
         }
+
+        println!("[BeatFlow Engine] 🌐 Resolving fresh addon stream: addon_id=\"{}\", track_id=\"{}\"", addon_id, track_id);
 
         let owned_addons = if addons_override.is_none() {
             Some(self.addons.read().await.clone())
@@ -104,6 +111,8 @@ impl BeatflowEngine {
         let addon = addons.iter().find(|a| a.id == addon_id || a.name == addon_id || a.id.contains(addon_id) || addon_id.contains(&a.id))
             .ok_or_else(|| anyhow::anyhow!("addon '{}' not found", addon_id))?;
 
+        println!("[BeatFlow Engine] Found matching addon: \"{}\" ({})", addon.name, addon.base_url);
+
         let client = AddonClient::new(&addon.base_url)
             .ok_or_else(|| anyhow::anyhow!("invalid addon base url: {}", addon.base_url))?;
 
@@ -111,7 +120,7 @@ impl BeatflowEngine {
         let manifest = client.manifest(&self.http).await?;
 
         let candidate = hires::Candidate {
-            id: track_id,
+            id: track_id.clone(),
             title: "".to_string(),
             artist: "".to_string(),
             duration: None,
@@ -123,6 +132,10 @@ impl BeatflowEngine {
 
         let stream_info = client.stream(&self.http, &manifest, &candidate, prefer_atmos).await?
             .ok_or_else(|| anyhow::anyhow!("addon returned no playable stream"))?;
+
+        println!("[BeatFlow Engine] ✅ Fresh stream resolved!");
+        println!("[BeatFlow Engine]    Stream URL: {}", stream_info.url);
+        println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", stream_info.codec, stream_info.container);
 
         let mut active = self.active_stream.write().await;
         *active = Some(stream_info.clone());

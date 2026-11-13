@@ -39,6 +39,13 @@ function push(level: LogLevel, message: string, about: string | null) {
   const tag = about ? `[${about}] ` : '';
   const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.debug;
   out(`BeatFlow ${tag}${message}`);
+
+  if (typeof window !== 'undefined') {
+    const w = window as any;
+    if (typeof w.__BEATFLOW_CALL__ === 'function') {
+      void w.__BEATFLOW_CALL__('app.log', { level, message, about }).catch(() => {});
+    }
+  }
 }
 
 export const trackLog = {
