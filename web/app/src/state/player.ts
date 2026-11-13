@@ -28,6 +28,7 @@ import type { AutomixGraph, AutoDJSnapshot } from '@/playback/automix';
 
 export interface NowPlaying {
   videoId: string;
+  canonicalVideoId?: string;
   title: string;
   artist: string;
   /** Largest available; size it for display with sizedArtwork(). */
@@ -337,9 +338,10 @@ async function sungSpans(videoId: string) {
     import('@/lyrics/model'),
     import('@/playback/automix'),
   ]);
+  const canonicalId = getCanonicalVideoId(track) ?? getCanonicalVideoId(videoId) ?? videoId;
   const found = await Promise.race([
     lookupLyrics({
-      videoId,
+      videoId: canonicalId,
       title: track.title,
       artist: artistNames(track),
       durationMs: Math.round((track.durationSec ?? 0) * 1000),
@@ -390,6 +392,31 @@ function syncAutomix() {
 const originalTracks = new Map<string, Track>();
 const revertedTracks = new Set<string>();
 
+/**
+ * Resolves the underlying canonical video ID (e.g. YouTube video ID)
+ * for a track, NowPlaying object, or video ID string. If the track is an
+ * upgraded stream (e.g. addon:...), this returns the original track's ID.
+ */
+export function getCanonicalVideoId(
+  target: { videoId: string; originalTrack?: Track | null; canonicalVideoId?: string } | string | null | undefined,
+): string | null {
+  if (!target) return null;
+  if (typeof target === 'object') {
+    if (target.canonicalVideoId) return target.canonicalVideoId;
+    if (target.originalTrack?.videoId) return target.originalTrack.videoId;
+    const fromMap = originalTracks.get(target.videoId);
+    if (fromMap?.videoId) return fromMap.videoId;
+    return getCanonicalVideoId(target.videoId);
+  }
+  const fromMap = originalTracks.get(target);
+  if (fromMap?.videoId) return fromMap.videoId;
+  if (target.startsWith('addon:')) {
+    const parts = target.split(':');
+    if (parts.length >= 3) return parts.slice(2).join(':');
+  }
+  return target;
+}
+
 function extensionReady(track?: Track): boolean {
   if (typeof window !== 'undefined' && isDesktopApp()) return true;
   if (
@@ -408,8 +435,10 @@ function extensionReady(track?: Track): boolean {
 const artistNames = (track: Track) => track.artists.map((a) => a.name).join(', ');
 
 function hintOf(track: Track): NowPlaying {
+  const canonicalVideoId = getCanonicalVideoId(track) ?? track.videoId;
   return {
     videoId: track.videoId,
+    canonicalVideoId,
     title: track.title,
     artist: artistNames(track),
     artworkUrl: track.thumbnail,
@@ -1360,9 +1389,11 @@ function applyTrack(track: LoadedTrack, from?: Track) {
       (isHiRes ? 'HI_RES_LOSSLESS' : isLossless ? 'LOSSLESS' : bitrateKbps && bitrateKbps >= 256 ? 'HIGH_QUALITY' : null);
 
   const finalSourceName = from?.sourceName ?? track.stream.sourceName ?? (String(track.client) !== 'WEB' ? String(track.client) : null);
+  const canonicalVideoId = getCanonicalVideoId(from || track.videoId) ?? track.videoId;
 
   const nowPlaying: NowPlaying = {
     videoId: track.videoId,
+    canonicalVideoId,
     // YouTube Music metadata (from the queue) beats the video's own title.
     title: from?.title || track.title,
     // Auto-generated YouTube channels are named "Artist - Topic".

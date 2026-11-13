@@ -12,7 +12,7 @@ import type { SourceState } from '@/lyrics/repository';
 import { enabledSources } from '@/lyrics/settings';
 import { sourceById, type LyricsSourceId } from '@/lyrics/sources';
 import { useLyrics, useLyricsUi } from '@/lyrics/useLyrics';
-import { getAudio, getPlayhead, usePlayer } from '@/state/player';
+import { getAudio, getCanonicalVideoId, getPlayhead, usePlayer } from '@/state/player';
 import { LyricsSettings } from './LyricsSettings';
 
 type AmLyricsElement = HTMLElement & {
@@ -133,7 +133,7 @@ function LyricsView({ ttml, full }: { ttml: string; full: boolean }) {
   const element = useRef<AmLyricsElement | null>(null);
   const deck = usePlayer((s) => s.deck);
   const mixing = usePlayer((s) => s.mixing);
-  const videoId = usePlayer((s) => s.nowPlaying?.videoId);
+  const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying));
 
   // Created by hand, with its TTML set before it's attached: am-lyrics starts
   // loading the moment it connects, and through React the properties arrive
@@ -316,7 +316,7 @@ const NO_STATES: Partial<Record<LyricsSourceId, SourceState>> = {};
 
 /** The provider picker: three-dot menu with drilldown to providers and settings. */
 function ProviderPicker({ current, full }: { current: LyricsSourceId | null; full: boolean }) {
-  const videoId = usePlayer((s) => s.nowPlaying?.videoId ?? '');
+  const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying) ?? '');
   const states = useLyricsUi((s) => s.states[videoId]) ?? NO_STATES;
   const picked = useLyricsUi((s) => s.picked[videoId]);
   const pick = useLyricsUi((s) => s.pick);
@@ -501,7 +501,7 @@ const fullSizes =
 export function LyricsPanel({ variant = 'panel' }: { variant?: 'panel' | 'full' }) {
   const lyrics = useLyrics();
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
-  const videoId = usePlayer((s) => s.nowPlaying?.videoId ?? '');
+  const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying) ?? '');
   // A provider picked by hand that came back with nothing is named in the
   // empty state: the lyrics didn't go missing, this one provider hasn't got them.
   const picked = useLyricsUi((s) => s.picked[videoId]);

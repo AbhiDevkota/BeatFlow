@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
-import { usePlayer } from '@/state/player';
+import { getCanonicalVideoId, usePlayer } from '@/state/player';
 import { queryClient } from '@/lib/queryClient';
 import { onGranted } from './http';
 import { forgetLyrics, lookupLyrics, type LyricsResult, type SourceState } from './repository';
@@ -17,13 +17,15 @@ interface LyricsUi {
 export const useLyricsUi = create<LyricsUi>()((set) => ({
   picked: {},
   states: {},
-  pick: (videoId, source) =>
-    set((s) => {
+  pick: (videoId, source) => {
+    const canonicalId = getCanonicalVideoId(videoId) ?? videoId;
+    return set((s) => {
       const picked = { ...s.picked };
-      if (source) picked[videoId] = source;
-      else delete picked[videoId];
+      if (source) picked[canonicalId] = source;
+      else delete picked[canonicalId];
       return { picked };
-    }),
+    });
+  },
 }));
 
 // A host the extension was refused for has been allowed: ask again.
@@ -33,12 +35,13 @@ onGranted(() => {
 });
 
 function reportState(videoId: string, source: LyricsSourceId, state: SourceState) {
-  useLyricsUi.setState((s) => ({ states: { ...s.states, [videoId]: { ...s.states[videoId], [source]: state } } }));
+  const canonicalId = getCanonicalVideoId(videoId) ?? videoId;
+  useLyricsUi.setState((s) => ({ states: { ...s.states, [canonicalId]: { ...s.states[canonicalId], [source]: state } } }));
 }
 
 /** The playing track's lyrics, from the provider chain or the provider picked for it. */
 export function useLyrics() {
-  const videoId = usePlayer((s) => s.nowPlaying?.videoId ?? null);
+  const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying));
   const title = usePlayer((s) => s.nowPlaying?.title ?? '');
   const artist = usePlayer((s) => s.nowPlaying?.artist ?? '');
   const only = useLyricsUi((s) => (videoId ? s.picked[videoId] : undefined));

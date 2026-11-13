@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useSpotifySignedIn } from '@/extension/useSpotifyAuth';
-import { usePlayer } from '@/state/player';
+import { getCanonicalVideoId, usePlayer } from '@/state/player';
 import { fetchCanvas } from './api';
 
 /** Spotify settings kept by this page: whether to show Canvas at all. */
@@ -38,10 +38,11 @@ export function useCanvas(): string | null {
   const enabled = useSpotifySettings((s) => s.canvas);
   const still = useReducedMotion();
   const track = usePlayer((s) => s.nowPlaying);
+  const canonicalVideoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying));
   const allowed = signedIn && enabled && !still && !metered();
   const query = useQuery({
-    queryKey: ['spotify', 'data', 'canvas', track?.videoId ?? ''],
-    queryFn: () => fetchCanvas(track!),
+    queryKey: ['spotify', 'data', 'canvas', canonicalVideoId ?? ''],
+    queryFn: () => fetchCanvas({ ...track!, videoId: canonicalVideoId ?? track!.videoId }),
     enabled: allowed && !!track?.title,
     staleTime: Infinity,
     gcTime: 30 * 60_000,
