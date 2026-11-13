@@ -946,7 +946,7 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
 
 /**
  * Smoothly transitions the currently playing track to an upgraded (or reverted) track
- * using dual-deck equal-power crossfading, without stopping audio or showing buffering.
+ * without stopping audio, dropping volume, or showing buffering.
  */
 async function smoothTransitionToTrack(
   targetTrack: Track,
@@ -974,16 +974,16 @@ async function smoothTransitionToTrack(
     return true;
   }
 
-  // Dual-deck smooth crossfade transition:
-  // 1. Keep front deck playing untouched so the music never stops.
-  // 2. Load the target track on the back deck starting at the exact same playhead.
+  // Dual-deck smooth seamless handoff:
+  // 1. Keep front deck playing at 100% volume so the music never dips or stops.
+  // 2. Preload target track silently on back deck at the current playhead.
   const token = ++loadToken;
   const startPlayhead = front.audio.currentTime;
   back.gain = 0;
   applyVolumes();
 
   trackLog.i(
-    `[Smooth Transition] Seamlessly blending into "${targetTrack.title}" (${targetTrack.videoId}) at ${startPlayhead.toFixed(2)}s`,
+    `[Smooth Transition] Seamlessly preloading "${targetTrack.title}" (${targetTrack.videoId}) at ${startPlayhead.toFixed(2)}s`,
     targetTrack.videoId,
   );
 
@@ -998,11 +998,66 @@ async function smoothTransitionToTrack(
       return false;
     }
 
-    // Synchronize playheads if drift occurred during connection
+    // If playhead drifted during network connection, resync back deck to front deck
     const currentFrontTime = front.audio.currentTime;
-    if (Math.abs(back.audio.currentTime - currentFrontTime) > 0.08) {
+    if (Math.abs(back.audio.currentTime - currentFrontTime) > 0.06) {
       try {
         back.audio.currentTime = currentFrontTime;
+      } catch {}
+
+      // Keep front deck playing at full volume while back deck completes its seek buffer
+      await new Promise<void>((resolve) => {
+        if (!back.audio.seeking && back.audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA && !back.audio.paused) {
+          resolve();
+          return;
+        }
+
+        let settled = false;
+        const cleanup = () => {
+          clearTimeout(timer);
+          back.audio.removeEventListener('seeked', onReady);
+          back.audio.removeEventListener('playing', onReady);
+          back.audio.removeEventListener('canplay', onReady);
+        };
+
+        const onReady = () => {
+          if (settled) return;
+          if (!back.audio.seeking && back.audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+            settled = true;
+            cleanup();
+            resolve();
+          }
+        };
+
+        back.audio.addEventListener('seeked', onReady);
+        back.audio.addEventListener('playing', onReady);
+        back.audio.addEventListener('canplay', onReady);
+
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve();
+          }
+        }, 1000);
+      });
+    }
+
+    // Ensure playback on back deck is definitely running
+    if (back.audio.paused) {
+      try {
+        await back.audio.play();
+      } catch {}
+    }
+
+    if (token !== loadToken) {
+      void back.engine.stop().catch(() => {});
+      return false;
+    }
+
+    if (front.audio.paused) {
+      try {
+        back.audio.pause();
       } catch {}
     }
 
@@ -1017,8 +1072,10 @@ async function smoothTransitionToTrack(
     active = 1 - active;
     applyTrack(loaded, targetTrack);
 
-    // Run equal-power crossfade between front and back decks
-    const durationMs = options.durationMs ?? 1600;
+    // Fast constant-sum linear blend (120ms):
+    // from.gain + to.gain = 1.0 at every single step so total volume NEVER drops
+    // or phase-cancels, giving a seamless transition as smooth as butter.
+    const durationMs = options.durationMs ?? 120;
     const started = performance.now();
     const from = front;
     const to = back;
@@ -1029,17 +1086,19 @@ async function smoothTransitionToTrack(
           resolve();
           return;
         }
-        const progress = Math.min(1, (performance.now() - started) / durationMs);
-        // Equal-power crossfade curve: cos(progress * pi / 2) & sin(progress * pi / 2)
-        from.gain = Math.cos((progress * Math.PI) / 2);
-        to.gain = Math.sin((progress * Math.PI) / 2);
+        const elapsed = performance.now() - started;
+        const progress = Math.min(1, elapsed / durationMs);
+
+        // Linear constant-sum crossfade: total volume remains 100% constant
+        from.gain = 1 - progress;
+        to.gain = progress;
         applyVolumes();
 
         if (progress < 1 && !from.audio.ended && !to.audio.ended) {
-          window.setTimeout(step, FADE_STEP_MS);
+          window.setTimeout(step, 16);
         } else {
-          from.gain = 1;
           to.gain = 1;
+          from.gain = 1;
           void from.engine.stop().catch(() => {});
           applyVolumes();
           resolve();
