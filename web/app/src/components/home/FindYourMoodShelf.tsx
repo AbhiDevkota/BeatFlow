@@ -5,7 +5,7 @@ import { PlayingBars } from '@/components/home/PlayingBars';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { shelfHeader, shelfSection } from '@/components/shelf';
 import { CORE_MOODS, type MoodDefinition } from '@/lib/homeLayout';
-import { playMoodStation } from '@/lib/playMood';
+import { playMoodStation, prewarmCoreMoods } from '@/lib/playMood';
 import { usePlayer } from '@/state/player';
 import { MoodEmblem } from './TopPickArtwork';
 
@@ -19,6 +19,10 @@ export function FindYourMoodShelf() {
 
   const activeSourceId = usePlayer((s) => s.queue[s.index]?.source?.id);
   const isPlaying = usePlayer((s) => s.status === 'playing');
+
+  useEffect(() => {
+    prewarmCoreMoods();
+  }, []);
 
   const measure = useCallback(() => {
     const el = listRef.current;
@@ -98,7 +102,7 @@ export function FindYourMoodShelf() {
                 >
                   {/* Square Tile */}
                   <div
-                    className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-transform duration-200 group-hover/mood:scale-[1.02] flex items-center justify-center"
+                    className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-transform duration-300 ease-out group-hover/mood:scale-[1.03] group-hover/mood:shadow-md flex items-center justify-center"
                     style={{ backgroundColor: mood.background }}
                   >
                     {/* Mood SVG Emblem */}
@@ -106,7 +110,7 @@ export function FindYourMoodShelf() {
                       <MoodEmblem
                         moodKey={mood.key}
                         strokeColor={mood.stroke}
-                        className="w-full h-full opacity-95 transition-transform duration-300 group-hover/mood:scale-110"
+                        className="w-full h-full opacity-95 transition-transform duration-300 ease-out group-hover/mood:scale-105"
                       />
                     </div>
 

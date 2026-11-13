@@ -2,45 +2,56 @@ import { useState } from 'react';
 import { sizedArtwork } from '@/lib/artwork';
 import { getCollagePalette, type TopPickItem, type TopPickMoodKey } from '@/lib/homeLayout';
 
-interface MoodEmblemProps {
+export interface MoodEmblemProps {
   moodKey: TopPickMoodKey;
   strokeColor?: string;
   className?: string;
+  animated?: boolean;
 }
 
 /**
  * 1:1 Vector SVG emblems for all 28 Apple Music / BeatFlow Find Your Mood stations
  * and activities, matching Android BeatFlow's drawEmblem implementation.
  */
-export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }: MoodEmblemProps) {
+export function MoodEmblem({
+  moodKey,
+  strokeColor = '#ffffff',
+  className = '',
+  animated = false,
+}: MoodEmblemProps) {
+  const anim = (cls: string) => (animated ? cls : undefined);
   switch (moodKey) {
     // 1. ENERGY: Apple's slanted bolt with strobing echo flash
     case 'ENERGY':
       return (
         <svg viewBox="0 0 100 100" fill="none" className={className}>
-          <path
-            d="M48.6 12.3 L88.6 12.3 L53.2 50.9 L87.7 50.9 L11.4 89.5 L40.9 61.4 L10.5 61.4 Z"
-            stroke={strokeColor}
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="animate-mood-bolt-l"
-          />
-          <path
-            d="M48.6 12.3 L88.6 12.3 L53.2 50.9 L87.7 50.9 L11.4 89.5 L40.9 61.4 L10.5 61.4 Z"
-            stroke={strokeColor}
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="animate-mood-bolt-r"
-          />
+          {animated && (
+            <>
+              <path
+                d="M48.6 12.3 L88.6 12.3 L53.2 50.9 L87.7 50.9 L11.4 89.5 L40.9 61.4 L10.5 61.4 Z"
+                stroke={strokeColor}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="animate-mood-bolt-l"
+              />
+              <path
+                d="M48.6 12.3 L88.6 12.3 L53.2 50.9 L87.7 50.9 L11.4 89.5 L40.9 61.4 L10.5 61.4 Z"
+                stroke={strokeColor}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="animate-mood-bolt-r"
+              />
+            </>
+          )}
           <path
             d="M48.6 12.3 L88.6 12.3 L53.2 50.9 L87.7 50.9 L11.4 89.5 L40.9 61.4 L10.5 61.4 Z"
             stroke={strokeColor}
             strokeWidth="5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="animate-mood-bolt-main [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-bolt-main [transform-box:fill-box] [transform-origin:center]')}
           />
         </svg>
       );
@@ -56,7 +67,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             ry="9"
             stroke={strokeColor}
             strokeWidth="5"
-            className="animate-mood-sway-1 [transform-origin:50px_24px]"
+            className={anim('animate-mood-sway-1 [transform-origin:50px_24px]')}
           />
           <ellipse
             cx="50"
@@ -65,7 +76,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             ry="14"
             stroke={strokeColor}
             strokeWidth="5"
-            className="animate-mood-sway-2 [transform-origin:50px_46px]"
+            className={anim('animate-mood-sway-2 [transform-origin:50px_46px]')}
           />
           <ellipse
             cx="50"
@@ -74,7 +85,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             ry="18"
             stroke={strokeColor}
             strokeWidth="5"
-            className="animate-mood-sway-3 [transform-origin:50px_74px]"
+            className={anim('animate-mood-sway-3 [transform-origin:50px_74px]')}
           />
         </svg>
       );
@@ -89,8 +100,8 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             strokeWidth="4.5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeDasharray="600"
-            className="animate-mood-spiral"
+            strokeDasharray={animated ? "600" : undefined}
+            className={anim('animate-mood-spiral')}
           />
         </svg>
       );
@@ -108,7 +119,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             stroke={strokeColor}
             strokeWidth="5"
             strokeLinejoin="round"
-            className="animate-mood-star [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-star [transform-box:fill-box] [transform-origin:center]')}
           />
         </svg>
       );
@@ -123,7 +134,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             r="46"
             stroke={strokeColor}
             strokeWidth="4"
-            className="animate-mood-focus-1 [transform-origin:50px_50px]"
+            className={anim('animate-mood-focus-1 [transform-origin:50px_50px]')}
           />
           <circle
             cx="50"
@@ -131,7 +142,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             r="46"
             stroke={strokeColor}
             strokeWidth="4"
-            className="animate-mood-focus-2 [transform-origin:50px_50px]"
+            className={anim('animate-mood-focus-2 [transform-origin:50px_50px]')}
           />
           <circle
             cx="50"
@@ -139,7 +150,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             r="46"
             stroke={strokeColor}
             strokeWidth="4"
-            className="animate-mood-focus-3 [transform-origin:50px_50px]"
+            className={anim('animate-mood-focus-3 [transform-origin:50px_50px]')}
           />
           <circle
             cx="50"
@@ -147,7 +158,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             r="46"
             stroke={strokeColor}
             strokeWidth="4"
-            className="animate-mood-focus-4 [transform-origin:50px_50px]"
+            className={anim('animate-mood-focus-4 [transform-origin:50px_50px]')}
           />
         </svg>
       );
@@ -163,7 +174,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             strokeDasharray="9 6"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="animate-mood-heartbreak"
+            className={anim('animate-mood-heartbreak')}
           />
         </svg>
       );
@@ -178,7 +189,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             strokeWidth="5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="animate-mood-love [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-love [transform-box:fill-box] [transform-origin:center]')}
           />
         </svg>
       );
@@ -201,7 +212,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             fill={strokeColor}
             stroke={strokeColor}
             strokeWidth="1.5"
-            className="animate-mood-twinkle-1 [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-twinkle-1 [transform-box:fill-box] [transform-origin:center]')}
           />
           {/* Star 2 */}
           <path
@@ -209,7 +220,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             fill={strokeColor}
             stroke={strokeColor}
             strokeWidth="1.5"
-            className="animate-mood-twinkle-2 [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-twinkle-2 [transform-box:fill-box] [transform-origin:center]')}
           />
           {/* Star 3 */}
           <path
@@ -217,7 +228,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             fill={strokeColor}
             stroke={strokeColor}
             strokeWidth="1.5"
-            className="animate-mood-twinkle-3 [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-twinkle-3 [transform-box:fill-box] [transform-origin:center]')}
           />
         </svg>
       );
@@ -233,7 +244,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             ry="18"
             stroke={strokeColor}
             strokeWidth="3.5"
-            className="animate-mood-ripple-1 [transform-origin:50px_55px]"
+            className={anim('animate-mood-ripple-1 [transform-origin:50px_55px]')}
           />
           <ellipse
             cx="50"
@@ -242,7 +253,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             ry="18"
             stroke={strokeColor}
             strokeWidth="3.5"
-            className="animate-mood-ripple-2 [transform-origin:50px_55px]"
+            className={anim('animate-mood-ripple-2 [transform-origin:50px_55px]')}
           />
           <ellipse
             cx="50"
@@ -251,7 +262,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             ry="18"
             stroke={strokeColor}
             strokeWidth="3.5"
-            className="animate-mood-ripple-3 [transform-origin:50px_55px]"
+            className={anim('animate-mood-ripple-3 [transform-origin:50px_55px]')}
           />
           <ellipse
             cx="50"
@@ -260,7 +271,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             ry="18"
             stroke={strokeColor}
             strokeWidth="3.5"
-            className="animate-mood-ripple-4 [transform-origin:50px_55px]"
+            className={anim('animate-mood-ripple-4 [transform-origin:50px_55px]')}
           />
         </svg>
       );
@@ -280,21 +291,21 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
               stroke={strokeColor}
               strokeWidth="4"
               strokeLinecap="round"
-              className="animate-mood-wave"
+              className={anim('animate-mood-wave')}
             />
             <path
               d="M -40 50 Q -30 44 -20 50 T 0 50 T 20 50 T 40 50 T 60 50 T 80 50 T 100 50 T 120 50 T 140 50"
               stroke={strokeColor}
               strokeWidth="4"
               strokeLinecap="round"
-              className="animate-mood-wave [animation-delay:-1.66s]"
+              className={anim('animate-mood-wave [animation-delay:-1.66s]')}
             />
             <path
               d="M -40 68 Q -30 62 -20 68 T 0 68 T 20 68 T 40 68 T 60 68 T 80 68 T 100 68 T 120 68 T 140 68"
               stroke={strokeColor}
               strokeWidth="4"
               strokeLinecap="round"
-              className="animate-mood-wave [animation-delay:-3.33s]"
+              className={anim('animate-mood-wave [animation-delay:-3.33s]')}
             />
           </g>
         </svg>
@@ -311,10 +322,10 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
           {/* Right road line */}
           <line x1="94" y1="95" x2="56" y2="14" stroke={strokeColor} strokeWidth="4.5" strokeLinecap="round" />
           {/* Perspective center dashes */}
-          <line x1="50" y1="18" x2="50" y2="28" stroke={strokeColor} strokeWidth="4" strokeLinecap="round" className="animate-mood-commute-1" />
-          <line x1="50" y1="32" x2="50" y2="46" stroke={strokeColor} strokeWidth="4" strokeLinecap="round" className="animate-mood-commute-2" />
-          <line x1="50" y1="50" x2="50" y2="68" stroke={strokeColor} strokeWidth="4.5" strokeLinecap="round" className="animate-mood-commute-3" />
-          <line x1="50" y1="72" x2="50" y2="92" stroke={strokeColor} strokeWidth="5" strokeLinecap="round" className="animate-mood-commute-4" />
+          <line x1="50" y1="18" x2="50" y2="28" stroke={strokeColor} strokeWidth="4" strokeLinecap="round" className={anim('animate-mood-commute-1')} />
+          <line x1="50" y1="32" x2="50" y2="46" stroke={strokeColor} strokeWidth="4" strokeLinecap="round" className={anim('animate-mood-commute-2')} />
+          <line x1="50" y1="50" x2="50" y2="68" stroke={strokeColor} strokeWidth="4.5" strokeLinecap="round" className={anim('animate-mood-commute-3')} />
+          <line x1="50" y1="72" x2="50" y2="92" stroke={strokeColor} strokeWidth="5" strokeLinecap="round" className={anim('animate-mood-commute-4')} />
         </svg>
       );
 
@@ -337,21 +348,21 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             stroke={strokeColor}
             strokeWidth="3.5"
             strokeLinecap="round"
-            className="animate-mood-steam-1"
+            className={anim('animate-mood-steam-1')}
           />
           <path
             d="M 50 52 Q 46 38 52 28 T 50 8"
             stroke={strokeColor}
             strokeWidth="3.5"
             strokeLinecap="round"
-            className="animate-mood-steam-2"
+            className={anim('animate-mood-steam-2')}
           />
           <path
             d="M 64 52 Q 60 40 66 30 T 64 12"
             stroke={strokeColor}
             strokeWidth="3.5"
             strokeLinecap="round"
-            className="animate-mood-steam-3"
+            className={anim('animate-mood-steam-3')}
           />
         </svg>
       );
@@ -373,7 +384,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
               r="24"
               stroke={strokeColor}
               strokeWidth="4.5"
-              className="animate-mood-sunset"
+              className={anim('animate-mood-sunset')}
             />
           </g>
           {/* Horizon line */}
@@ -395,18 +406,20 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             strokeWidth="4"
             strokeLinecap="round"
             strokeLinejoin="round"
-            opacity="0.25"
+            opacity={animated ? "0.25" : "1"}
           />
           {/* Animated active pulse */}
-          <path
-            d="M 0 55 L 28 55 L 36 42 L 44 76 L 52 18 L 60 84 L 67 55 L 100 55"
-            stroke={strokeColor}
-            strokeWidth="5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="45 180"
-            className="animate-mood-ecg"
-          />
+          {animated && (
+            <path
+              d="M 0 55 L 28 55 L 36 42 L 44 76 L 52 18 L 60 84 L 67 55 L 100 55"
+              stroke={strokeColor}
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="45 180"
+              className="animate-mood-ecg"
+            />
+          )}
         </svg>
       );
 
@@ -421,7 +434,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             height="76"
             stroke={strokeColor}
             strokeWidth="4"
-            className="animate-mood-spin-cw [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-spin-cw [transform-box:fill-box] [transform-origin:center]')}
           />
           <rect
             x="24"
@@ -430,7 +443,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             height="52"
             stroke={strokeColor}
             strokeWidth="4"
-            className="animate-mood-spin-ccw [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-spin-ccw [transform-box:fill-box] [transform-origin:center]')}
           />
           <rect
             x="36"
@@ -439,7 +452,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             height="28"
             stroke={strokeColor}
             strokeWidth="3.5"
-            className="animate-mood-spin-cw [transform-box:fill-box] [transform-origin:center]"
+            className={anim('animate-mood-spin-cw [transform-box:fill-box] [transform-origin:center]')}
           />
         </svg>
       );
@@ -466,7 +479,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             fill={strokeColor}
             stroke={strokeColor}
             strokeWidth="3"
-            className="animate-mood-lamp"
+            className={anim('animate-mood-lamp')}
           />
         </svg>
       );
@@ -484,7 +497,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             {/* Sun circle */}
             <circle cx="50" cy="69" r="20" stroke={strokeColor} strokeWidth="4.5" />
             {/* Rotating sun rays */}
-            <g className="animate-mood-sun-rays [transform-box:fill-box] [transform-origin:50px_69px]">
+            <g className={anim('animate-mood-sun-rays [transform-box:fill-box] [transform-origin:50px_69px]')}>
               {[0, 20, 40, 60, 80, 100, 120, 140, 160, 180].map((deg) => (
                 <line
                   key={deg}
@@ -514,7 +527,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             strokeWidth="5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="animate-mood-chevrons-1"
+            className={anim('animate-mood-chevrons-1')}
           />
           <path
             d="M 22 65 L 50 48 L 78 65"
@@ -522,7 +535,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             strokeWidth="5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="animate-mood-chevrons-2"
+            className={anim('animate-mood-chevrons-2')}
           />
           <path
             d="M 22 85 L 50 68 L 78 85"
@@ -530,7 +543,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             strokeWidth="5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="animate-mood-chevrons-3"
+            className={anim('animate-mood-chevrons-3')}
           />
         </svg>
       );
@@ -555,7 +568,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             r="9"
             stroke={strokeColor}
             strokeWidth="4"
-            className="animate-mood-drift-orb"
+            className={anim('animate-mood-drift-orb')}
           />
         </svg>
       );
@@ -565,7 +578,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
       return (
         <svg viewBox="0 0 100 100" fill="none" className={className}>
           {/* Star 1 */}
-          <g className="animate-mood-confetti-1 [transform-box:fill-box] [transform-origin:24px_24px]">
+          <g className={anim('animate-mood-confetti-1 [transform-box:fill-box] [transform-origin:24px_24px]')}>
             <polygon
               points="24,14 27,21 34,21 28,26 31,33 24,28 17,33 20,26 14,21 21,21"
               stroke={strokeColor}
@@ -575,7 +588,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             />
           </g>
           {/* Star 2 */}
-          <g className="animate-mood-confetti-2 [transform-box:fill-box] [transform-origin:72px_18px]">
+          <g className={anim('animate-mood-confetti-2 [transform-box:fill-box] [transform-origin:72px_18px]')}>
             <polygon
               points="72,10 74,15 80,15 75,19 77,25 72,21 67,25 69,19 64,15 70,15"
               stroke={strokeColor}
@@ -585,7 +598,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             />
           </g>
           {/* Star 3 (Center) */}
-          <g className="animate-mood-confetti-3 [transform-box:fill-box] [transform-origin:52px_50px]">
+          <g className={anim('animate-mood-confetti-3 [transform-box:fill-box] [transform-origin:52px_50px]')}>
             <polygon
               points="52,38 56,46 65,46 58,52 61,61 52,55 43,61 46,52 39,46 48,46"
               stroke={strokeColor}
@@ -595,7 +608,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             />
           </g>
           {/* Star 4 */}
-          <g className="animate-mood-confetti-1 [transform-box:fill-box] [transform-origin:20px_72px]">
+          <g className={anim('animate-mood-confetti-1 [transform-box:fill-box] [transform-origin:20px_72px]')}>
             <polygon
               points="20,64 22,69 28,69 23,73 25,79 20,75 15,79 17,73 12,69 18,69"
               stroke={strokeColor}
@@ -605,7 +618,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             />
           </g>
           {/* Star 5 */}
-          <g className="animate-mood-confetti-2 [transform-box:fill-box] [transform-origin:80px_66px]">
+          <g className={anim('animate-mood-confetti-2 [transform-box:fill-box] [transform-origin:80px_66px]')}>
             <polygon
               points="80,57 83,63 90,63 84,68 87,74 80,70 73,74 76,68 70,63 77,63"
               stroke={strokeColor}
@@ -615,7 +628,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             />
           </g>
           {/* Star 6 */}
-          <g className="animate-mood-confetti-3 [transform-box:fill-box] [transform-origin:56px_88px]">
+          <g className={anim('animate-mood-confetti-3 [transform-box:fill-box] [transform-origin:56px_88px]')}>
             <polygon
               points="56,82 58,86 63,86 59,89 61,94 56,91 51,94 53,89 49,86 54,86"
               stroke={strokeColor}
@@ -631,7 +644,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
     case 'SLEEP':
       return (
         <svg viewBox="0 0 100 100" fill="none" className={className}>
-          <g className="animate-mood-eye [transform-box:fill-box] [transform-origin:center]">
+          <g className={anim('animate-mood-eye [transform-box:fill-box] [transform-origin:center]')}>
             {/* Closed eye curve */}
             <path
               d="M 12 43 Q 50 72 88 43"
@@ -673,7 +686,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             r="26"
             stroke={strokeColor}
             strokeWidth="4.5"
-            className="animate-mood-social-1"
+            className={anim('animate-mood-social-1')}
           />
           <circle
             cx="60"
@@ -681,7 +694,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             r="26"
             stroke={strokeColor}
             strokeWidth="4.5"
-            className="animate-mood-social-2"
+            className={anim('animate-mood-social-2')}
           />
         </svg>
       );
@@ -697,7 +710,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
           </defs>
           <circle cx="50" cy="50" r="44" stroke={strokeColor} strokeWidth="4.5" />
           <g clipPath="url(#ball-clip)">
-            <g className="animate-mood-ball-seams [transform-box:fill-box] [transform-origin:50px_50px]">
+            <g className={anim('animate-mood-ball-seams [transform-box:fill-box] [transform-origin:50px_50px]')}>
               <path
                 d="M 6 50 C 30 20 70 20 94 50"
                 stroke={strokeColor}
@@ -723,7 +736,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
           {/* Center sun circle */}
           <circle cx="50" cy="50" r="22" stroke={strokeColor} strokeWidth="4.5" />
           {/* 12 Radiating rays */}
-          <g className="animate-mood-rays [transform-box:fill-box] [transform-origin:center]">
+          <g className={anim('animate-mood-rays [transform-box:fill-box] [transform-origin:center]')}>
             {Array.from({ length: 12 }).map((_, i) => {
               const angle = (i * 30 * Math.PI) / 180;
               const x1 = 50 + 31 * Math.cos(angle);
@@ -751,7 +764,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
     case 'HOLIDAY':
       return (
         <svg viewBox="0 0 100 100" fill="none" className={className}>
-          <g className="animate-mood-snowflake [transform-box:fill-box] [transform-origin:center]">
+          <g className={anim('animate-mood-snowflake [transform-box:fill-box] [transform-origin:center]')}>
             {Array.from({ length: 6 }).map((_, i) => {
               const deg = i * 60;
               return (
@@ -782,7 +795,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
           {/* Spindle hole */}
           <circle cx="50" cy="50" r="3" fill={strokeColor} />
           {/* Grooves spinning */}
-          <g className="animate-mood-record [transform-box:fill-box] [transform-origin:center]">
+          <g className={anim('animate-mood-record [transform-box:fill-box] [transform-origin:center]')}>
             <path
               d="M 14 50 A 36 36 0 0 1 86 50"
               stroke={strokeColor}
@@ -805,7 +818,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
     case 'WELLBEING':
       return (
         <svg viewBox="0 0 100 100" fill="none" className={className}>
-          <g className="animate-mood-lotus [transform-box:fill-box] [transform-origin:50px_84px]">
+          <g className={anim('animate-mood-lotus [transform-box:fill-box] [transform-origin:50px_84px]')}>
             {/* Center petal */}
             <path
               d="M 50 84 Q 66 52 50 14 Q 34 52 50 84 Z"
@@ -866,8 +879,8 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             stroke={strokeColor}
             strokeWidth="3.5"
             strokeLinecap="round"
-            strokeDasharray="28"
-            className="animate-mood-typing"
+            strokeDasharray={animated ? "28" : undefined}
+            className={anim('animate-mood-typing')}
           />
           {/* Blinking Cursor */}
           <line
@@ -878,7 +891,7 @@ export function MoodEmblem({ moodKey, strokeColor = '#ffffff', className = '' }:
             stroke={strokeColor}
             strokeWidth="3"
             strokeLinecap="round"
-            className="animate-mood-cursor"
+            className={anim('animate-mood-cursor')}
           />
         </svg>
       );

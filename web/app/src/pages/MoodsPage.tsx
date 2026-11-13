@@ -1,24 +1,28 @@
-import { useState } from 'react';
-import { Loader2, Play } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { LogoMark } from '@/components/icons/LogoMark';
 import { PlayingBars } from '@/components/home/PlayingBars';
 import { PageHeader } from '@/components/PageHeader';
 import { ALL_MOODS, type MoodDefinition } from '@/lib/homeLayout';
 import { MoodEmblem } from '@/components/home/TopPickArtwork';
-import { playMoodStation } from '@/lib/playMood';
+import { playMoodStation, prewarmCoreMoods } from '@/lib/playMood';
 import { usePlayer } from '@/state/player';
 
 /**
  * 1:1 Find the Mood / MoodGridPage matching Android BeatFlow's MoodGridPage:
  * Displays all 28 mood and activity stations in a responsive grid with their
- * animated vector emblems, vivid Android colors, and plays that mood's station
- * on click directly according to Android's `playMood` logic.
+ * vector emblems at rest (still = true) and vivid Android colors, playing that mood's
+ * station instantly on click.
  */
 export default function MoodsPage() {
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
 
   const activeSourceId = usePlayer((s) => s.queue[s.index]?.source?.id);
   const isPlaying = usePlayer((s) => s.status === 'playing');
+
+  useEffect(() => {
+    prewarmCoreMoods();
+  }, []);
 
   const handleMoodClick = async (mood: MoodDefinition) => {
     setLoadingKey(mood.key);
@@ -60,23 +64,16 @@ export default function MoodsPage() {
               >
                 {/* Square Tile */}
                 <div
-                  className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-all duration-200 group-hover:scale-[1.03] group-hover:shadow-md flex items-center justify-center"
+                  className="relative w-full aspect-square rounded-xl overflow-hidden shadow-sm transition-transform duration-300 ease-out group-hover:scale-[1.03] group-hover:shadow-md flex items-center justify-center"
                   style={{ backgroundColor: mood.background }}
                 >
-                  {/* Mood Animated Vector Emblem */}
+                  {/* Mood Vector Emblem (at rest matching Android still=true) */}
                   <div className="w-[70%] h-[70%] flex items-center justify-center pointer-events-none">
                     <MoodEmblem
                       moodKey={mood.key}
                       strokeColor={mood.stroke}
-                      className="w-full h-full opacity-95 transition-transform duration-300 group-hover:scale-110"
+                      className="w-full h-full opacity-95 transition-transform duration-300 ease-out group-hover:scale-105"
                     />
-                  </div>
-
-                  {/* Hover Quick Play Overlay */}
-                  <div className="absolute inset-0 bg-black/15 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center pointer-events-none">
-                    <div className="size-11 rounded-full bg-white/25 backdrop-blur-md text-white grid place-items-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
-                      <Play size={20} className="fill-white translate-x-0.5" />
-                    </div>
                   </div>
 
                   {/* BeatFlow Badge (Top-Right): Loader | Playing Bars | Logo */}

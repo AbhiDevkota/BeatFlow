@@ -192,6 +192,7 @@ export function TopPicksShelf({ picks }: TopPicksShelfProps) {
                           moodKey={pick.mood.key}
                           strokeColor={pick.mood.stroke}
                           className="w-32 h-32 opacity-90"
+                          animated={true}
                         />
                       </div>
                     ) : (

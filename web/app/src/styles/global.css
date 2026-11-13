@@ -191,11 +191,11 @@
     100% { transform: rotate(-3deg) scale(1.04); }
   }
   @keyframes mood-bolt-main {
-    0%, 100% { transform: scale(1); filter: none; }
-    38% { transform: scale(1.04); filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.8)); }
-    44% { transform: scale(1.01); filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.4)); }
-    48% { transform: scale(1.03); filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.7)); }
-    56% { transform: scale(1); filter: none; }
+    0%, 100% { transform: scale(1); }
+    38% { transform: scale(1.04); }
+    44% { transform: scale(1.01); }
+    48% { transform: scale(1.03); }
+    56% { transform: scale(1); }
   }
   @keyframes mood-bolt-l {
     0%, 26%, 56%, 100% { opacity: 0; transform: translateX(0); }
@@ -230,10 +230,10 @@
   }
   @keyframes mood-love-beat {
     0%, 100% { transform: scale(1); }
-    12% { transform: scale(1.09); filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.6)); }
-    22% { transform: scale(0.99); filter: none; }
-    34% { transform: scale(1.06); filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.4)); }
-    46% { transform: scale(1); filter: none; }
+    12% { transform: scale(1.08); }
+    22% { transform: scale(0.99); }
+    34% { transform: scale(1.05); }
+    46% { transform: scale(1); }
   }
   @keyframes mood-spiral-draw {
     0%, 35% { stroke-dashoffset: 0; }
@@ -242,7 +242,7 @@
   }
   @keyframes mood-twinkle {
     0%, 100% { opacity: 0.25; transform: scale(0.8); }
-    50% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.8)); }
+    50% { opacity: 1; transform: scale(1.2); }
   }
   @keyframes mood-ripple-expand {
     0% { transform: scale(0.15); opacity: 0; }
@@ -283,8 +283,8 @@
     to { transform: rotate(0deg); }
   }
   @keyframes mood-lamp {
-    0% { opacity: 0.15; filter: none; }
-    100% { opacity: 0.85; filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9)); }
+    0% { opacity: 0.15; }
+    100% { opacity: 0.85; }
   }
   @keyframes mood-sun-rays {
     0% { transform: rotate(0deg); }

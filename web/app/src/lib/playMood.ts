@@ -1,48 +1,76 @@
-import { fetchBrowse, fetchPlaylist, fetchSearch } from '@/data/music/api';
+import { fetchBrowse, fetchPlaylist, searchSongs } from '@/data/music/api';
 import type { Track } from '@/data/music/types';
-import { playList, playTrack, toTrack } from '@/components/music/play';
-import type { MoodDefinition } from '@/lib/homeLayout';
+import { playList } from '@/components/music/play';
+import { CORE_MOODS, type MoodDefinition } from '@/lib/homeLayout';
 
-/** Cache of resolved mood tracks for instantaneous playback on repeat clicks */
+/** In-memory cache of resolved mood tracks for instantaneous playback */
 const moodQueueCache = new Map<string, Track[]>();
+const STORAGE_PREFIX = 'beatflow_mood_station_';
+
+/** Retrieve cached tracks from memory or sessionStorage */
+function getCachedMoodTracks(key: string): Track[] | null {
+  const inMem = moodQueueCache.get(key);
+  if (inMem && inMem.length > 0) return inMem;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(STORAGE_PREFIX + key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        moodQueueCache.set(key, parsed);
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore storage issues
+  }
+  return null;
+}
+
+/** Store resolved tracks in memory and sessionStorage */
+function setCachedMoodTracks(key: string, tracks: Track[]) {
+  if (!tracks || tracks.length === 0) return;
+  moodQueueCache.set(key, tracks);
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(tracks.slice(0, 50)));
+  } catch {
+    // Ignore quota issues
+  }
+}
 
 /**
- * Plays songs matching a Find Your Mood station, implementing the exact logic
- * from Android BeatFlow (TopPicks.moodStation & TopPicks.queue):
- *
- * 1. Fetches the YouTube Music mood category playlists for `mood.params`.
- * 2. Scores the candidate shelves against `mood.shelfWords` (e.g. heartbreak, chill, workout).
- * 3. Draws candidate playlists at random and fetches their audio tracks.
- * 4. Deduplicates and shuffles them into a cohesive mood station queue.
- * 5. Starts playback with the queue labeled as "[Mood] Station".
+ * Fast resolution of playable tracks for a mood.
+ * Calls searchSongs which returns ~20 tracks directly in a single fast round-trip (~250ms).
  */
-export async function playMoodStation(mood: MoodDefinition): Promise<void> {
-  const cached = moodQueueCache.get(mood.key);
-  if (cached && cached.length > 0) {
-    const shuffled = [...cached].sort(() => Math.random() - 0.5);
-    playList(shuffled, 0, {
-      source: { title: `${mood.title} Station`, type: 'home', id: mood.key },
-    });
-    return;
-  }
-
+async function fastFetchMoodSongs(mood: MoodDefinition): Promise<Track[]> {
   try {
-    // 1. Fetch category shelves using mood.params
+    const query = `${mood.title} mood songs`;
+    const tracks = await searchSongs(query);
+    if (tracks && tracks.length > 0) {
+      return tracks;
+    }
+  } catch (err) {
+    console.warn(`[playMood] fastFetch failed for ${mood.title}:`, err);
+  }
+  return [];
+}
+
+/**
+ * Full category browse resolution matching Android BeatFlow's TopPicks.moodQueue:
+ * Fetches FEmusic_moods_and_genres_category, scores shelves, and pulls tracks from candidate playlists.
+ */
+async function fullBrowseMoodTracks(mood: MoodDefinition): Promise<Track[]> {
+  try {
     const browse = await fetchBrowse({
       browseId: 'FEmusic_moods_and_genres_category',
       params: mood.params,
     });
 
-    // If the browse endpoint directly rendered tracks (some moods return a song list)
     if (browse.tracks && browse.tracks.length > 0) {
-      moodQueueCache.set(mood.key, browse.tracks);
-      playList(browse.tracks, 0, {
-        source: { title: `${mood.title} Station`, type: 'home', id: mood.key },
-      });
-      return;
+      return browse.tracks;
     }
 
-    // 2. Identify shelves with playlists
     const shelvesWithPlaylists = browse.shelves.filter((shelf) =>
       shelf.items.some((item) => item.kind === 'playlist' || item.id.startsWith('VL') || item.id.startsWith('PL'))
     );
@@ -50,7 +78,6 @@ export async function playMoodStation(mood: MoodDefinition): Promise<void> {
     let candidateItems: typeof browse.shelves[0]['items'] = [];
 
     if (shelvesWithPlaylists.length > 0) {
-      // Score shelves based on mood.shelfWords matching Android's TopPicks score
       const words = mood.shelfWords ?? [];
       let bestShelf = shelvesWithPlaylists[0]!;
       let bestScore = -1;
@@ -76,70 +103,129 @@ export async function playMoodStation(mood: MoodDefinition): Promise<void> {
       candidateItems = browse.grid;
     }
 
-    // 3. Take up to 3 playlists and fetch their tracks
     const playlistIds = candidateItems
       .map((item) => item.id.replace(/^VL/, ''))
       .filter(Boolean)
-      .slice(0, 3);
+      .slice(0, 2);
+
+    if (playlistIds.length === 0) return [];
 
     const tracksList: Track[] = [];
-
-    if (playlistIds.length > 0) {
-      const results = await Promise.allSettled(playlistIds.map((id) => fetchPlaylist(id)));
-      for (const res of results) {
-        if (res.status === 'fulfilled' && res.value?.page?.tracks) {
-          tracksList.push(...res.value.page.tracks);
-        }
+    const results = await Promise.allSettled(playlistIds.map((id) => fetchPlaylist(id)));
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value?.page?.tracks) {
+        tracksList.push(...res.value.page.tracks);
       }
     }
 
-    // Deduplicate tracks by videoId
     const seen = new Set<string>();
-    const uniqueTracks: Track[] = [];
+    const unique: Track[] = [];
     for (const t of tracksList) {
       if (t.videoId && !seen.has(t.videoId)) {
         seen.add(t.videoId);
-        uniqueTracks.push(t);
+        unique.push(t);
       }
     }
-
-    if (uniqueTracks.length > 0) {
-      const shuffled = uniqueTracks.sort(() => Math.random() - 0.5).slice(0, 60);
-      moodQueueCache.set(mood.key, shuffled);
-      playList(shuffled, 0, {
-        source: { title: `${mood.title} Station`, type: 'home', id: mood.key },
-      });
-      return;
-    }
-
-    // 4. Fallback: Search for mood tracks directly if category returned no playable playlists
-    const searchRes = await fetchSearch(`${mood.title} mood`);
-    const songItems =
-      searchRes.songs.length > 0 ? searchRes.songs : searchRes.top.filter((i) => i.kind === 'song' || i.kind === 'video');
-
-    if (songItems.length > 0) {
-      const tracks = songItems.map((item) => toTrack(item));
-      moodQueueCache.set(mood.key, tracks);
-      playList(tracks, 0, {
-        source: { title: `${mood.title} Station`, type: 'home', id: mood.key },
-      });
-      return;
-    }
+    return unique;
   } catch (err) {
-    console.warn(`[playMood] Failed to load mood station for ${mood.title}:`, err);
-    // Reliable fallback: search for mood songs and play
-    try {
-      const fallbackSearch = await fetchSearch(`${mood.title} music`);
-      const first = fallbackSearch.songs[0] || fallbackSearch.top[0];
-      if (first) {
-        playTrack(toTrack(first), null, {
-          title: `${mood.title} Station`,
-          type: 'home',
-          id: mood.key,
-        });
+    console.warn(`[playMood] fullBrowse failed for ${mood.title}:`, err);
+    return [];
+  }
+}
+
+/**
+ * Plays a Find Your Mood station.
+ * Instant start:
+ * - If cached: starts in 0ms.
+ * - If uncached: races fast-fetch so music starts playing within ~250ms,
+ *   while background resolution enriches the queue without blocking audio.
+ */
+export async function playMoodStation(mood: MoodDefinition): Promise<void> {
+  // 1. Instant Cache Hit (0ms)
+  const cached = getCachedMoodTracks(mood.key);
+  if (cached && cached.length > 0) {
+    const shuffled = [...cached].sort(() => Math.random() - 0.5);
+    playList(shuffled, 0, {
+      source: { title: `${mood.title} Station`, type: 'home', id: mood.key },
+    });
+    return;
+  }
+
+  // 2. Fast-path: Start playback as soon as the first track list resolves (~250-350ms)
+  let playbackStarted = false;
+
+  const startPlayback = (tracks: Track[]) => {
+    if (playbackStarted || !tracks.length) return;
+    playbackStarted = true;
+    setCachedMoodTracks(mood.key, tracks);
+    const shuffled = [...tracks].sort(() => Math.random() - 0.5);
+    playList(shuffled, 0, {
+      source: { title: `${mood.title} Station`, type: 'home', id: mood.key },
+    });
+  };
+
+  // Run fast song search and full category browse concurrently
+  const fastPromise = fastFetchMoodSongs(mood).then((songs) => {
+    if (songs.length > 0 && !playbackStarted) {
+      startPlayback(songs);
+    }
+    return songs;
+  });
+
+  const fullPromise = fullBrowseMoodTracks(mood).then((browseTracks) => {
+    if (browseTracks.length > 0) {
+      if (!playbackStarted) {
+        startPlayback(browseTracks);
+      } else {
+        // Enrich the cache with the full playlist tracks for next time
+        setCachedMoodTracks(mood.key, browseTracks);
       }
-    } catch {
-      // Ignored
+    }
+    return browseTracks;
+  });
+
+  // Await whichever finishes first to ensure playback starts
+  await Promise.race([fastPromise, fullPromise]);
+
+  // If neither has started playback yet, await both
+  if (!playbackStarted) {
+    const [fast, full] = await Promise.all([fastPromise, fullPromise]);
+    const fallback = fast.length > 0 ? fast : full;
+    if (fallback.length > 0) {
+      startPlayback(fallback);
     }
   }
+}
+
+let prewarmDone = false;
+
+/**
+ * Pre-warms the core moods in the background during idle time so clicking
+ * them plays instantly with 0ms delay.
+ */
+export function prewarmCoreMoods(): void {
+  if (prewarmDone || typeof window === 'undefined') return;
+  prewarmDone = true;
+
+  const schedule =
+    'requestIdleCallback' in window
+      ? (window as unknown as { requestIdleCallback: (fn: () => void) => void }).requestIdleCallback
+      : (fn: () => void) => setTimeout(fn, 1200);
+
+  schedule(() => {
+    void (async () => {
+      for (const mood of CORE_MOODS) {
+        if (!getCachedMoodTracks(mood.key)) {
+          try {
+            const songs = await fastFetchMoodSongs(mood);
+            if (songs.length > 0) {
+              setCachedMoodTracks(mood.key, songs);
+            }
+          } catch {
+            // Silently ignore background prewarm errors
+          }
+        }
+      }
+    })();
+  });
 }
