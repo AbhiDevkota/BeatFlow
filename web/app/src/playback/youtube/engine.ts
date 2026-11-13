@@ -179,23 +179,50 @@ export class YouTubeEngine {
         const isDash =
           info.url.includes('.mpd') ||
           info.container === 'mpd' ||
+          info.container === 'dash' ||
           info.url.includes('manifest.mpd') ||
           (info.isDolbyAtmos && info.url.includes('manifest'));
 
+        await player.unload();
+
         if (isDash) {
-          for (const scheme of ['http', 'https']) {
-            shaka.net.NetworkingEngine.registerScheme(
-              scheme,
-              shaka.net.HttpFetchPlugin.parse,
-              shaka.net.NetworkingEngine.PluginPriority.FALLBACK,
-            );
+          try {
+            for (const scheme of ['http', 'https']) {
+              shaka.net.NetworkingEngine.registerScheme(
+                scheme,
+                shaka.net.HttpFetchPlugin.parse,
+                shaka.net.NetworkingEngine.PluginPriority.FALLBACK,
+              );
+            }
+            if (player.getMediaElement() !== this.audio) {
+              await player.attach(this.audio);
+            }
+            await player.load(info.url, startSec);
+            const variants = player.getVariantTracks();
+            if (variants.length > 0) {
+              const best = variants.slice().sort((a, b) => (b.bandwidth ?? 0) - (a.bandwidth ?? 0))[0]!;
+              player.selectVariantTrack(best, true);
+            }
+          } catch (dashErr) {
+            trackLog.w(`Shaka DASH load failed, trying direct playback: ${String(dashErr)}`, info.url);
+            try {
+              await player.detach();
+            } catch {}
+            this.audio.src = info.url;
+            if (startSec > 0) {
+              const applySeek = () => {
+                try {
+                  this.audio.currentTime = startSec;
+                } catch {}
+              };
+              if (this.audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                applySeek();
+              } else {
+                this.audio.addEventListener('loadedmetadata', applySeek, { once: true });
+              }
+            }
           }
-          if (player.getMediaElement() !== this.audio) {
-            await player.attach(this.audio);
-          }
-          await player.load(info.url, startSec);
         } else {
-          await player.unload();
           try {
             await player.detach();
           } catch {}

@@ -895,6 +895,24 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   } catch (error) {
     if (token !== loadToken || (error instanceof Error && error.name === 'SupersededError')) return;
     const message = error instanceof Error ? error.message : String(error);
+
+    // If an upgraded addon stream fails, gracefully fall back to the original YouTube track
+    if (currentTrack.videoId.startsWith('addon:')) {
+      const orig = originalTracks.get(currentTrack.videoId);
+      if (orig) {
+        trackLog.w(`Upgraded stream failed (${message}), reverting to original YouTube track`, orig.videoId);
+        revertedTracks.add(currentTrack.videoId);
+        revertedTracks.add(orig.videoId);
+        const currentQueue = [...usePlayer.getState().queue];
+        if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+          currentQueue[at] = { ...currentQueue[at]!, track: orig };
+          usePlayer.setState({ queue: currentQueue });
+        }
+        void startAt(at, { startSec, auto, autoplay });
+        return;
+      }
+    }
+
     usePlayer.setState({ status: 'error', error: message });
     // A track the player reached on its own that can't play is skipped, as on the phone.
     if (auto && planNext(true)) {

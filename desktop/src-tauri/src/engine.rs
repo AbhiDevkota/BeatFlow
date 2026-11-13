@@ -85,10 +85,13 @@ impl BeatflowEngine {
         let track_id = parts[2..].join(":");
 
         // If this track was already upgraded and cached, return it directly
-        if let Some(cached) = self.upgraded_streams.read().await.get(&track_id) {
-            let mut active = self.active_stream.write().await;
-            *active = Some(cached.clone());
-            return Ok(cached.clone());
+        {
+            let up = self.upgraded_streams.read().await;
+            if let Some(cached) = up.get(&track_id).or_else(|| up.get(addon_uri)) {
+                let mut active = self.active_stream.write().await;
+                *active = Some(cached.clone());
+                return Ok(cached.clone());
+            }
         }
 
         let owned_addons = if addons_override.is_none() {
@@ -98,7 +101,7 @@ impl BeatflowEngine {
         };
         let addons: &[InstalledAddon] = addons_override.unwrap_or_else(|| owned_addons.as_deref().unwrap());
 
-        let addon = addons.iter().find(|a| a.id == addon_id)
+        let addon = addons.iter().find(|a| a.id == addon_id || a.name == addon_id || a.id.contains(addon_id) || addon_id.contains(&a.id))
             .ok_or_else(|| anyhow::anyhow!("addon '{}' not found", addon_id))?;
 
         let client = AddonClient::new(&addon.base_url)
@@ -161,6 +164,7 @@ impl BeatflowEngine {
 
             let mut up = self.upgraded_streams.write().await;
             up.insert(track.video_id.clone(), s.clone());
+            up.insert(format!("addon:{}:{}", s.source, track.video_id), s.clone());
 
             let mut active = self.active_stream.write().await;
             *active = Some(s.clone());
