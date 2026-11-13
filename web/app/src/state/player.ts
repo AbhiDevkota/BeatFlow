@@ -759,6 +759,13 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     if (!original) return false;
     revertedTracks.add(original.videoId);
 
+    if (isDesktopApp()) {
+      try {
+        const { desktopBridge } = await import('@bitchord/shared/bridge');
+        void desktopBridge().call('engine.revertToOriginal', { videoId: currentTrack.videoId }).catch(() => {});
+      } catch {}
+    }
+
     const currentQueue = [...get().queue];
     if (currentQueue[index] && currentQueue[index]!.entryId === entry.entryId) {
       currentQueue[index] = { ...currentQueue[index]!, track: original };

@@ -7,6 +7,32 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+pub mod hires;
+pub mod dash;
+pub mod engine;
+
+use engine::{BeatflowEngine, TrackPayload};
+use hires::InstalledAddon;
+
+static ENGINE: OnceLock<BeatflowEngine> = OnceLock::new();
+
+pub fn engine() -> &'static BeatflowEngine {
+  ENGINE.get_or_init(BeatflowEngine::new)
+}
+
+fn load_addons_from_disk() -> Vec<InstalledAddon> {
+  let dir = get_music_dir();
+  let config_file = dir.join("addons.json");
+  if config_file.exists() {
+    if let Ok(content) = fs::read_to_string(&config_file) {
+      if let Ok(addons) = serde_json::from_str::<Vec<InstalledAddon>>(&content) {
+        return addons;
+      }
+    }
+  }
+  Vec::new()
+}
+
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static INITIAL_DEEP_LINK: OnceLock<std::sync::Mutex<Option<String>>> = OnceLock::new();
 
@@ -628,6 +654,85 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let formatted = serde_json::to_string_pretty(&addons_val).map_err(|e| e.to_string())?;
       fs::write(&config_file, formatted).map_err(|e| e.to_string())?;
       Ok(json!({ "saved": true, "path": config_file.to_string_lossy() }))
+    }
+    "engine.getStreamInfo" => {
+      let info = engine().get_stream_info().await;
+      Ok(json!(info))
+    }
+    "engine.setPreferAtmos" => {
+      let on = params.get("preferAtmos").and_then(|v| v.as_bool()).unwrap_or(true);
+      engine().set_prefer_atmos(on).await;
+      Ok(json!({ "preferAtmos": on }))
+    }
+    "engine.setAutoUpgrade" => {
+      let on = params.get("autoUpgrade").and_then(|v| v.as_bool()).unwrap_or(true);
+      engine().set_auto_upgrade(on).await;
+      Ok(json!({ "autoUpgrade": on }))
+    }
+    "engine.loadTrack" => {
+      let video_id = params.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let title = params.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let artist = params.get("artist").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let duration_sec = params.get("durationSec").and_then(|v| v.as_u64()).map(|d| d as u32);
+      let thumbnail = params.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
+      let album = params.get("album").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+      let addons = load_addons_from_disk();
+      let track = TrackPayload {
+        video_id: video_id.clone(),
+        title,
+        artist,
+        duration_sec,
+        thumbnail,
+        album,
+      };
+
+      if video_id.starts_with("addon:") {
+        let stream = engine().resolve_addon_stream(&video_id, &addons).await.map_err(|e| e.to_string())?;
+        Ok(json!({
+          "stream": stream,
+          "isAddon": true
+        }))
+      } else {
+        let upgrade = engine().check_auto_upgrade(track, &addons).await.unwrap_or(None);
+        Ok(json!({
+          "upgrade": upgrade,
+          "isAddon": false
+        }))
+      }
+    }
+    "engine.upgradeQuality" => {
+      let video_id = params.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let title = params.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let artist = params.get("artist").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let duration_sec = params.get("durationSec").and_then(|v| v.as_u64()).map(|d| d as u32);
+      let thumbnail = params.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
+      let album = params.get("album").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+      let track = TrackPayload {
+        video_id,
+        title,
+        artist,
+        duration_sec,
+        thumbnail,
+        album,
+      };
+
+      let addons = load_addons_from_disk();
+      let upgraded_stream = engine().upgrade_quality(track, &addons).await.map_err(|e| e.to_string())?;
+
+      Ok(json!({
+        "upgraded": upgraded_stream.is_some(),
+        "stream": upgraded_stream
+      }))
+    }
+    "engine.revertToOriginal" => {
+      let video_id = params.get("videoId").and_then(|v| v.as_str()).unwrap_or("");
+      let original = engine().revert_to_original(video_id).await;
+      Ok(json!({
+        "reverted": original.is_some(),
+        "original": original
+      }))
     }
     _ => Err(format!("Unknown bridge method: {method}")),
   }

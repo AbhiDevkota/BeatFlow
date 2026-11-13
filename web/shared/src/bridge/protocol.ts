@@ -293,6 +293,54 @@ export interface BridgeMethods {
     params: { addons: any[] };
     result: { saved: boolean; path: string };
   };
+  'engine.getStreamInfo': {
+    params: Record<string, never>;
+    result: any;
+  };
+  'engine.setPreferAtmos': {
+    params: { preferAtmos: boolean };
+    result: { preferAtmos: boolean };
+  };
+  'engine.setAutoUpgrade': {
+    params: { autoUpgrade: boolean };
+    result: { autoUpgrade: boolean };
+  };
+  'engine.loadTrack': {
+    params: {
+      videoId: string;
+      title?: string;
+      artist?: string;
+      durationSec?: number | null;
+      thumbnail?: string | null;
+      album?: string | null;
+    };
+    result: {
+      stream?: any;
+      upgrade?: any;
+      isAddon: boolean;
+    };
+  };
+  'engine.upgradeQuality': {
+    params: {
+      videoId: string;
+      title?: string;
+      artist?: string;
+      durationSec?: number | null;
+      thumbnail?: string | null;
+      album?: string | null;
+    };
+    result: {
+      upgraded: boolean;
+      stream: any;
+    };
+  };
+  'engine.revertToOriginal': {
+    params: { videoId: string };
+    result: {
+      reverted: boolean;
+      original: any;
+    };
+  };
 }
 
 export type BridgeMethod = keyof BridgeMethods;

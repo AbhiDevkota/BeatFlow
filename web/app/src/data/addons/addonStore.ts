@@ -24,6 +24,11 @@ export function getPreferDolbyAtmos(): boolean {
 export function setPreferDolbyAtmos(prefer: boolean): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(ATMOS_PREF_KEY, prefer ? 'true' : 'false');
+  if (isDesktopApp()) {
+    try {
+      void desktopBridge().call('engine.setPreferAtmos', { preferAtmos: prefer }).catch(() => {});
+    } catch {}
+  }
 }
 
 export function getAutoUpgradeQuality(): boolean {
@@ -34,6 +39,11 @@ export function getAutoUpgradeQuality(): boolean {
 export function setAutoUpgradeQuality(auto: boolean): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(AUTO_UPGRADE_KEY, auto ? 'true' : 'false');
+  if (isDesktopApp()) {
+    try {
+      void desktopBridge().call('engine.setAutoUpgrade', { autoUpgrade: auto }).catch(() => {});
+    } catch {}
+  }
 }
 
 export function getInstalledAddons(): InstalledAddon[] {
@@ -258,6 +268,45 @@ export async function resolveAddonStreamInfo(
   addonUri: string,
   options?: { atmos?: boolean },
 ): Promise<AddonStreamInfo> {
+  // On desktop, the Rust engine drives stream resolution with BitChord UA & Atmos handling
+  if (isDesktopApp()) {
+    try {
+      const bridge = desktopBridge();
+      const res = (await bridge.call('engine.loadTrack', { videoId: addonUri })) as any;
+      if (res && res.stream) {
+        const s = res.stream;
+        const isDolbyAtmos = Boolean(s.atmos);
+        const isLossless = Boolean(s.lossless);
+        const isHiRes = Boolean(s.hires);
+        const sourceQuality = isDolbyAtmos
+          ? 'DOLBY_ATMOS'
+          : isHiRes
+            ? 'HI_RES_LOSSLESS'
+            : isLossless
+              ? 'LOSSLESS'
+              : 'HIGH_QUALITY';
+
+        return {
+          url: s.url,
+          codec: s.codec,
+          bitDepth: typeof s.bitDepth === 'number' ? s.bitDepth : null,
+          sampleRateHz: typeof s.sampleRate === 'number' ? s.sampleRate : null,
+          bitrateKbps: typeof s.bitrateKbps === 'number' ? s.bitrateKbps : (isDolbyAtmos ? 768 : 1411),
+          channels: typeof s.channels === 'number' ? s.channels : (isDolbyAtmos ? 6 : 2),
+          container: s.container || null,
+          isDolbyAtmos,
+          isLossless,
+          isHiRes,
+          isHiQuality: !isLossless && !isDolbyAtmos,
+          addonName: s.source,
+          sourceQuality,
+        };
+      }
+    } catch (err) {
+      console.warn('[AddonStore] Rust engine.loadTrack failed, falling back:', err);
+    }
+  }
+
   // Format: addon:{addonId}:{trackId}
   const parts = addonUri.split(':');
   if (parts.length < 3) {

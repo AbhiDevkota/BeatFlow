@@ -1,3 +1,4 @@
+import { desktopBridge, isDesktopApp } from '@bitchord/shared/bridge';
 import type { Track } from '@/data/music/types';
 import { getInstalledAddons, getPreferDolbyAtmos, searchAddon, type InstalledAddon } from './addonStore';
 import { parseSourceQuality, type SourceQuality } from './sourceQuality';
@@ -67,6 +68,67 @@ function calculateSimilarity(a: string, b: string): number {
  * using BitChord-PC's ranking and query strategy (src/hires.rs).
  */
 export async function findBestQualityUpgrade(track: Track): Promise<QualityUpgradeResult | null> {
+  // On desktop, the Rust engine drives concurrent addon search, candidate scoring & Atmos resolution
+  if (isDesktopApp()) {
+    try {
+      const bridge = desktopBridge();
+      const res = (await bridge.call('engine.upgradeQuality', {
+        videoId: track.videoId,
+        title: track.title,
+        artist: track.artists[0]?.name ?? '',
+        durationSec: track.durationSec ?? null,
+        thumbnail: track.thumbnail ?? null,
+        album: track.album?.name ?? null,
+      })) as any;
+
+      if (res && res.upgraded && res.stream) {
+        const stream = res.stream;
+        const isDolbyAtmos = Boolean(stream.atmos);
+        const isLossless = Boolean(stream.lossless);
+        const isHiRes = Boolean(stream.hires);
+        const sourceQuality = isDolbyAtmos
+          ? 'DOLBY_ATMOS'
+          : isHiRes
+            ? 'HI_RES_LOSSLESS'
+            : isLossless
+              ? 'LOSSLESS'
+              : 'HIGH_QUALITY';
+
+        const upgradedTrack: Track = {
+          ...track,
+          videoId: `addon:${stream.source}:${track.videoId}`,
+          sourceQuality,
+          sourceName: stream.source,
+          sourceFormat: {
+            codec: stream.codec,
+            bitDepth: stream.bitDepth ?? null,
+            sampleRateHz: stream.sampleRate ?? null,
+            bitrateKbps: stream.bitrateKbps ?? (isDolbyAtmos ? 768 : 1411),
+            isLossless,
+            isDolbyAtmos,
+          },
+        };
+
+        const addon: InstalledAddon = {
+          id: stream.source,
+          name: stream.source,
+          version: '1.0.0',
+          baseUrl: stream.host,
+          enabled: true,
+          resources: ['search', 'stream'],
+        };
+
+        return {
+          addon,
+          track: upgradedTrack,
+          quality: sourceQuality,
+        };
+      }
+    } catch (err) {
+      console.warn('[QualityUpgrade] Rust engine.upgradeQuality failed, falling back to JS:', err);
+    }
+  }
+
   const enabledAddons = getInstalledAddons().filter((a) => a.enabled);
   if (!enabledAddons.length) return null;
 

@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Headphones, X } from 'lucide-react';
+import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
 import { DolbyAtmosIcon, LosslessWaveIcon } from './SourceQualityBadge';
 import { usePlayer } from '@/state/player';
 
@@ -26,6 +27,18 @@ function formatBitrate(kbps: number | null | undefined): string | null {
 export function AudioQualityMenu({ onClose, align = 'center' }: AudioQualityMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const nowPlaying = usePlayer((s) => s.nowPlaying);
+  const [rustInfo, setRustInfo] = useState<any>(null);
+
+  useEffect(() => {
+    if (isDesktopApp()) {
+      void desktopBridge()
+        .call('engine.getStreamInfo', {})
+        .then((info) => {
+          if (info) setRustInfo(info);
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     const handleDown = (e: MouseEvent) => {
@@ -48,39 +61,45 @@ export function AudioQualityMenu({ onClose, align = 'center' }: AudioQualityMenu
 
   const s = nowPlaying.stream;
   const rawQuality = nowPlaying.sourceQuality;
-  const codec = s?.codec ?? '';
-  const bitDepth = s?.bitDepth ?? null;
-  const sampleRateHz = s?.sampleRateHz ?? null;
-  const bitrateKbps = s?.bitrateKbps ?? null;
-  const channels = s?.channels ?? 2;
+  const codec = rustInfo?.codec ?? s?.codec ?? '';
+  const bitDepth = rustInfo?.bitDepth ?? s?.bitDepth ?? null;
+  const sampleRateHz = rustInfo?.sampleRate ?? s?.sampleRateHz ?? null;
+  const bitrateKbps = rustInfo?.bitrateKbps ?? s?.bitrateKbps ?? null;
+  const channels = rustInfo?.channels ?? s?.channels ?? 2;
 
   const isDolbyAtmos =
+    Boolean(rustInfo?.atmos) ||
     rawQuality === 'DOLBY_ATMOS' ||
     codec.toLowerCase().includes('dolby') ||
     codec.toLowerCase().includes('e-ac-3') ||
     codec.toLowerCase().includes('atmos');
 
   const isLossless =
-    !isDolbyAtmos &&
-    (rawQuality === 'LOSSLESS' ||
-      rawQuality === 'HI_RES_LOSSLESS' ||
-      ['flac', 'alac', 'wav', 'aiff', 'pcm'].some((c) => codec.toLowerCase().includes(c)));
+    Boolean(rustInfo?.lossless) ||
+    (!isDolbyAtmos &&
+      (rawQuality === 'LOSSLESS' ||
+        rawQuality === 'HI_RES_LOSSLESS' ||
+        ['flac', 'alac', 'wav', 'aiff', 'pcm'].some((c) => codec.toLowerCase().includes(c))));
 
   const isHiRes =
+    Boolean(rustInfo?.hires) ||
     rawQuality === 'HI_RES_LOSSLESS' ||
     (isLossless && (Boolean(bitDepth && bitDepth > 16) || Boolean(sampleRateHz && sampleRateHz > 48000)));
 
-  const badgeTitle = isDolbyAtmos
-    ? 'Dolby Atmos'
-    : isHiRes
-      ? 'Hi-Res Lossless'
-      : isLossless
-        ? 'Lossless'
-        : bitrateKbps && bitrateKbps >= 320
-          ? '320 kbps'
-          : 'High Quality';
+  const badgeTitle =
+    rustInfo?.badge ||
+    (isDolbyAtmos
+      ? 'Dolby Atmos'
+      : isHiRes
+        ? 'Hi-Res Lossless'
+        : isLossless
+          ? 'Lossless'
+          : bitrateKbps && bitrateKbps >= 320
+            ? '320 kbps'
+            : 'High Quality');
 
   const sourceName =
+    rustInfo?.source ||
     nowPlaying.sourceName ||
     (nowPlaying.videoId.startsWith('beatflow://local/')
       ? 'BeatFlow Local'
