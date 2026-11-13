@@ -92,31 +92,34 @@ const HIDE_DOWNLOAD = '.download-controls { display: none !important; }';
 
 /**
  * Moves translate and pronounce (romanization) buttons to the downside, centered,
- * as a floating glass pill that smoothly appears on mouse movement / hover and hides
- * when idle or when not hovering over lyrics.
+ * as a floating glass pill styled after the iOS / Apple volume and scrollbar pill capsule,
+ * smoothly appearing on mouse movement / hover and auto-hiding when idle.
  */
 const DOWNSIDE_CONTROLS =
   ':host { transform: translateZ(0) !important; }' +
-  ' .lyrics-header { display: flex !important; position: fixed !important; inset: auto auto 24px 50% !important;' +
+  ' .lyrics-header { display: flex !important; position: fixed !important; inset: auto auto 28px 50% !important;' +
   ' transform: translateX(-50%) translateY(10px) !important; z-index: 20 !important; width: auto !important; height: auto !important;' +
   ' padding: 0 !important; margin: 0 !important; opacity: 0 !important; pointer-events: none !important;' +
   ' transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important; }' +
   ' :host([data-controls-visible]) .lyrics-header, .lyrics-header:hover, .lyrics-header:focus-within {' +
   ' opacity: 1 !important; pointer-events: auto !important; transform: translateX(-50%) translateY(0) !important; }' +
-  ' .header-controls { display: flex !important; align-items: center !important; gap: 8px !important;' +
-  ' padding: 6px 12px !important; border-radius: 9999px !important; background: rgba(18, 18, 22, 0.85) !important;' +
-  ' backdrop-filter: blur(24px) saturate(200%) !important; -webkit-backdrop-filter: blur(24px) saturate(200%) !important;' +
-  ' border: 1px solid rgba(255, 255, 255, 0.28) !important; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 1px rgba(255, 255, 255, 0.4) !important; }' +
-  ' .header-controls .download-button { width: 38px !important; height: 38px !important; border-radius: 50% !important;' +
-  ' color: #ffffff !important; background: rgba(255, 255, 255, 0.12) !important; display: inline-flex !important;' +
+  ' .header-controls { display: flex !important; align-items: center !important; gap: 10px !important;' +
+  ' padding: 7px 14px !important; border-radius: 9999px !important; background: rgba(28, 28, 34, 0.68) !important;' +
+  ' backdrop-filter: blur(36px) saturate(210%) contrast(1.05) !important; -webkit-backdrop-filter: blur(36px) saturate(210%) contrast(1.05) !important;' +
+  ' border: 0.5px solid rgba(255, 255, 255, 0.28) !important;' +
+  ' box-shadow: 0 14px 44px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.26), inset 0 -0.5px 0 rgba(0, 0, 0, 0.3) !important; }' +
+  ' .header-controls .download-button { width: 42px !important; height: 42px !important; border-radius: 9999px !important;' +
+  ' color: #ffffff !important; background: rgba(255, 255, 255, 0.15) !important; display: inline-flex !important;' +
   ' align-items: center !important; justify-content: center !important; cursor: pointer !important;' +
-  ' transition: color 0.15s ease, background 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease !important; }' +
-  ' .header-controls .download-button svg { width: 20px !important; height: 20px !important; stroke: #ffffff !important; color: #ffffff !important;' +
-  ' stroke-width: 2.2 !important; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)) !important; }' +
-  ' .header-controls .download-button:hover { color: #ffffff !important; background: rgba(255, 255, 255, 0.25) !important;' +
-  ' transform: scale(1.08) !important; }' +
-  ' .header-controls .download-button.active { color: #ffffff !important; background: rgba(255, 255, 255, 0.38) !important;' +
-  ' box-shadow: 0 0 14px rgba(255, 255, 255, 0.35) !important; }';
+  ' border: 0.5px solid rgba(255, 255, 255, 0.16) !important;' +
+  ' transition: color 0.18s ease, background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease, border-color 0.18s ease !important; }' +
+  ' .header-controls .download-button svg { width: 22px !important; height: 22px !important; stroke: #ffffff !important; color: #ffffff !important;' +
+  ' stroke-width: 2.2 !important; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) !important; transition: stroke 0.18s ease, color 0.18s ease !important; }' +
+  ' .header-controls .download-button:hover { color: #ffffff !important; background: rgba(255, 255, 255, 0.28) !important;' +
+  ' border-color: rgba(255, 255, 255, 0.35) !important; transform: scale(1.06) !important; }' +
+  ' .header-controls .download-button.active { color: #000000 !important; background: #ffffff !important;' +
+  ' border-color: #ffffff !important; box-shadow: 0 2px 14px rgba(255, 255, 255, 0.45) !important; }' +
+  ' .header-controls .download-button.active svg { stroke: #000000 !important; color: #000000 !important; filter: none !important; }';
 
 /**
  * am-lyrics, exactly as it is, fed our TTML and a steered clock (prompt §10.2).
