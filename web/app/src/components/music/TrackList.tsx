@@ -1,6 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, MicVocal } from 'lucide-react';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { PauseIcon, PlayIcon } from '@/components/icons/Transport';
 import type { ArtistRef, Track } from '@/data/music/types';
@@ -13,11 +13,24 @@ import { albumHref, artistHref, formatDuration } from './links';
 import { playList, playTrack, type ListContext } from './play';
 import { TrackMenu } from './TrackMenu';
 
-type Variant = 'album' | 'playlist';
+type Variant = 'album' | 'playlist' | 'downloads';
 
-const ROW_HEIGHT: Record<Variant, number> = { album: 46, playlist: 54 };
+const ROW_HEIGHT: Record<Variant, number> = { album: 46, playlist: 54, downloads: 54 };
 /** Below this, plain rows: an album or a short playlist gains nothing from virtualizing. */
 const VIRTUALIZE_FROM = 80;
+
+/** What the Downloads list knows about a file that its Track doesn't. */
+export interface DownloadRowMeta {
+  /** "M4A", "WEBM", "OPUS"… */
+  format: string;
+  /** Already formatted, "8.4 MB". */
+  size: string;
+  /** "Today", "Yesterday", "Nov 2"… */
+  added: string;
+  /** The full date, for the label's tooltip. */
+  addedTitle?: string;
+  hasLyrics: boolean;
+}
 
 interface TrackListProps {
   tracks: Track[];
@@ -30,6 +43,8 @@ interface TrackListProps {
   onNearEnd?: () => void;
   /** Where the list comes from: playing a row queues the list from there. Without it, a row plays alone. */
   source?: ListContext['source'];
+  /** Downloads only, keyed by videoId (the local URL): file details for the two extra columns. */
+  downloadMeta?: Record<string, DownloadRowMeta | undefined>;
 }
 
 /* Track lists (report §3 album rows, §14 playlist rows). */
@@ -58,6 +73,7 @@ const row = [
 const rowVariant: Record<Variant, string> = {
   album: 'h-[46px] grid-cols-[minmax(0,1fr)_auto] rounded-row',
   playlist: `h-[54px] ${playlistColumns} rounded-[12px] max-md:grid-cols-[minmax(0,1fr)_auto]`,
+  downloads: `h-[54px] ${playlistColumns} rounded-[12px] max-md:grid-cols-[minmax(0,1fr)_auto]`,
 };
 
 function Artists({ artists }: { artists: ArtistRef[] }) {
@@ -85,6 +101,7 @@ function Artists({ artists }: { artists: ArtistRef[] }) {
 const time: Record<Variant, string> = {
   album: 'relative justify-end pe-3 type-body tabular-nums text-secondary',
   playlist: 'relative justify-end pe-[18px] type-body tabular-nums text-secondary',
+  downloads: 'relative justify-end pe-[18px] type-body tabular-nums text-secondary',
 };
 
 interface RowProps {
@@ -92,10 +109,11 @@ interface RowProps {
   variant: Variant;
   position: number;
   fallbackArtwork: string | null | undefined;
+  downloadMeta: DownloadRowMeta | undefined;
   onPlayRow: () => void;
 }
 
-function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps) {
+function Row({ track, variant, position, fallbackArtwork, downloadMeta, onPlayRow }: RowProps) {
   const current = usePlayer((s) => s.nowPlaying?.videoId === track.videoId);
   const playing = usePlayer((s) => s.nowPlaying?.videoId === track.videoId && (s.status === 'playing' || s.status === 'buffering'));
   const togglePlay = usePlayer((s) => s.togglePlay);
@@ -104,6 +122,8 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
   const isDownloaded =
     useDownloadsStore((s) => s.isDownloaded(track.title, track.artists[0]?.name)) ||
     track.videoId.startsWith('beatflow://local');
+  // Downloads have their own thumbnail on disk, so they get the playlist's artwork column.
+  const showArtwork = variant === 'playlist' || variant === 'downloads';
 
   return (
     <div
@@ -115,8 +135,8 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
       onDoubleClick={onPlay}
     >
       <div className={`${cell} gap-3`}>
-        <div className={`relative grid w-10 shrink-0 place-items-center${variant === 'playlist' ? ' ms-[7px]' : ''}`}>
-          {variant === 'playlist' ? (
+        <div className={`relative grid w-10 shrink-0 place-items-center${showArtwork ? ' ms-[7px]' : ''}`}>
+          {showArtwork ? (
             <>
               <Artwork src={track.thumbnail ?? fallbackArtwork ?? null} displayWidth={40} radius="var(--radius-artwork-small)" />
               {current && (
@@ -142,13 +162,13 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
           )}
           <button
             className={`absolute inset-0 grid place-items-center rounded-artwork-sm opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 group-data-unavailable/row:hidden ${
-              variant === 'playlist' ? 'bg-lockup-hover text-white' : 'text-primary'
+              showArtwork ? 'bg-lockup-hover text-white' : 'text-primary'
             }`}
             aria-label={playing ? `Pause ${track.title}` : `Play ${track.title}`}
             onClick={onPlay}
             disabled={!!unavailable}
           >
-            {playing ? <PauseIcon size={variant === 'playlist' ? 18 : 16} /> : <PlayIcon size={variant === 'playlist' ? 18 : 16} />}
+            {playing ? <PauseIcon size={showArtwork ? 18 : 16} /> : <PlayIcon size={showArtwork ? 18 : 16} />}
           </button>
         </div>
         <div
@@ -157,7 +177,7 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate type-body text-primary">{track.title}</span>
             {track.explicit && <ExplicitBadge />}
-            {isDownloaded && (
+            {isDownloaded && variant !== 'downloads' && (
               <span title="Downloaded on device" className="inline-flex items-center text-key shrink-0">
                 <CheckCircle2 size={13} strokeWidth={2.5} />
               </span>
@@ -194,10 +214,45 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
           </div>
         </>
       )}
+      {variant === 'downloads' && (
+        <>
+          <div className={`${secondary} ${dimmed}`}>
+            <span className="truncate type-body">
+              <Artists artists={track.artists} />
+            </span>
+          </div>
+          <div className={`${tertiary} ${dimmed}`}>
+            <span className="flex min-w-0 items-center gap-2 type-body">
+              <span className="rounded-[4px] bg-quaternary/70 px-1.5 py-0.5 type-caption-2 font-semibold uppercase tracking-[0.06em] text-secondary">
+                {downloadMeta?.format ?? 'audio'}
+              </span>
+              {downloadMeta && (
+                <span className="truncate tabular-nums text-secondary">{downloadMeta.size}</span>
+              )}
+              {downloadMeta?.hasLyrics && (
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 type-caption-2 font-semibold text-key"
+                  title="Lyrics saved with this download"
+                >
+                  <MicVocal size={11} strokeWidth={2.4} />
+                  Lyrics
+                </span>
+              )}
+            </span>
+          </div>
+        </>
+      )}
       <div className={`${cell} ${time[variant]} ${dimmed}`}>
         {/* The ⋯ button (TrackMenu) takes the time's place on hover, as Apple's rows do. */}
-        <span className={unavailable ? undefined : 'group-focus-within/row:invisible group-hover/row:invisible group-has-[[data-open]]/row:invisible'}>
-          {unavailable === 'missing' ? 'Not found' : formatDuration(track.durationSec)}
+        <span
+          className={unavailable ? undefined : 'group-focus-within/row:invisible group-hover/row:invisible group-has-[[data-open]]/row:invisible'}
+          title={variant === 'downloads' ? downloadMeta?.addedTitle : undefined}
+        >
+          {unavailable === 'missing'
+            ? 'Not found'
+            : variant === 'downloads'
+              ? (downloadMeta?.added ?? '—')
+              : formatDuration(track.durationSec)}
         </span>
         {!unavailable && (
           <TrackMenu
@@ -210,13 +265,15 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
   );
 }
 
-function Header() {
+function Header({ variant }: { variant: Variant }) {
+  const last = variant === 'downloads' ? 'Added' : 'Time';
+  const third = variant === 'downloads' ? 'File' : 'Album';
   return (
     <div className={`grid h-8 items-center ${playlistColumns} type-callout-emphasized text-secondary max-md:hidden`} aria-hidden="true">
       <div className={`${cell} gap-3 ps-[7px]`}>Song</div>
       <div className={secondary}>Artist</div>
-      <div className={tertiary}>Album</div>
-      <div className={`${cell} ${time.playlist}`}>Time</div>
+      <div className={tertiary}>{third}</div>
+      <div className={`${cell} ${time.playlist}`}>{last}</div>
     </div>
   );
 }
@@ -226,7 +283,7 @@ function Header() {
  * hover fill, the number (or artwork) turning into a play button. Long lists
  * are virtualized against the page's scroll container (prompt §3).
  */
-export function TrackList({ tracks, variant, fallbackArtwork, fallbackArtists, onNearEnd, source }: TrackListProps) {
+export function TrackList({ tracks, variant, fallbackArtwork, fallbackArtists, onNearEnd, source, downloadMeta }: TrackListProps) {
   const playRow = (i: number) => {
     // Rows from another catalogue that found no YouTube Music song stay out of the queue.
     if (source) {
@@ -258,7 +315,7 @@ export function TrackList({ tracks, variant, fallbackArtwork, fallbackArtists, o
 
   return (
     <div className="mx-(--body-gutter) type-callout text-secondary" data-variant={variant} role="table" aria-label="Songs">
-      {variant === 'playlist' && <Header />}
+      {variant !== 'album' && <Header variant={variant} />}
       <div ref={container}>
         {virtual ? (
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
@@ -278,6 +335,7 @@ export function TrackList({ tracks, variant, fallbackArtwork, fallbackArtists, o
                   variant={variant}
                   position={item.index + 1}
                   fallbackArtwork={fallbackArtwork}
+                  downloadMeta={downloadMeta?.[tracks[item.index]!.videoId]}
                   onPlayRow={() => playRow(item.index)}
                 />
               </div>
@@ -291,6 +349,7 @@ export function TrackList({ tracks, variant, fallbackArtwork, fallbackArtists, o
               variant={variant}
               position={i + 1}
               fallbackArtwork={fallbackArtwork}
+              downloadMeta={downloadMeta?.[track.videoId]}
               onPlayRow={() => playRow(i)}
             />
           ))

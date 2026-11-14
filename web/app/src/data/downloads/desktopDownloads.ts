@@ -41,6 +41,12 @@ export interface DownloadsStoreState {
   downloaded: DownloadedItem[];
   activeDownloads: Record<string, ActiveDownload>;
   initialized: boolean;
+  /** A refresh is in flight (a manual one, or the window regaining focus). */
+  refreshing: boolean;
+  /** Why the last refresh failed; cleared when another one starts. */
+  error: string | null;
+  /** When the library was last read from disk, for the page's footer. */
+  lastRefreshed: number | null;
   refresh: () => Promise<void>;
   addActiveDownload: (download: ActiveDownload) => void;
   updateActiveDownload: (videoId: string, update: Partial<ActiveDownload>) => void;
@@ -50,16 +56,41 @@ export interface DownloadsStoreState {
   getLocalTrack: (titleOrId: string, artist?: string, videoId?: string) => DownloadedItem | null;
 }
 
+/** One refresh at a time: the shell, the page and window focus all ask for it. */
+let inFlightRefresh: Promise<void> | null = null;
+
 export const useDownloadsStore = create<DownloadsStoreState>((set, get) => ({
   downloaded: [],
   activeDownloads: {},
   initialized: false,
+  refreshing: false,
+  error: null,
+  lastRefreshed: null,
   refresh: async () => {
     if (!isDesktopApp()) return;
-    try {
-      const items = await listDownloadedTracks();
-      set({ downloaded: items, initialized: true });
-    } catch {}
+    if (inFlightRefresh) return inFlightRefresh;
+    set({ refreshing: true, error: null });
+    const run = (async () => {
+      try {
+        const items = await listDownloadedTracks();
+        set({
+          downloaded: items,
+          initialized: true,
+          lastRefreshed: Date.now(),
+        });
+      } catch (err) {
+        // Keep what's already on screen; the page shows the error and a retry.
+        set({
+          initialized: true,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        inFlightRefresh = null;
+        set({ refreshing: false });
+      }
+    })();
+    inFlightRefresh = run;
+    return run;
   },
   addActiveDownload: (download) =>
     set((s) => ({
