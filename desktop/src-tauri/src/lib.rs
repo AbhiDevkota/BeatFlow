@@ -1,4 +1,5 @@
 use base64::prelude::*;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -760,58 +761,13 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   };
 
   let mut req = client().request(method, &params.url);
+  let mut header_map = HeaderMap::new();
 
-  // Faithful mirroring of web/extension/lib/rules.ts:
-  // 1. /youtubei/ on music.youtube.com gets music.youtube.com origin/referer/x-origin
-  // 2. /youtubei/ on www.youtube.com gets www.youtube.com origin/referer/x-origin
-  // 3. googlevideo.com gets www.youtube.com origin/referer (unless c=VISIONOS)
-  // 4. api/stats gets music.youtube.com origin/referer
-  // 5. sw.js_data, iframe_api, and s/player/* MUST NOT have Origin or X-Origin headers,
-  //    otherwise YouTube returns HTTP 400 Bad Request.
   let is_yt = is_youtube || params.url.contains("youtube.com") || params.url.contains("googlevideo.com");
   let is_apple = params.url.contains("amp-api.music.apple.com");
   let is_musixmatch = params.url.contains("musixmatch.com");
   let is_tidal = params.url.contains("tidal.com");
   let is_stats = params.url.contains("/api/stats/");
-
-  let yt_origin = if is_stats || params.url.contains("music.youtube.com") {
-    "https://music.youtube.com"
-  } else {
-    "https://www.youtube.com"
-  };
-
-  if params.url.contains("music.youtube.com/youtubei/") {
-    req = req
-      .header("Origin", "https://music.youtube.com")
-      .header("Referer", "https://music.youtube.com/")
-      .header("X-Origin", "https://music.youtube.com");
-  } else if params.url.contains("youtube.com/youtubei/") {
-    req = req
-      .header("Origin", "https://www.youtube.com")
-      .header("Referer", "https://www.youtube.com/")
-      .header("X-Origin", "https://www.youtube.com");
-  } else if params.url.contains("googlevideo.com") {
-    if !params.url.contains("c=VISIONOS") {
-      req = req
-        .header("Origin", "https://www.youtube.com")
-        .header("Referer", "https://www.youtube.com/");
-    }
-  } else if is_stats {
-    req = req
-      .header("Origin", "https://music.youtube.com")
-      .header("Referer", "https://music.youtube.com/");
-  } else if is_apple {
-    req = req
-      .header("Origin", "https://music.apple.com")
-      .header("Referer", "https://music.apple.com/");
-  } else if is_musixmatch {
-    req = req.header("Cookie", "mxm_bab=AB");
-  } else if is_tidal {
-    req = req
-      .header("Origin", "https://listen.tidal.com")
-      .header("Referer", "https://listen.tidal.com/")
-      .header("User-Agent", hires::USER_AGENT);
-  }
 
   let wants_auth = params.auth.unwrap_or(false)
     || (is_youtube
@@ -819,35 +775,6 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
       && !params.url.contains("sw.js")
       && !params.url.contains("player")
       && !params.url.contains("iframe_api"));
-
-  if is_yt && wants_auth {
-    if let Some(auth) = load_yt_auth() {
-      let connected = auth.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
-      let signed_in = auth.get("signedIn").and_then(|v| v.as_bool()).unwrap_or(false);
-      if connected && signed_in {
-        if let Some(cookies) = auth.get("cookies").and_then(|v| v.as_str()) {
-          if !cookies.is_empty() {
-            req = req.header("Cookie", cookies);
-            if let Some(auth_header) = compute_youtube_authorization(cookies, yt_origin) {
-              req = req.header("Authorization", auth_header);
-            }
-          }
-        }
-        if let Some(auth_user) = auth.get("active").and_then(|v| v.get("authUser")).and_then(|v| v.as_str()) {
-          req = req.header("X-Goog-AuthUser", auth_user);
-        }
-        if let Some(page_id) = auth.get("active").and_then(|v| v.get("pageId")).and_then(|v| v.as_str()) {
-          if !page_id.is_empty() {
-            req = req.header("X-Goog-PageId", page_id);
-          }
-        }
-        req = req
-          .header("Origin", yt_origin)
-          .header("Referer", format!("{}/", yt_origin))
-          .header("X-Origin", yt_origin);
-      }
-    }
-  }
 
   const IDENTITY_HEADERS: &[&str] = &[
     "authorization",
@@ -859,46 +786,132 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
     "referer",
   ];
 
+  // 1. Pass through caller-provided headers, filtering out sensitive or duplicate headers
   if let Some(headers) = params.headers {
     for (k, v) in headers {
       let lower = k.to_lowercase();
-      // If this is a YouTube request, drop the page's identity/origin headers
-      // (origin, referer, x-origin, host, content-length) so they don't override or conflict.
+      // Drop transport-level or conflict headers
       if lower == "host" || lower == "content-length" {
         continue;
       }
-      if is_yt && wants_auth && IDENTITY_HEADERS.contains(&lower.as_str()) {
-        continue;
-      }
+      // For YouTube requests, always drop origin/referer/x-origin and identity headers.
+      // Origin/Referer/X-Origin will be set deterministically below without duplicates.
+      // Identity headers will be injected from authenticated profile if wants_auth is true,
+      // or omitted if wants_auth is false (preventing token leakage onto anonymous requests).
       if is_yt
-        && (lower == "origin"
+        && (IDENTITY_HEADERS.contains(&lower.as_str())
+          || lower == "origin"
           || lower == "referer"
           || lower == "x-origin")
       {
         continue;
       }
-      if is_apple
-        && (lower == "origin"
-          || lower == "referer")
-      {
+      if is_apple && (lower == "origin" || lower == "referer") {
         continue;
       }
-      if is_tidal
-        && (lower == "origin"
-          || lower == "referer"
-          || lower == "x-origin")
-      {
+      if is_tidal && (lower == "origin" || lower == "referer" || lower == "x-origin") {
         continue;
       }
-      // Drop any localhost/tauri origin for external media/addon requests
       if (lower == "origin" || lower == "referer")
         && (v.contains("localhost") || v.contains("tauri:") || v.contains("127.0.0.1"))
       {
         continue;
       }
-      req = req.header(k, v);
+      if let (Ok(hname), Ok(hval)) = (HeaderName::try_from(k.as_str()), HeaderValue::try_from(v.as_str())) {
+        header_map.insert(hname, hval);
+      }
     }
   }
+
+  // 2. Set default User-Agent if not explicitly specified
+  if !header_map.contains_key(reqwest::header::USER_AGENT) {
+    if is_tidal {
+      header_map.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(hires::USER_AGENT));
+    } else {
+      header_map.insert(
+        reqwest::header::USER_AGENT,
+        HeaderValue::from_static(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        ),
+      );
+    }
+  }
+
+  // 3. Set Origin / Referer / X-Origin based on destination rules
+  let is_no_origin_endpoint = params.url.contains("sw.js")
+    || params.url.contains("/s/player/")
+    || params.url.contains("iframe_api");
+
+  let yt_origin = if is_stats || params.url.contains("music.youtube.com") {
+    "https://music.youtube.com"
+  } else {
+    "https://www.youtube.com"
+  };
+
+  if is_yt && !is_no_origin_endpoint {
+    if params.url.contains("music.youtube.com/youtubei/") {
+      header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.youtube.com"));
+      header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.youtube.com/"));
+      header_map.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://music.youtube.com"));
+    } else if params.url.contains("youtube.com/youtubei/") {
+      header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://www.youtube.com"));
+      header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://www.youtube.com/"));
+      header_map.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://www.youtube.com"));
+    } else if params.url.contains("googlevideo.com") {
+      if !params.url.contains("c=VISIONOS") {
+        header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://www.youtube.com"));
+        header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://www.youtube.com/"));
+      }
+    } else if is_stats {
+      header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.youtube.com"));
+      header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.youtube.com/"));
+    }
+  } else if is_apple {
+    header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.apple.com"));
+    header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.apple.com/"));
+  } else if is_musixmatch {
+    header_map.insert(reqwest::header::COOKIE, HeaderValue::from_static("mxm_bab=AB"));
+  } else if is_tidal {
+    header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://listen.tidal.com"));
+    header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://listen.tidal.com/"));
+  }
+
+  // 4. Inject YouTube Auth when requested
+  if is_yt && wants_auth {
+    if let Some(auth) = load_yt_auth() {
+      let connected = auth.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
+      let signed_in = auth.get("signedIn").and_then(|v| v.as_bool()).unwrap_or(false);
+      if connected && signed_in {
+        if let Some(cookies) = auth.get("cookies").and_then(|v| v.as_str()) {
+          if !cookies.is_empty() {
+            if let Ok(val) = HeaderValue::from_str(cookies) {
+              header_map.insert(reqwest::header::COOKIE, val);
+            }
+            if let Some(auth_header) = compute_youtube_authorization(cookies, yt_origin) {
+              if let Ok(val) = HeaderValue::from_str(&auth_header) {
+                header_map.insert(reqwest::header::AUTHORIZATION, val);
+              }
+            }
+          }
+        }
+        if let Some(auth_user) = auth.get("active").and_then(|v| v.get("authUser")).and_then(|v| v.as_str()) {
+          if let Ok(val) = HeaderValue::from_str(auth_user) {
+            header_map.insert(HeaderName::from_static("x-goog-authuser"), val);
+          }
+        }
+        if let Some(page_id) = auth.get("active").and_then(|v| v.get("pageId")).and_then(|v| v.as_str()) {
+          if !page_id.is_empty() {
+            if let Ok(val) = HeaderValue::from_str(page_id) {
+              header_map.insert(HeaderName::from_static("x-goog-pageid"), val);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 5. Apply the HeaderMap onto the request builder
+  req = req.headers(header_map);
 
   if let Some(body) = params.body {
     if params.body_encoding.as_deref() == Some("base64") {
@@ -915,8 +928,6 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   let resp = req.send().await.map_err(|e| e.to_string())?;
   let final_url = resp.url().to_string();
   let status = resp.status().as_u16();
-
-  println!("[Rust Bridge] HTTP {} {} -> {}", method_str, status, params.url);
 
   let mut resp_headers = HashMap::new();
   let mut content_type = String::new();
@@ -943,6 +954,19 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   } else {
     (BASE64_STANDARD.encode(&bytes), "base64".to_string())
   };
+
+  if status >= 400 {
+    let preview_len = std::cmp::min(body_str.len(), 300);
+    eprintln!(
+      "[Rust Bridge] ⚠️ HTTP {} {} -> {} | Error snippet: {}",
+      method_str,
+      status,
+      params.url,
+      &body_str[..preview_len]
+    );
+  } else {
+    println!("[Rust Bridge] HTTP {} {} -> {}", method_str, status, params.url);
+  }
 
   Ok(FetchResult {
     status,
@@ -2541,4 +2565,77 @@ pub fn run() {
     })
     .run(tauri::generate_context!())
     .expect("error while building tauri application");
+}
+
+#[cfg(test)]
+mod http_tests {
+  use super::*;
+
+  #[tokio::test]
+  async fn test_youtubei_browse_does_not_return_400() {
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    headers.insert("x-youtube-client-name".to_string(), "67".to_string());
+    headers.insert("x-youtube-client-version".to_string(), "1.20250219.01.00".to_string());
+
+    let body = serde_json::to_string(&serde_json::json!({
+      "browseId": "FEmusic_home",
+      "context": {
+        "client": {
+          "clientName": "WEB_REMIX",
+          "clientVersion": "1.20250219.01.00"
+        }
+      }
+    }))
+    .unwrap();
+
+    let params = FetchParams {
+      url: "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false&alt=json".to_string(),
+      method: Some("POST".to_string()),
+      headers: Some(headers),
+      body: Some(body),
+      body_encoding: Some("text".to_string()),
+      auth: Some(false),
+    };
+
+    let result = execute_http_request(params, true).await.expect("Request should succeed");
+    assert_eq!(result.status, 200, "Browse endpoint returned status {}", result.status);
+    assert!(result.body.contains("responseContext"), "Response body should contain responseContext");
+  }
+
+  #[tokio::test]
+  async fn test_youtubei_browse_authenticated_if_auth_present() {
+    if load_yt_auth().is_none() {
+      return;
+    }
+
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    headers.insert("x-youtube-client-name".to_string(), "67".to_string());
+    headers.insert("x-youtube-client-version".to_string(), "1.20250219.01.00".to_string());
+
+    let body = serde_json::to_string(&serde_json::json!({
+      "browseId": "FEmusic_home",
+      "context": {
+        "client": {
+          "clientName": "WEB_REMIX",
+          "clientVersion": "1.20250219.01.00"
+        }
+      }
+    }))
+    .unwrap();
+
+    let params = FetchParams {
+      url: "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false&alt=json".to_string(),
+      method: Some("POST".to_string()),
+      headers: Some(headers),
+      body: Some(body),
+      body_encoding: Some("text".to_string()),
+      auth: Some(true),
+    };
+
+    let result = execute_http_request(params, true).await.expect("Request should succeed");
+    assert_eq!(result.status, 200, "Authenticated browse endpoint returned status {}", result.status);
+    assert!(result.body.contains("responseContext"), "Response body should contain responseContext");
+  }
 }
