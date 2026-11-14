@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use tauri::Manager;
 
 pub mod hires;
 pub mod dash;
@@ -21,8 +22,7 @@ pub fn engine() -> &'static BeatflowEngine {
 }
 
 pub fn load_addons_from_disk() -> Vec<InstalledAddon> {
-  let dir = get_music_dir();
-  let config_file = dir.join("addons.json");
+  let config_file = get_addons_config_path();
   if config_file.exists() {
     if let Ok(content) = fs::read_to_string(&config_file) {
       if let Ok(addons) = serde_json::from_str::<Vec<InstalledAddon>>(&content) {
@@ -96,6 +96,62 @@ pub fn get_music_dir() -> PathBuf {
   let dir = base_music.join(subfolder);
   let _ = fs::create_dir_all(&dir);
   dir
+}
+
+pub fn get_config_dir() -> PathBuf {
+  let dir = get_music_dir().join("config");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
+pub fn get_songs_dir() -> PathBuf {
+  let dir = get_music_dir().join("songs");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
+pub fn get_lyrics_dir() -> PathBuf {
+  let dir = get_music_dir().join("lyrics");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
+pub fn get_thumbnails_dir() -> PathBuf {
+  let dir = get_music_dir().join("thumbnails");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
+pub fn get_cache_dir() -> PathBuf {
+  let dir = get_music_dir().join("cache");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
+pub fn get_addons_config_path() -> PathBuf {
+  let new_path = get_config_dir().join("addons.json");
+  let old_path = get_music_dir().join("addons.json");
+  if old_path.exists() && !new_path.exists() {
+    let _ = fs::rename(&old_path, &new_path);
+  }
+  new_path
+}
+
+pub fn open_in_browser(url: &str) {
+  #[cfg(target_os = "windows")]
+  {
+    let _ = std::process::Command::new("cmd")
+      .args(["/c", "start", "", url])
+      .spawn();
+  }
+  #[cfg(target_os = "macos")]
+  {
+    let _ = std::process::Command::new("open").arg(url).spawn();
+  }
+  #[cfg(target_os = "linux")]
+  {
+    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+  }
 }
 
 fn open_in_file_manager(path: &Path) {
@@ -373,7 +429,7 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
 }
 
 #[tauri::command]
-async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
+async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Result<Value, String> {
   if method != "app.log" && method != "log" {
     println!("[Rust Bridge] IPC bridge_call: {}", method);
   }
@@ -469,19 +525,53 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let dir = get_music_dir();
       Ok(json!({
         "path": dir.to_string_lossy(),
+        "songsPath": get_songs_dir().to_string_lossy(),
+        "lyricsPath": get_lyrics_dir().to_string_lossy(),
+        "thumbnailsPath": get_thumbnails_dir().to_string_lossy(),
+        "configPath": get_config_dir().to_string_lossy(),
+        "cachePath": get_cache_dir().to_string_lossy(),
         "isDev": cfg!(debug_assertions),
         "folderName": if cfg!(debug_assertions) { "BeatFlow Dev" } else { "BeatFlow" }
       }))
     }
     "downloads.openFolder" => {
       let dir = get_music_dir();
-      open_in_file_manager(&dir);
+      let target_folder = params.get("subfolder").and_then(|v| v.as_str()).unwrap_or("");
+      let target_path = match target_folder {
+        "songs" => get_songs_dir(),
+        "lyrics" => get_lyrics_dir(),
+        "thumbnails" => get_thumbnails_dir(),
+        "config" => get_config_dir(),
+        "cache" => get_cache_dir(),
+        _ => dir,
+      };
+      open_in_file_manager(&target_path);
       Ok(json!({ "opened": true }))
     }
     "downloads.list" => {
-      let dir = get_music_dir();
+      let songs_dir = get_songs_dir();
+      let root_dir = get_music_dir();
+      let thumbs_dir = get_thumbnails_dir();
+      let lyrics_dir = get_lyrics_dir();
+
+      // Auto-migrate any audio files from root_dir into songs_dir
+      if let Ok(entries) = fs::read_dir(&root_dir) {
+        for entry in entries.flatten() {
+          let path = entry.path();
+          if path.is_file() {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if is_audio_ext(ext) {
+              if let Some(name) = path.file_name() {
+                let dest = songs_dir.join(name);
+                let _ = fs::rename(&path, &dest);
+              }
+            }
+          }
+        }
+      }
+
       let mut items = Vec::new();
-      if let Ok(entries) = fs::read_dir(&dir) {
+      if let Ok(entries) = fs::read_dir(&songs_dir) {
         for entry in entries.flatten() {
           let path = entry.path();
           if path.is_file() {
@@ -504,6 +594,15 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
 
               let local_url = format!("beatflow://local/{}", file_name);
 
+              let thumb_file = format!("{}.jpg", stem);
+              let thumbnail = if thumbs_dir.join(&thumb_file).exists() {
+                Some(format!("beatflow://thumbnail/{}", thumb_file))
+              } else {
+                None
+              };
+
+              let has_lyrics = lyrics_dir.join(format!("{}.lrc", stem)).exists();
+
               items.push(json!({
                 "id": format!("local_{}", file_name),
                 "videoId": format!("local_{}", file_name),
@@ -514,7 +613,9 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
                 "extension": ext,
                 "sizeBytes": file_size,
                 "modifiedMs": modified_ms,
-                "localUrl": local_url
+                "localUrl": local_url,
+                "thumbnail": thumbnail,
+                "hasLyrics": has_lyrics
               }));
             }
           }
@@ -533,6 +634,8 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let artist_raw = params.get("artist").and_then(|v| v.as_str()).unwrap_or("");
       let video_id = params.get("videoId").and_then(|v| v.as_str()).unwrap_or("");
       let ext_param = params.get("extension").and_then(|v| v.as_str()).unwrap_or("m4a");
+      let thumbnail_url = params.get("thumbnailUrl").and_then(|v| v.as_str());
+      let lyrics_text = params.get("lyrics").and_then(|v| v.as_str());
 
       let artist_clean = sanitize_stem(artist_raw);
       let title_clean = sanitize_stem(title_raw);
@@ -543,8 +646,8 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       };
       let ext = if ext_param.is_empty() { "m4a" } else { ext_param.trim_start_matches('.') };
       let file_name = format!("{}.{}", file_stem, ext);
-      let dir = get_music_dir();
-      let file_path = dir.join(&file_name);
+      let songs_dir = get_songs_dir();
+      let file_path = songs_dir.join(&file_name);
 
       println!("[Rust Bridge] Downloading track '{}' to {:?}", file_name, file_path);
 
@@ -554,6 +657,23 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       }
       let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
       fs::write(&file_path, &bytes).map_err(|e| e.to_string())?;
+
+      // Download album art thumbnail if provided
+      if let Some(t_url) = thumbnail_url && !t_url.is_empty() {
+        let thumb_path = get_thumbnails_dir().join(format!("{}.jpg", file_stem));
+        if let Ok(t_resp) = client().get(t_url).send().await
+          && t_resp.status().is_success()
+          && let Ok(t_bytes) = t_resp.bytes().await
+        {
+          let _ = fs::write(&thumb_path, &t_bytes);
+        }
+      }
+
+      // Save lyrics (.lrc) if provided
+      if let Some(l_text) = lyrics_text && !l_text.is_empty() {
+        let lyrics_path = get_lyrics_dir().join(format!("{}.lrc", file_stem));
+        let _ = fs::write(&lyrics_path, l_text);
+      }
 
       let local_url = format!("beatflow://local/{}", file_name);
       Ok(json!({
@@ -567,46 +687,104 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
     }
     "downloads.deleteTrack" => {
       let file_name = params.get("fileName").and_then(|v| v.as_str()).ok_or("Missing fileName")?;
-      let dir = get_music_dir();
-      let file_path = dir.join(file_name);
+      let file_path = get_songs_dir().join(file_name);
+      let root_file_path = get_music_dir().join(file_name);
+      let mut deleted = false;
       if file_path.exists() {
-        fs::remove_file(&file_path).map_err(|e| e.to_string())?;
-        Ok(json!({ "deleted": true, "fileName": file_name }))
-      } else {
-        Ok(json!({ "deleted": false, "reason": "not found" }))
+        let _ = fs::remove_file(&file_path);
+        deleted = true;
       }
+      if root_file_path.exists() {
+        let _ = fs::remove_file(&root_file_path);
+        deleted = true;
+      }
+      let stem = Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+      if !stem.is_empty() {
+        let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.jpg", stem)));
+        let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.lrc", stem)));
+      }
+      Ok(json!({ "deleted": deleted, "fileName": file_name }))
     }
     "downloads.checkExists" => {
       let title_raw = params.get("title").and_then(|v| v.as_str()).unwrap_or("");
       let artist_raw = params.get("artist").and_then(|v| v.as_str()).unwrap_or("");
       let file_name_param = params.get("fileName").and_then(|v| v.as_str()).unwrap_or("");
 
-      let dir = get_music_dir();
+      let songs_dir = get_songs_dir();
+      let root_dir = get_music_dir();
       let mut found = false;
       let mut found_file = String::new();
 
-      if !file_name_param.is_empty() && dir.join(file_name_param).exists() {
+      if !file_name_param.is_empty() && (songs_dir.join(file_name_param).exists() || root_dir.join(file_name_param).exists()) {
         found = true;
         found_file = file_name_param.to_string();
-      } else if let Ok(entries) = fs::read_dir(&dir) {
+      } else {
         let artist_clean = sanitize_stem(artist_raw).to_lowercase();
         let title_clean = sanitize_stem(title_raw).to_lowercase();
-        for entry in entries.flatten() {
-          let name = entry.file_name().to_string_lossy().to_lowercase();
-          if is_audio_ext(entry.path().extension().and_then(|e| e.to_str()).unwrap_or("")) {
-            if !title_clean.is_empty() && name.contains(&title_clean) && (artist_clean.is_empty() || name.contains(&artist_clean)) {
-              found = true;
-              found_file = entry.file_name().to_string_lossy().to_string();
-              break;
+        for dir in [&songs_dir, &root_dir] {
+          if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+              let name = entry.file_name().to_string_lossy().to_lowercase();
+              let ext = entry.path().extension().and_then(|e| e.to_str()).unwrap_or("").to_string();
+              if is_audio_ext(&ext) {
+                if !artist_clean.is_empty() && artist_clean != "track" {
+                  if name.contains(&artist_clean) && name.contains(&title_clean) {
+                    found = true;
+                    found_file = entry.file_name().to_string_lossy().to_string();
+                    break;
+                  }
+                } else if !title_clean.is_empty() && name.contains(&title_clean) {
+                  found = true;
+                  found_file = entry.file_name().to_string_lossy().to_string();
+                  break;
+                }
+              }
             }
           }
+          if found { break; }
         }
       }
 
+      let local_url = if found {
+        Some(format!("beatflow://local/{}", found_file))
+      } else {
+        None
+      };
+
       Ok(json!({
         "exists": found,
-        "fileName": if found { Some(found_file) } else { None }
+        "fileName": if found { Some(found_file) } else { None },
+        "localUrl": local_url
       }))
+    }
+    "shell.open" | "app.openUrl" => {
+      let url = params.get("url").and_then(|v| v.as_str()).ok_or("Missing url")?;
+      open_in_browser(url);
+      Ok(json!({ "opened": true }))
+    }
+    "auth.openLoginWindow" => {
+      let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or("https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F");
+      if let Ok(parsed_url) = url::Url::parse(url_str) {
+        if let Some(existing) = app.get_webview_window("google-login") {
+          let _ = existing.show();
+          let _ = existing.set_focus();
+          let _ = existing.unminimize();
+        } else {
+          let _ = tauri::WebviewWindowBuilder::new(
+            &app,
+            "google-login",
+            tauri::WebviewUrl::External(parsed_url)
+          )
+          .title("Sign in with Google - BeatFlow")
+          .inner_size(520.0, 720.0)
+          .center()
+          .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
+          .build();
+        }
+      } else {
+        open_in_browser(url_str);
+      }
+      Ok(json!({ "opened": true }))
     }
     "addon.manifest" => {
       let base_url = params.get("baseUrl").and_then(|v| v.as_str()).ok_or("Missing baseUrl")?;
@@ -646,8 +824,7 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       Ok(json!(stream_info))
     }
     "addons.loadConfig" => {
-      let dir = get_music_dir();
-      let config_file = dir.join("addons.json");
+      let config_file = get_addons_config_path();
       if config_file.exists() {
         let content = fs::read_to_string(&config_file).map_err(|e| e.to_string())?;
         let parsed: Vec<InstalledAddon> = serde_json::from_str(&content).unwrap_or_default();
@@ -658,8 +835,7 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       }
     }
     "addons.saveConfig" => {
-      let dir = get_music_dir();
-      let config_file = dir.join("addons.json");
+      let config_file = get_addons_config_path();
       let addons_val = params.get("addons").cloned().unwrap_or(json!([]));
       let formatted = serde_json::to_string_pretty(&addons_val).map_err(|e| e.to_string())?;
       fs::write(&config_file, formatted).map_err(|e| e.to_string())?;
@@ -1117,9 +1293,14 @@ pub fn run() {
           } else {
             uri.trim_start_matches("beatflow://local/")
           };
-          let file_name = url_decode(raw_file);
-          let music_dir = get_music_dir();
-          let target_file = music_dir.join(&file_name);
+          let clean_file = raw_file.split(['?', '#']).next().unwrap_or(raw_file);
+          let file_name = url_decode(clean_file);
+          let songs_dir = get_songs_dir();
+          let target_file = if songs_dir.join(&file_name).exists() {
+            songs_dir.join(&file_name)
+          } else {
+            get_music_dir().join(&file_name)
+          };
 
           if target_file.exists() && target_file.is_file() {
             if let Ok(mut f) = fs::File::open(&target_file) {
@@ -1131,11 +1312,10 @@ pub fn run() {
                 if let Some(range_part) = range_str.strip_prefix("bytes=") {
                   let parts: Vec<&str> = range_part.split('-').collect();
                   let start: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
-                  let end: u64 = parts
-                    .get(1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(file_size.saturating_sub(1));
-                  let end = end.min(file_size.saturating_sub(1));
+                  let requested_end: Option<u64> = parts.get(1).and_then(|s| s.parse().ok());
+                  // 2MB chunking for fast audio start without buffer spikes
+                  let max_chunk: u64 = 2 * 1024 * 1024;
+                  let end = requested_end.unwrap_or(start + max_chunk - 1).min(file_size.saturating_sub(1));
 
                   if start <= end && start < file_size {
                     let chunk_len = end - start + 1;
@@ -1183,6 +1363,58 @@ pub fn run() {
             .unwrap();
           responder.respond(resp);
           return;
+        }
+
+        // Handle beatflow://thumbnail/<filename>
+        let is_thumbnail = uri.contains("thumbnail/") || uri.starts_with("beatflow://thumbnail");
+        if is_thumbnail {
+          let raw_file = if let Some(idx) = uri.find("thumbnail/") {
+            &uri[idx + 10..]
+          } else {
+            uri.trim_start_matches("beatflow://thumbnail/")
+          };
+          let clean_file = raw_file.split(['?', '#']).next().unwrap_or(raw_file);
+          let file_name = url_decode(clean_file);
+          let target_file = get_thumbnails_dir().join(&file_name);
+          if target_file.exists() && target_file.is_file() {
+            if let Ok(bytes) = fs::read(&target_file) {
+              let resp = tauri::http::Response::builder()
+                .status(200)
+                .header("Content-Type", "image/jpeg")
+                .header("Content-Length", bytes.len().to_string())
+                .header("Access-Control-Allow-Origin", "*")
+                .body(bytes)
+                .unwrap();
+              responder.respond(resp);
+              return;
+            }
+          }
+        }
+
+        // Handle beatflow://lyrics/<filename>
+        let is_lyrics = uri.contains("lyrics/") || uri.starts_with("beatflow://lyrics");
+        if is_lyrics {
+          let raw_file = if let Some(idx) = uri.find("lyrics/") {
+            &uri[idx + 7..]
+          } else {
+            uri.trim_start_matches("beatflow://lyrics/")
+          };
+          let clean_file = raw_file.split(['?', '#']).next().unwrap_or(raw_file);
+          let file_name = url_decode(clean_file);
+          let target_file = get_lyrics_dir().join(&file_name);
+          if target_file.exists() && target_file.is_file() {
+            if let Ok(bytes) = fs::read(&target_file) {
+              let resp = tauri::http::Response::builder()
+                .status(200)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .header("Content-Length", bytes.len().to_string())
+                .header("Access-Control-Allow-Origin", "*")
+                .body(bytes)
+                .unwrap();
+              responder.respond(resp);
+              return;
+            }
+          }
         }
 
         let json = json!({

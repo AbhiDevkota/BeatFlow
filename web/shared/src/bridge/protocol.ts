@@ -227,7 +227,16 @@ export interface BridgeMethods {
   };
   'downloads.getFolder': {
     params: Record<string, never>;
-    result: { path: string; isDev: boolean; folderName: string };
+    result: {
+      path: string;
+      isDev: boolean;
+      folderName: string;
+      songsPath?: string;
+      lyricsPath?: string;
+      thumbnailsPath?: string;
+      configPath?: string;
+      cachePath?: string;
+    };
   };
   'downloads.openFolder': {
     params: Record<string, never>;
@@ -246,6 +255,8 @@ export interface BridgeMethods {
       sizeBytes: number;
       modifiedMs: number;
       localUrl: string;
+      thumbnail?: string | null;
+      hasLyrics?: boolean;
     }>;
   };
   'downloads.downloadTrack': {
@@ -255,6 +266,8 @@ export interface BridgeMethods {
       artist?: string;
       videoId?: string;
       extension?: string;
+      thumbnailUrl?: string;
+      lyrics?: string;
     };
     result: {
       success: boolean;
@@ -271,7 +284,15 @@ export interface BridgeMethods {
   };
   'downloads.checkExists': {
     params: { title?: string; artist?: string; fileName?: string };
-    result: { exists: boolean; fileName: string | null };
+    result: { exists: boolean; fileName: string | null; localUrl?: string | null };
+  };
+  'shell.open': {
+    params: { url: string };
+    result: { opened: boolean };
+  };
+  'auth.openLoginWindow': {
+    params: { url?: string };
+    result: { opened: boolean };
   };
   'addon.manifest': {
     params: { baseUrl: string };
