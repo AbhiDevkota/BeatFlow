@@ -1,4 +1,4 @@
-import { isDesktopApp, type DiscordPresenceOptions } from '@bitchord/shared/bridge';
+import { isDesktopApp, desktopBridge, type DiscordPresenceOptions } from '@bitchord/shared/bridge';
 import { APPLE_ORIGINS, useAppleAccess } from '@/data/apple/artistArt';
 import { useAppleSettings } from '@/data/apple/motionArt';
 import { useHostAccess } from '@/extension/useHostAccess';
@@ -88,12 +88,26 @@ export function SpotifyIntegration() {
         ? { label: 'Retry', run: () => retry.mutate() }
         : { label: 'Disconnect', run: () => connect.mutate(false) };
   return (
-    <span className={settingsUi.value}>
-      <span title={auth.auth.problem ?? undefined}>{spotifyText(auth)}</span>
+    <div className="flex items-center gap-2">
+      <span className={settingsUi.value}>
+        <span title={auth.auth.problem ?? undefined}>{spotifyText(auth)}</span>
+      </span>
+      {signedIn && isDesktopApp() && (
+        <button
+          className={settingsUi.inlineButton}
+          onClick={() => {
+            void desktopBridge()?.call('spotify.signOut', {}).then(() => {
+              openSpotifySignIn();
+            });
+          }}
+        >
+          Switch Account
+        </button>
+      )}
       <button className={settingsUi.inlineButton} onClick={action.run} disabled={connect.isPending || retry.isPending}>
         {action.label}
       </button>
-    </span>
+    </div>
   );
 }
 

@@ -113,14 +113,30 @@ export default function AccountManagementPage() {
                 </button>
               )}
               {ytSignedIn && (
-                <button
-                  type="button"
-                  className="rounded-[12px] bg-quaternary/50 px-2.5 py-[3px] type-callout-emphasized text-secondary hover:text-primary hover:bg-quaternary transition-colors cursor-pointer"
-                  onClick={() => connect.mutate(false)}
-                  disabled={connect.isPending}
-                >
-                  Disconnect
-                </button>
+                <>
+                  {desktop && (
+                    <button
+                      type="button"
+                      className="rounded-[12px] bg-quaternary/50 px-2.5 py-[3px] type-callout-emphasized text-secondary hover:text-primary hover:bg-quaternary transition-colors cursor-pointer"
+                      onClick={() => {
+                        desktopBridge()?.call('auth.openLoginWindow', {
+                          addAccount: true,
+                          url: 'https://accounts.google.com/AddSession?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F',
+                        });
+                      }}
+                    >
+                      Add Account
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="rounded-[12px] bg-quaternary/50 px-2.5 py-[3px] type-callout-emphasized text-secondary hover:text-primary hover:bg-quaternary transition-colors cursor-pointer"
+                    onClick={() => connect.mutate(false)}
+                    disabled={connect.isPending}
+                  >
+                    Disconnect
+                  </button>
+                </>
               )}
             </div>
           </div>

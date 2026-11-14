@@ -223,6 +223,8 @@ export interface BridgeMethods {
   /** `refresh` drops the cached tokens and asks Spotify again. */
   'spotify.authState': { params: { refresh?: boolean }; result: SpotifyAuthState };
   'spotify.setConnected': { params: { connected: boolean }; result: SpotifyAuthState };
+  /** Signs out of Spotify, clears stored auth and session cookies. */
+  'spotify.signOut': { params: Record<string, never>; result: SpotifyAuthState };
   /** Opens Spotify's sign-in in a tab; the state event follows once `sp_dc` arrives. */
   'spotify.signIn': { params: Record<string, never>; result: Record<string, never> };
   /** The library's playlists, 50 at a time; Liked Songs leads the first page. */
@@ -313,7 +315,7 @@ export interface BridgeMethods {
     result: { opened: boolean };
   };
   'auth.openLoginWindow': {
-    params: { url?: string };
+    params: { url?: string; addAccount?: boolean };
     result: { opened: boolean };
   };
   'auth.startBrowserSignIn': {

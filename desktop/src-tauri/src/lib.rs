@@ -144,11 +144,17 @@ fn compute_sapisid_hash(sapisid: &str, origin: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub fn extract_webview2_cookies(window: &tauri::WebviewWindow) -> Option<String> {
+  extract_webview2_cookies_for_url(window, "https://music.youtube.com")
+}
+
+#[cfg(target_os = "windows")]
+pub fn extract_webview2_cookies_for_url(window: &tauri::WebviewWindow, target_url: &str) -> Option<String> {
   use webview2_com::Microsoft::Web::WebView2::Win32::*;
   use webview2_com::GetCookiesCompletedHandler;
   use windows_core::{Interface, HSTRING, PCWSTR, PWSTR};
 
   let (tx, rx) = std::sync::mpsc::channel();
+  let target = target_url.to_string();
   let res = window.with_webview(move |wv| {
     let controller = wv.controller();
     unsafe {
@@ -174,6 +180,7 @@ pub fn extract_webview2_cookies(window: &tauri::WebviewWindow) -> Option<String>
         }
       };
 
+      let is_spotify = target.contains("spotify.com");
       let tx_inner = tx.clone();
       let handler = GetCookiesCompletedHandler::create(Box::new(move |res, list_opt| {
         if res.is_err() {
@@ -201,7 +208,12 @@ pub fn extract_webview2_cookies(window: &tauri::WebviewWindow) -> Option<String>
             let name = name_pwstr.to_string().unwrap_or_default();
             let val = val_pwstr.to_string().unwrap_or_default();
             let dom = dom_pwstr.to_string().unwrap_or_default();
-            if (dom.contains("youtube.com") || dom.contains("google.com")) && !name.is_empty() && !val.is_empty() {
+            let matched = if is_spotify {
+              dom.contains("spotify.com")
+            } else {
+              dom.contains("youtube.com") || dom.contains("google.com")
+            };
+            if matched && !name.is_empty() && !val.is_empty() {
               parts.push(format!("{}={}", name, val));
             }
           }
@@ -210,8 +222,8 @@ pub fn extract_webview2_cookies(window: &tauri::WebviewWindow) -> Option<String>
         Ok(())
       }));
 
-      let url = HSTRING::from("https://music.youtube.com");
-      let pcwstr = PCWSTR::from_raw(url.as_ptr());
+      let empty_url = HSTRING::from("");
+      let pcwstr = PCWSTR::from_raw(empty_url.as_ptr());
       let _ = cookie_manager.GetCookies(pcwstr, &handler);
     }
   });
@@ -222,10 +234,70 @@ pub fn extract_webview2_cookies(window: &tauri::WebviewWindow) -> Option<String>
   rx.recv_timeout(std::time::Duration::from_secs(3)).ok().flatten()
 }
 
+#[cfg(target_os = "windows")]
+pub fn clear_webview2_cookies_by_filter(window: &tauri::WebviewWindow, domain_keywords: &[&str]) {
+  use webview2_com::Microsoft::Web::WebView2::Win32::*;
+  use webview2_com::GetCookiesCompletedHandler;
+  use windows_core::{Interface, HSTRING, PCWSTR, PWSTR};
+
+  let filter = domain_keywords.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+  let _ = window.with_webview(move |wv| {
+    let controller = wv.controller();
+    unsafe {
+      let core = match controller.CoreWebView2() {
+        Ok(c) => c,
+        Err(_) => return,
+      };
+      let core2: ICoreWebView2_2 = match core.cast() {
+        Ok(c) => c,
+        Err(_) => return,
+      };
+      let cookie_manager = match core2.CookieManager() {
+        Ok(cm) => cm,
+        Err(_) => return,
+      };
+
+      let cm_clone = cookie_manager.clone();
+      let handler = GetCookiesCompletedHandler::create(Box::new(move |res, list_opt| {
+        if res.is_err() {
+          return Ok(());
+        }
+        if let Some(list) = list_opt {
+          let mut count = 0u32;
+          let _ = list.Count(&mut count);
+          for i in 0..count {
+            if let Ok(cookie) = list.GetValueAtIndex(i) {
+              let mut dom_pwstr = PWSTR::null();
+              let _ = cookie.Domain(&mut dom_pwstr);
+              let dom = dom_pwstr.to_string().unwrap_or_default();
+              if filter.iter().any(|f| dom.contains(f)) {
+                let _ = cm_clone.DeleteCookie(&cookie);
+              }
+            }
+          }
+        }
+        Ok(())
+      }));
+
+      let empty_url = HSTRING::from("");
+      let pcwstr = PCWSTR::from_raw(empty_url.as_ptr());
+      let _ = cookie_manager.GetCookies(pcwstr, &handler);
+    }
+  });
+}
+
 #[cfg(not(target_os = "windows"))]
 pub fn extract_webview2_cookies(_window: &tauri::WebviewWindow) -> Option<String> {
   None
 }
+
+#[cfg(not(target_os = "windows"))]
+pub fn extract_webview2_cookies_for_url(_window: &tauri::WebviewWindow, _target_url: &str) -> Option<String> {
+  None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn clear_webview2_cookies_by_filter(_window: &tauri::WebviewWindow, _domain_keywords: &[&str]) {}
 
 fn find_preferred_browser() -> Option<(&'static str, PathBuf)> {
   #[cfg(target_os = "windows")]
@@ -889,6 +961,116 @@ async fn query_youtube_account_menu(cookies: &str) -> Option<(String, Option<Str
   None
 }
 
+fn collect_account_items(val: &Value, out: &mut Vec<Value>) {
+  match val {
+    Value::Object(map) => {
+      if let Some(item) = map.get("accountItem").and_then(|v| v.as_object()) {
+        let name = item.get("accountName")
+          .and_then(|n| n.pointer("/runs/0/text").or_else(|| n.get("simpleText")))
+          .and_then(|s| s.as_str())
+          .unwrap_or("");
+
+        if !name.is_empty() {
+          let handle = item.get("channelHandle")
+            .or_else(|| item.get("accountByline"))
+            .and_then(|h| h.pointer("/runs/0/text").or_else(|| h.get("simpleText")))
+            .and_then(|s| s.as_str());
+
+          let avatar = item.get("accountPhoto")
+            .and_then(|p| p.get("thumbnails"))
+            .and_then(|t| t.as_array())
+            .and_then(|thumbs| thumbs.last())
+            .and_then(|t| t.get("url"))
+            .and_then(|u| u.as_str());
+
+          let is_selected = item.get("isSelected").and_then(|v| v.as_bool()).unwrap_or(false);
+          let page_id = item.get("pageId").and_then(|v| v.as_str());
+          let auth_user = item.get("serviceEndpoint")
+            .and_then(|s| s.pointer("/selectActiveIdentityEndpoint/supportedTokens/0/token"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("0");
+
+          let channel_id = if let Some(pid) = page_id {
+            format!("{}:{}", auth_user, pid)
+          } else {
+            format!("{}:own", auth_user)
+          };
+
+          out.push(json!({
+            "id": channel_id,
+            "name": name,
+            "handle": handle,
+            "avatarUrl": avatar,
+            "brand": page_id.is_some(),
+            "pageId": page_id,
+            "authUser": auth_user,
+            "isSelected": is_selected
+          }));
+        }
+      }
+      for (_, v) in map {
+        collect_account_items(v, out);
+      }
+    }
+    Value::Array(arr) => {
+      for v in arr {
+        collect_account_items(v, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+async fn query_youtube_accounts_list(cookies: &str) -> Vec<Value> {
+  let yt_origin = "https://music.youtube.com";
+  let mut channels = Vec::new();
+
+  if let Some(auth_hdr) = compute_youtube_authorization(cookies, yt_origin) {
+    let mut hm = HeaderMap::new();
+    hm.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.youtube.com"));
+    hm.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.youtube.com/"));
+    hm.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://music.youtube.com"));
+    hm.insert(HeaderName::from_static("x-youtube-client-name"), HeaderValue::from_static("67"));
+    hm.insert(HeaderName::from_static("x-youtube-client-version"), HeaderValue::from_static("1.20250219.01.00"));
+    hm.insert(
+      reqwest::header::USER_AGENT,
+      HeaderValue::from_static(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      ),
+    );
+    if let Ok(cval) = HeaderValue::from_str(cookies) {
+      hm.insert(reqwest::header::COOKIE, cval);
+    }
+    if let Ok(aval) = HeaderValue::from_str(&auth_hdr) {
+      hm.insert(reqwest::header::AUTHORIZATION, aval);
+    }
+    let body = json!({
+      "context": {
+        "client": {
+          "clientName": "WEB_REMIX",
+          "clientVersion": "1.20250219.01.00"
+        }
+      }
+    });
+
+    if let Ok(resp) = client()
+      .post("https://music.youtube.com/youtubei/v1/account/accounts_list?prettyPrint=false")
+      .headers(hm)
+      .json(&body)
+      .send()
+      .await
+    {
+      if resp.status().is_success() {
+        if let Ok(val) = resp.json::<Value>().await {
+          collect_account_items(&val, &mut channels);
+        }
+      }
+    }
+  }
+
+  channels
+}
+
 #[derive(Debug, Deserialize)]
 struct FetchParams {
   url: String,
@@ -924,10 +1106,37 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
     _ => reqwest::Method::GET,
   };
 
-  let mut req = client().request(method, &params.url);
+  let mut target_url = params.url.clone();
+  let mut target_body = params.body;
+
+  let is_like_endpoint = target_url.contains("/youtubei/v1/like/");
+  if is_like_endpoint {
+    if target_url.starts_with("https://www.youtube.com") {
+      target_url = target_url.replacen("https://www.youtube.com", "https://music.youtube.com", 1);
+    }
+    if let Some(ref b) = target_body {
+      if let Ok(mut val) = serde_json::from_str::<Value>(b) {
+        if let Some(map) = val.as_object_mut() {
+          map.remove("client");
+          map.remove("isAudioOnly");
+          if let Some(context) = map.get_mut("context").and_then(|c| c.as_object_mut()) {
+            if let Some(client) = context.get_mut("client").and_then(|cl| cl.as_object_mut()) {
+              client.insert("clientName".to_string(), json!("WEB_REMIX"));
+              if !client.contains_key("clientVersion") {
+                client.insert("clientVersion".to_string(), json!("1.20250219.01.00"));
+              }
+            }
+          }
+        }
+        target_body = Some(val.to_string());
+      }
+    }
+  }
+
+  let mut req = client().request(method, &target_url);
   let mut header_map = HeaderMap::new();
 
-  let is_yt = is_youtube || params.url.contains("youtube.com") || params.url.contains("googlevideo.com");
+  let is_yt = is_youtube || target_url.contains("youtube.com") || target_url.contains("googlevideo.com");
   let is_apple = params.url.contains("amp-api.music.apple.com");
   let is_musixmatch = params.url.contains("musixmatch.com");
   let is_tidal = params.url.contains("tidal.com");
@@ -1002,27 +1211,31 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   }
 
   // 3. Set Origin / Referer / X-Origin based on destination rules
-  let is_no_origin_endpoint = params.url.contains("sw.js")
-    || params.url.contains("/s/player/")
-    || params.url.contains("iframe_api");
+  let is_no_origin_endpoint = target_url.contains("sw.js")
+    || target_url.contains("/s/player/")
+    || target_url.contains("iframe_api");
 
-  let yt_origin = if is_stats || params.url.contains("music.youtube.com") {
+  let yt_origin = if is_stats || target_url.contains("music.youtube.com") || is_like_endpoint {
     "https://music.youtube.com"
   } else {
     "https://www.youtube.com"
   };
 
   if is_yt && !is_no_origin_endpoint {
-    if params.url.contains("music.youtube.com/youtubei/") {
+    if is_like_endpoint || target_url.contains("music.youtube.com/youtubei/") {
       header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.youtube.com"));
       header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.youtube.com/"));
       header_map.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://music.youtube.com"));
-    } else if params.url.contains("youtube.com/youtubei/") {
+      header_map.insert(HeaderName::from_static("x-youtube-client-name"), HeaderValue::from_static("67"));
+      if !header_map.contains_key("x-youtube-client-version") {
+        header_map.insert(HeaderName::from_static("x-youtube-client-version"), HeaderValue::from_static("1.20250219.01.00"));
+      }
+    } else if target_url.contains("youtube.com/youtubei/") {
       header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://www.youtube.com"));
       header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://www.youtube.com/"));
       header_map.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://www.youtube.com"));
-    } else if params.url.contains("googlevideo.com") {
-      if !params.url.contains("c=VISIONOS") {
+    } else if target_url.contains("googlevideo.com") {
+      if !target_url.contains("c=VISIONOS") {
         header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://www.youtube.com"));
         header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://www.youtube.com/"));
       }
@@ -1077,7 +1290,7 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   // 5. Apply the HeaderMap onto the request builder
   req = req.headers(header_map);
 
-  if let Some(body) = params.body {
+  if let Some(body) = target_body {
     if params.body_encoding.as_deref() == Some("base64") {
       if let Ok(bytes) = BASE64_STANDARD.decode(&body) {
         req = req.body(bytes);
@@ -1236,6 +1449,24 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
       }
 
+      // Also query channels list if accounts is empty or only has 1 channel
+      let has_multiple = auth.pointer("/accounts/0/channels").and_then(|v| v.as_array()).map(|a| a.len() > 1).unwrap_or(false);
+      if !has_multiple && auth.get("browserSignedIn").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if let Some(cookies) = auth.get("cookies").and_then(|v| v.as_str()) {
+          let channels = query_youtube_accounts_list(cookies).await;
+          if channels.len() > 1 {
+            if let Some(map) = auth.as_object_mut() {
+              if let Some(accounts) = map.get_mut("accounts").and_then(|v| v.as_array_mut()) {
+                if let Some(acc) = accounts.first_mut().and_then(|v| v.as_object_mut()) {
+                  acc.insert("channels".to_string(), json!(channels));
+                }
+              }
+            }
+            save_yt_auth(&auth);
+          }
+        }
+      }
+
       Ok(auth)
     }
     "yt.setConnected" => {
@@ -1245,6 +1476,13 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         if path.exists() {
           let _ = fs::remove_file(&path);
         }
+        if let Some(main_win) = app.get_webview_window("main") {
+          clear_webview2_cookies_by_filter(&main_win, &["youtube.com", "google.com"]);
+        }
+        if let Some(login_win) = app.get_webview_window("google-login") {
+          clear_webview2_cookies_by_filter(&login_win, &["youtube.com", "google.com"]);
+        }
+        println!("[BeatFlow Auth] 🗑️ Disconnected and cleared Google/YouTube cookies from WebView2");
         return Ok(json!({
           "browserSignedIn": false,
           "connected": false,
@@ -1274,6 +1512,12 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       let path = get_yt_auth_path();
       if path.exists() {
         let _ = fs::remove_file(&path);
+      }
+      if let Some(main_win) = app.get_webview_window("main") {
+        clear_webview2_cookies_by_filter(&main_win, &["youtube.com", "google.com"]);
+      }
+      if let Some(login_win) = app.get_webview_window("google-login") {
+        clear_webview2_cookies_by_filter(&login_win, &["youtube.com", "google.com"]);
       }
       println!("[BeatFlow Auth] 🗑️ User YouTube auth cleared");
       Ok(json!({
@@ -1386,18 +1630,40 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
     "spotify.setConnected" => {
       let connected = params.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
       if !connected {
-        let mut auth = load_spotify_auth().unwrap_or_else(|| json!({
+        let path = get_spotify_auth_path();
+        if path.exists() {
+          let _ = fs::remove_file(&path);
+        }
+        if let Some(main_win) = app.get_webview_window("main") {
+          clear_webview2_cookies_by_filter(&main_win, &["spotify.com"]);
+        }
+        if let Some(login_win) = app.get_webview_window("spotify-login") {
+          clear_webview2_cookies_by_filter(&login_win, &["spotify.com"]);
+        }
+        println!("[BeatFlow Spotify Auth] 🗑️ Disconnected and cleared Spotify cookies from WebView2");
+        let auth = json!({
           "browserSignedIn": false,
           "connected": false,
           "signedIn": false,
           "user": null,
           "problem": null
-        }));
-        if let Some(map) = auth.as_object_mut() {
-          map.insert("connected".to_string(), json!(false));
-          map.insert("signedIn".to_string(), json!(false));
+        });
+        if let Some(main_win) = app.get_webview_window("main") {
+          let auth_str = serde_json::to_string(&auth).unwrap_or_default();
+          let bridge_event = json!({
+            "channel": "bitchord-bridge",
+            "direction": "event",
+            "payload": {
+              "event": "spotify.authState",
+              "data": auth
+            }
+          });
+          let bridge_str = serde_json::to_string(&bridge_event).unwrap_or_default();
+          let script = format!(
+            "window.dispatchEvent(new CustomEvent('beatflow:spotify-auth-detected', {{ detail: {auth_str} }})); window.postMessage({bridge_str}, '*');"
+          );
+          let _ = main_win.eval(&script);
         }
-        save_spotify_auth(&auth);
         return Ok(auth);
       }
       let mut auth = load_spotify_auth().unwrap_or_else(|| json!({
@@ -1783,7 +2049,13 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       Ok(json!({ "opened": true }))
     }
     "auth.openLoginWindow" => {
-      let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or("https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F");
+      let is_add = params.get("addAccount").and_then(|v| v.as_bool()).unwrap_or(false);
+      let default_url = if is_add {
+        "https://accounts.google.com/AddSession?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F"
+      } else {
+        "https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F"
+      };
+      let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or(default_url);
       if let Ok(parsed_url) = url::Url::parse(url_str) {
         if let Some(existing) = app.get_webview_window("google-login") {
           let _ = existing.show();
@@ -2212,12 +2484,23 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
     "brand": false,
     "authUser": auth_user
   });
+  let mut all_channels = query_youtube_accounts_list(&resolved_cookies).await;
+  let active_channel = if let Some(selected) = all_channels.iter().find(|c| c.get("isSelected") == Some(&json!(true))) {
+    selected.clone()
+  } else {
+    channel.clone()
+  };
+
+  if all_channels.is_empty() {
+    all_channels.push(channel.clone());
+  }
+
   let account = json!({
     "authUser": auth_user,
     "name": name,
     "email": email,
     "avatarUrl": avatar_url,
-    "channels": [channel.clone()]
+    "channels": all_channels
   });
 
   let auth = json!({
@@ -2227,7 +2510,7 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
     "problem": null,
     "cookies": resolved_cookies,
     "accounts": [account],
-    "active": channel
+    "active": active_channel
   });
 
   save_yt_auth(&auth);
@@ -2258,21 +2541,74 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
   Ok(auth)
 }
 
-async fn handle_spotify_auth_callback(payload_str: &str) -> Result<Value, String> {
-  let data: Value = serde_json::from_str(payload_str).map_err(|e| e.to_string())?;
-  let sp_dc = data.get("sp_dc").and_then(|v| v.as_str()).unwrap_or("");
-  if sp_dc.is_empty() {
-    println!("[BeatFlow Spotify Auth] ⚠️ Rejected: missing sp_dc cookie");
-    return Err("Missing sp_dc".into());
+async fn fetch_spotify_profile(sp_dc: &str) -> Option<(String, Option<String>)> {
+  let c = client();
+
+  // 1. Get access token from open.spotify.com using sp_dc cookie
+  let token_resp = c
+    .get("https://open.spotify.com/get_access_token?reason=transport&productType=web_player")
+    .header("Cookie", format!("sp_dc={}", sp_dc))
+    .send()
+    .await
+    .ok()?;
+
+  if !token_resp.status().is_success() {
+    return None;
   }
 
+  let token_json: Value = token_resp.json().await.ok()?;
+  let access_token = token_json.get("accessToken").and_then(|v| v.as_str())?;
+  let is_anon = token_json.get("isAnonymous").and_then(|v| v.as_bool()).unwrap_or(false);
+  if is_anon {
+    return None;
+  }
+
+  // 2. Fetch user profile from api.spotify.com/v1/me
+  let me_resp = c
+    .get("https://api.spotify.com/v1/me")
+    .header("Authorization", format!("Bearer {}", access_token))
+    .send()
+    .await
+    .ok()?;
+
+  if !me_resp.status().is_success() {
+    return None;
+  }
+
+  let me_json: Value = me_resp.json().await.ok()?;
+  let name = me_json
+    .get("display_name")
+    .and_then(|v| v.as_str())
+    .or_else(|| me_json.get("id").and_then(|v| v.as_str()))
+    .map(|s| s.to_string())?;
+
+  let avatar = me_json
+    .get("images")
+    .and_then(|v| v.as_array())
+    .and_then(|arr| arr.first())
+    .and_then(|img| img.get("url"))
+    .and_then(|v| v.as_str())
+    .map(|s| s.to_string());
+
+  Some((name, avatar))
+}
+
+async fn handle_spotify_auth_callback(payload_str: &str) -> Result<Value, String> {
+  let data: Value = serde_json::from_str(payload_str).map_err(|e| e.to_string())?;
+  let mut sp_dc = data.get("sp_dc").and_then(|v| v.as_str()).unwrap_or("").to_string();
   let mut resolved_cookies = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
   #[cfg(target_os = "windows")]
   {
     if let Some(app_handle) = APP_HANDLE.get() {
       if let Some(login_win) = app_handle.get_webview_window("spotify-login") {
-        if let Some(c) = extract_webview2_cookies(&login_win) {
-          if c.contains("sp_dc=") {
+        if let Some(c) = extract_webview2_cookies_for_url(&login_win, "https://open.spotify.com") {
+          if let Some(pos) = c.find("sp_dc=") {
+            let rest = &c[pos + 6..];
+            let extracted = rest.split(';').next().unwrap_or("").trim().to_string();
+            if !extracted.is_empty() {
+              sp_dc = extracted;
+            }
             resolved_cookies = c;
           }
         }
@@ -2280,12 +2616,29 @@ async fn handle_spotify_auth_callback(payload_str: &str) -> Result<Value, String
     }
   }
 
-  let name = data
+  if sp_dc.is_empty() {
+    println!("[BeatFlow Spotify Auth] ⚠️ Rejected: missing sp_dc cookie");
+    return Err("Missing sp_dc".into());
+  }
+
+  let mut resolved_name = data
     .get("name")
     .and_then(|v| v.as_str())
-    .filter(|s| !s.is_empty() && *s != "Spotify User")
-    .unwrap_or("Spotify Account");
-  let avatar_url = data.get("avatarUrl").and_then(|v| v.as_str());
+    .filter(|s| !s.is_empty() && *s != "Spotify User" && *s != "Spotify Account")
+    .map(|s| s.to_string());
+  let mut resolved_avatar = data.get("avatarUrl").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+  if resolved_name.is_none() {
+    if let Some((prof_name, prof_avatar)) = fetch_spotify_profile(&sp_dc).await {
+      resolved_name = Some(prof_name);
+      if resolved_avatar.is_none() {
+        resolved_avatar = prof_avatar;
+      }
+    }
+  }
+
+  let name = resolved_name.unwrap_or_else(|| "Spotify User".to_string());
+  let avatar_url = resolved_avatar.as_deref();
 
   let auth = json!({
     "browserSignedIn": true,
@@ -2847,7 +3200,12 @@ pub fn run() {
       let _ = window.eval(DESKTOP_BRIDGE_INIT);
       if window.label() == "google-login" {
         let url = payload.url().as_str();
-        if url.contains("music.youtube.com") {
+        // Do not auto-close or capture while user is on channel switcher or Google account chooser
+        if url.contains("music.youtube.com")
+          && !url.contains("/channel_switcher")
+          && !url.contains("/signin")
+          && !url.contains("/select_account")
+        {
           let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
           let script = format!(r#"
             (function() {{
@@ -2855,7 +3213,7 @@ pub fn run() {
               window.__BEATFLOW_AUTH_ACTIVE__ = true;
 
               var attempts = 0;
-              var maxAttempts = 50;
+              var maxAttempts = 60;
               var completed = false;
               var fetchingMenu = false;
 
@@ -2943,22 +3301,53 @@ pub fn run() {
                     name = email.split('@')[0];
                   }}
 
-                  // If real name detected from DOM/ytcfg, send and complete immediately
-                  if (name && name !== "YouTube Account" && name !== "YouTube Music User") {{
-                    completed = true;
-                    clearInterval(timer);
-                    send({{
-                      name: name,
-                      email: email || null,
-                      avatarUrl: avatar || null,
-                      handle: handle || null,
-                      authUser: authUser,
-                      cookies: cookies
-                    }});
-                    return;
+                  // Inject confirmation banner so user can switch channel or confirm without premature auto-close
+                  var existingBar = document.getElementById('beatflow-confirm-bar');
+                  if (!existingBar && document.body) {{
+                    var bar = document.createElement('div');
+                    bar.id = 'beatflow-confirm-bar';
+                    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999999;background:rgba(22,22,26,0.96);backdrop-filter:blur(24px);border-bottom:1px solid rgba(255,255,255,0.18);padding:10px 18px;display:flex;align-items:center;justify-content:space-between;color:white;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,0.6);';
+                    bar.innerHTML = '<div style="display:flex;align-items:center;gap:12px;">' +
+                      (avatar ? '<img id="beatflow-bar-avatar" src="' + avatar + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.2);" />' : '') +
+                      '<div>' +
+                        '<div style="font-size:13.5px;font-weight:600;line-height:1.2;">Signed in as <span id="beatflow-bar-name">' + (name || 'YouTube Account') + '</span>' + (handle ? ' <span id="beatflow-bar-handle" style="font-size:12px;color:rgba(255,255,255,0.6);font-weight:normal;">(' + handle + ')</span>' : '') + '</div>' +
+                        '<div style="font-size:11.5px;color:rgba(255,255,255,0.65);margin-top:2px;">Switch channel above if needed, then confirm</div>' +
+                      '</div>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:8px;">' +
+                      '<button id="beatflow-switch-btn" style="background:rgba(255,255,255,0.12);color:white;border:1px solid rgba(255,255,255,0.2);border-radius:10px;padding:7px 14px;font-size:13px;font-weight:500;cursor:pointer;">Switch Account</button>' +
+                      '<button id="beatflow-use-account-btn" style="background:#0a84ff;color:white;border:none;border-radius:10px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;">Use This Account</button>' +
+                    '</div>';
+                    document.body.appendChild(bar);
+                    var switchBtn = document.getElementById('beatflow-switch-btn');
+                    if (switchBtn) {{
+                      switchBtn.onclick = function() {{
+                        window.location.href = 'https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F';
+                      }};
+                    }}
+                    var btn = document.getElementById('beatflow-use-account-btn');
+                    if (btn) {{
+                      btn.onclick = function() {{
+                        completed = true;
+                        clearInterval(timer);
+                        send({{
+                          name: name || "YouTube Account",
+                          email: email || null,
+                          avatarUrl: avatar || null,
+                          handle: handle || null,
+                          authUser: authUser,
+                          cookies: cookies
+                        }});
+                      }};
+                    }}
+                  }} else if (existingBar) {{
+                    var nameEl = document.getElementById('beatflow-bar-name');
+                    if (nameEl && name) nameEl.textContent = name;
+                    var avEl = document.getElementById('beatflow-bar-avatar');
+                    if (avEl && avatar) avEl.src = avatar;
                   }}
 
-                  // If cookies ready, trigger fast account_menu fetch in page
+                  // If cookies ready, trigger fast account_menu fetch in page to get channel name
                   if (attempts >= 2 && !fetchingMenu) {{
                     fetchingMenu = true;
                     fetch("/youtubei/v1/account/account_menu?prettyPrint=false", {{
@@ -2973,34 +3362,16 @@ pub fn run() {
                         var hndl = (h.channelHandle && h.channelHandle.runs && h.channelHandle.runs[0] && h.channelHandle.runs[0].text) || null;
                         var av = (h.avatar && h.avatar.thumbnails && h.avatar.thumbnails[h.avatar.thumbnails.length - 1].url) || null;
                         if (n) {{
-                          completed = true;
-                          clearInterval(timer);
-                          send({{
-                            name: n,
-                            email: email || null,
-                            avatarUrl: av || avatar || null,
-                            handle: hndl || handle || null,
-                            authUser: authUser,
-                            cookies: cookies
-                          }});
-                          return;
+                          name = n;
+                          if (hndl) handle = hndl;
+                          if (av) avatar = av;
+                          var nameEl2 = document.getElementById('beatflow-bar-name');
+                          if (nameEl2) nameEl2.textContent = n;
+                          var avEl2 = document.getElementById('beatflow-bar-avatar');
+                          if (avEl2 && av) avEl2.src = av;
                         }}
                       }} catch(e) {{}}
                     }}).catch(function() {{}});
-                  }}
-
-                  // Timeout fallback: send after 8 attempts (1.6s) and let backend resolve
-                  if (attempts >= 8) {{
-                    completed = true;
-                    clearInterval(timer);
-                    send({{
-                      name: name || "YouTube Account",
-                      email: email || null,
-                      avatarUrl: avatar || null,
-                      handle: handle || null,
-                      authUser: authUser,
-                      cookies: cookies
-                    }});
                   }}
                 }} catch(e) {{
                   if (attempts >= maxAttempts) clearInterval(timer);
@@ -3013,7 +3384,35 @@ pub fn run() {
       }
       if window.label() == "spotify-login" {
         let url = payload.url().as_str();
-        if url.contains("open.spotify.com") {
+        if url.contains("spotify.com") {
+          let app_handle = window.app_handle().clone();
+          tauri::async_runtime::spawn(async move {
+            for _ in 0..60 {
+              tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+              #[cfg(target_os = "windows")]
+              if let Some(login_win) = app_handle.get_webview_window("spotify-login") {
+                if let Some(c) = extract_webview2_cookies_for_url(&login_win, "https://open.spotify.com") {
+                  if let Some(pos) = c.find("sp_dc=") {
+                    let rest = &c[pos + 6..];
+                    let sp_dc_val = rest.split(';').next().unwrap_or("").trim().to_string();
+                    if !sp_dc_val.is_empty() {
+                      let payload = json!({
+                        "sp_dc": sp_dc_val,
+                        "name": "Spotify Account",
+                        "avatarUrl": null,
+                        "cookies": c
+                      });
+                      let _ = handle_spotify_auth_callback(&payload.to_string()).await;
+                      break;
+                    }
+                  }
+                }
+              } else {
+                break;
+              }
+            }
+          });
+
           let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
           let script = format!(r#"
             (function() {{
@@ -3032,15 +3431,6 @@ pub fn run() {
                 }}
 
                 try {{
-                  var cookies = document.cookie || "";
-                  var spDcMatch = cookies.match(/(?:^|;\s*)sp_dc=([^;]+)/);
-                  var hasSpDc = !!spDcMatch;
-
-                  if (!hasSpDc) {{
-                    return;
-                  }}
-
-                  var spDc = spDcMatch[1];
                   var name = "";
                   var avatar = "";
 
@@ -3065,31 +3455,27 @@ pub fn run() {
                     }}
                   }}
 
-                  if (!name && attempts < 10) {{
-                    return;
+                  if (userBtn || name || attempts >= 10) {{
+                    completed = true;
+                    clearInterval(timer);
+
+                    var payload = {{
+                      name: name || "Spotify Account",
+                      avatarUrl: avatar || null
+                    }};
+
+                    fetch("http://127.0.0.1:{}/auth-callback-spotify", {{
+                      method: "POST",
+                      headers: {{ "Content-Type": "application/json" }},
+                      body: JSON.stringify(payload)
+                    }}).catch(function() {{
+                      new Image().src = "http://127.0.0.1:{}/auth-callback-spotify?data=" + encodeURIComponent(JSON.stringify(payload));
+                    }});
                   }}
-
-                  completed = true;
-                  clearInterval(timer);
-
-                  var payload = {{
-                    sp_dc: spDc,
-                    name: name || "Spotify Account",
-                    avatarUrl: avatar || null,
-                    cookies: cookies
-                  }};
-
-                  fetch("http://127.0.0.1:{}/auth-callback-spotify", {{
-                    method: "POST",
-                    headers: {{ "Content-Type": "application/json" }},
-                    body: JSON.stringify(payload)
-                  }}).catch(function() {{
-                    new Image().src = "http://127.0.0.1:{}/auth-callback-spotify?data=" + encodeURIComponent(JSON.stringify(payload));
-                  }});
                 }} catch(e) {{
                   if (attempts >= maxAttempts) clearInterval(timer);
                 }}
-              }}, 200);
+              }}, 300);
             }})();
           "#, port, port);
           let _ = window.eval(&script);

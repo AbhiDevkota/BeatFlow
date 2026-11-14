@@ -235,13 +235,13 @@ export async function fetchLikeStatus(videoId: string): Promise<LikeStatus> {
 /** Likes a track (it joins Liked Music) or takes the like back. */
 export async function setTrackLiked(videoId: string, liked: boolean): Promise<void> {
   const yt = await getSignedInnertube();
-  await yt.actions.execute(liked ? '/like/like' : '/like/removelike', { target: { videoId }, client: 'YTMUSIC' });
+  await yt.actions.execute(liked ? '/like/like' : '/like/removelike', { target: { videoId } });
 }
 
 /** Adds an album or playlist to the library, or removes it: YouTube saves both by liking the list. */
 export async function setListSaved(playlistId: string, saved: boolean): Promise<void> {
   const yt = await getSignedInnertube();
-  await yt.actions.execute(saved ? '/like/like' : '/like/removelike', { target: { playlistId }, client: 'YTMUSIC' });
+  await yt.actions.execute(saved ? '/like/like' : '/like/removelike', { target: { playlistId } });
 }
 
 export interface PlaylistOption {
