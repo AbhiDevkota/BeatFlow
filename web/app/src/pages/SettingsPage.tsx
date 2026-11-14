@@ -109,7 +109,6 @@ const CATEGORIES: CategoryMeta[] = [
     title: 'Sources & Addons',
     subtitle: 'Custom streaming sources, community addons, and audio providers',
     icon: MdOutlineExtension,
-    badge: 'Desktop',
   },
   {
     key: 'appearance',
@@ -1268,30 +1267,32 @@ export default function SettingsPage() {
           </button>
         )}
 
-        {/* Search Bar matching SearchField */}
-        <div className={settingsUi.searchContainer}>
-          <Search size={15} strokeWidth={2.4} className="pointer-events-none absolute left-3 text-secondary" aria-hidden="true" />
-          <input
-            type="search"
-            className={settingsUi.searchInput}
-            placeholder="Search settings, accounts, playback…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setSearchQuery('');
-            }}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              className={settingsUi.searchClear}
-              onClick={() => setSearchQuery('')}
-              aria-label="Clear search"
-            >
-              <X size={12} strokeWidth={2.5} />
-            </button>
-          )}
-        </div>
+        {/* Search Bar matching SearchField (only on main view) */}
+        {!activeCategory && (
+          <div className={settingsUi.searchContainer}>
+            <Search size={15} strokeWidth={2.4} className="pointer-events-none absolute left-3 text-secondary" aria-hidden="true" />
+            <input
+              type="search"
+              className={settingsUi.searchInput}
+              placeholder="Search settings, accounts, playback…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setSearchQuery('');
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className={settingsUi.searchClear}
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+              >
+                <X size={12} strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Searching View */}
         {searching && (

@@ -13,10 +13,10 @@ const field = 'w-[220px] flex-none rounded-[8px] border-0 bg-quaternary px-2.5 p
 export const settingsUi = {
   /** The page title and its rows as one column, centred in the page. */
   centered: 'mx-auto max-w-[calc(640px+2*var(--body-gutter))]',
-  body: 'mx-(--body-gutter) mt-4 mb-[120px] max-w-[640px]',
+  body: 'mx-[var(--body-gutter)] mt-2 mb-[120px] max-w-[640px]',
   group: 'overflow-hidden rounded-[14px] bg-quinary border border-quaternary/20',
-  sectionHeader: 'mx-4 mt-7 mb-2 type-subhead-emphasized uppercase text-secondary font-semibold tracking-wider text-[11px]',
-  footer: 'mx-4 mt-2.5 type-callout text-secondary leading-relaxed',
+  sectionHeader: 'mx-4 mt-5 mb-2 type-subhead-emphasized uppercase text-secondary font-semibold tracking-wider text-[11px]',
+  footer: 'mx-4 mt-2 type-callout text-secondary leading-relaxed',
 
   row,
   rowWithIcon,
@@ -80,8 +80,8 @@ export const settingsUi = {
   backButton: 'inline-flex items-center gap-1.5 text-key type-body-emphasized mb-4 hover:opacity-80 transition-opacity cursor-pointer select-none',
 
   /** Segmented control (e.g. for Theme / Font switcher) */
-  segmentedControl: 'flex p-1 rounded-[10px] bg-quaternary/40 gap-1 w-full max-w-[320px]',
-  segmentedButton: 'flex-1 py-1.5 px-3 rounded-[7px] text-center type-callout-emphasized transition-all duration-150 cursor-pointer select-none flex items-center justify-center gap-1.5',
-  segmentedActive: 'bg-white dark:bg-[#636366] text-primary shadow-sm font-semibold',
+  segmentedControl: 'flex p-1 rounded-[10px] bg-quaternary/40 gap-1 shrink-0',
+  segmentedButton: 'py-1 px-2.5 rounded-[7px] text-center type-callout-emphasized text-xs transition-all duration-150 cursor-pointer select-none flex items-center justify-center gap-1.5',
+  segmentedActive: 'bg-white dark:bg-[#545458] text-primary shadow-xs font-semibold',
   segmentedInactive: 'text-secondary hover:text-primary',
 };
