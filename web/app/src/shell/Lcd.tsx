@@ -123,6 +123,7 @@ export function Lcd() {
     >
       {/* As Apple's: the artwork opens the full-screen player, with an expand glyph on hover. */}
       <button
+        id="miniplayer-artwork"
         // A music video plays here in small, at 16:9.
         className={`group/art relative block h-[34px] overflow-hidden rounded-[6px] bg-joe p-0 transition-[filter,opacity] ${video ? 'w-[60px] bg-black' : 'w-[34px]'}`}
         aria-label="Open full screen player"

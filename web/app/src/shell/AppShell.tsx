@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { resumeSession } from '@/party/listenTogether';
 import { startPartySync } from '@/party/partySync';
 import { useDiscordPresence } from '@/playback/discordPresence';
@@ -160,6 +160,17 @@ export function AppShell() {
   const bannerDismissed = useUi((s) => s.installBannerDismissed);
   const dismissBanner = useUi((s) => s.dismissInstallBanner);
   const fullScreen = useUi((s) => s.fullScreen);
+  const [fullScreenMounted, setFullScreenMounted] = useState(fullScreen);
+
+  useEffect(() => {
+    if (fullScreen) {
+      setFullScreenMounted(true);
+    }
+  }, [fullScreen]);
+
+  const handleFullScreenDismissed = useCallback(() => {
+    setFullScreenMounted(false);
+  }, []);
 
   let banner = null;
   if (mobile) {
@@ -211,9 +222,12 @@ export function AppShell() {
         <SidePanel />
       </div>
       {banner}
-      {fullScreen && (
+      {(fullScreen || fullScreenMounted) && (
         <Suspense fallback={null}>
-          <FullScreenPlayer />
+          <FullScreenPlayer
+            open={fullScreen}
+            onDismissed={handleFullScreenDismissed}
+          />
         </Suspense>
       )}
     </div>

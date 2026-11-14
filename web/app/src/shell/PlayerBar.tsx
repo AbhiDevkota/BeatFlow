@@ -31,6 +31,7 @@ const fading = `${action} ${fadeForVolume}`;
 export function PlayerBar() {
   const sidePanel = useUi((s) => s.sidePanel);
   const toggleSidePanel = useUi((s) => s.toggleSidePanel);
+  const fullScreen = useUi((s) => s.fullScreen);
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
   const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying));
   // The queue's entry for what's playing: the track menu needs the full track.
@@ -49,10 +50,12 @@ export function PlayerBar() {
   return (
     // The side panel overlays the page; the pill re-centres in what's left.
     <div
-      className="pointer-events-none absolute right-0 bottom-(--player-bottom-offset) left-(--web-navigation-width) z-[calc(var(--z-web-chrome)-1)] flex justify-center px-5 transition-[padding-inline-end] duration-(--duration-panel) ease-panel data-[panel-open=true]:pe-[calc(var(--side-panel-width)+20px)] max-sm:hidden"
+      className="pointer-events-none absolute right-0 bottom-(--player-bottom-offset) left-(--web-navigation-width) z-[calc(var(--z-web-chrome)-1)] flex justify-center px-5 transition-[padding-inline-end,opacity,transform] duration-300 ease-panel data-[panel-open=true]:pe-[calc(var(--side-panel-width)+20px)] data-[fullscreen=true]:opacity-0 data-[fullscreen=true]:scale-[0.98] data-[fullscreen=true]:pointer-events-none max-sm:hidden"
       data-panel-open={sidePanel !== null}
+      data-fullscreen={fullScreen || undefined}
     >
       <div
+        id="miniplayer-pill"
         className="glass-pill group/pill pointer-events-auto relative grid h-(--player-pill-height) w-[min(668px,100%)] grid-cols-[184px_minmax(180px,427px)_minmax(57px,auto)] items-center rounded-pill px-4"
         role="region"
         aria-label="Player"

@@ -1,5 +1,5 @@
-import { Maximize, Minimize, Volume1, Volume2, VolumeX, X } from 'lucide-react';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ChevronDown, Maximize, Minimize, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 import {
   BackwardIcon,
@@ -293,6 +293,11 @@ const artworkLayer = 'absolute inset-0 size-full rounded-[inherit] object-cover 
 /** How long the pointer can rest before a playing music video hides its controls. */
 const IDLE_MS = 3000;
 
+export interface FullScreenPlayerProps {
+  open?: boolean;
+  onDismissed?: () => void;
+}
+
 /**
  * The full-screen player (report §7): the artwork on the left with the
  * track's names, the seek line and the transport under it; the lyrics, the
@@ -304,7 +309,7 @@ const IDLE_MS = 3000;
  * the names and transport over its foot, fading out while the pointer rests;
  * beside the lyrics or Up Next, it takes the artwork's place at 16:9.
  */
-export function FullScreenPlayer() {
+export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerProps) {
   const nowPlaying = usePlayer((s) => s.nowPlaying);
   // The queue's row for what's playing: it carries the album and each artist's channel.
   const track = usePlayer((s) => {
@@ -332,6 +337,23 @@ export function FullScreenPlayer() {
   const close = useRef<HTMLButtonElement>(null);
   // Whether this player put the page in the browser's full screen, so closing it leaves it again.
   const enteredBrowserFullScreen = useRef(false);
+
+  // Animation & gesture refs
+  const containerRef = useRef<HTMLDivElement>(null);
+  const artworkMorphRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const sideColumnRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+
+  const phaseRef = useRef<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
+  const [, setPhase] = useState<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
+  const savedCoords = useRef({ dx: 0, dy: 0, scale: 0.5 });
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onDismissedRef = useRef(onDismissed);
+
+  useEffect(() => {
+    onDismissedRef.current = onDismissed;
+  }, [onDismissed]);
 
   // The column follows the toggle alone: whether this track has lyrics, and
   // from which provider, is the panel's own business to say.
@@ -367,15 +389,314 @@ export function FullScreenPlayer() {
     };
   }, []);
 
+  // FLIP Expand Animation on Mount
+  useLayoutEffect(() => {
+    const miniEl = document.getElementById('miniplayer-artwork');
+    const artEl = artworkMorphRef.current;
+    const containerEl = containerRef.current;
+    const controlsEl = controlsRef.current;
+    const sideEl = sideColumnRef.current;
+    const headerEl = headerRef.current;
+
+    if (!containerEl || !artEl) return;
+
+    let dx = 0;
+    let dy = window.innerHeight * 0.35;
+    let scale = 0.5;
+
+    if (miniEl) {
+      const miniRect = miniEl.getBoundingClientRect();
+      const artRect = artEl.getBoundingClientRect();
+      if (artRect.width > 0 && miniRect.width > 0) {
+        scale = miniRect.width / artRect.width;
+        dx = (miniRect.left + miniRect.width / 2) - (artRect.left + artRect.width / 2);
+        dy = (miniRect.top + miniRect.height / 2) - (artRect.top + artRect.height / 2);
+      }
+    }
+
+    savedCoords.current = { dx, dy, scale };
+
+    // Initial FLIP state before paint
+    artEl.style.transition = 'none';
+    artEl.style.transformOrigin = 'center center';
+    artEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
+    artEl.style.borderRadius = `${Math.round(6 / Math.max(scale, 0.01))}px`;
+
+    containerEl.style.transition = 'none';
+    containerEl.style.transform = 'translate3d(0, 36px, 0) scale(0.97)';
+    containerEl.style.opacity = '0';
+    containerEl.style.borderRadius = '32px';
+
+    if (controlsEl) {
+      controlsEl.style.transition = 'none';
+      controlsEl.style.opacity = '0';
+      controlsEl.style.transform = 'translate3d(0, 24px, 0)';
+    }
+    if (sideEl) {
+      sideEl.style.transition = 'none';
+      sideEl.style.opacity = '0';
+      sideEl.style.transform = 'translate3d(24px, 0, 0)';
+    }
+    if (headerEl) {
+      headerEl.style.transition = 'none';
+      headerEl.style.opacity = '0';
+      headerEl.style.transform = 'translate3d(0, -10px, 0)';
+    }
+
+    // Force reflow
+    void artEl.offsetHeight;
+
+    const easeSpring = 'cubic-bezier(0.25, 1, 0.35, 1)';
+    const rafId = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        phaseRef.current = 'expanding';
+        setPhase('expanding');
+
+        artEl.style.transition = `transform 440ms ${easeSpring}, border-radius 440ms ${easeSpring}`;
+        artEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        artEl.style.borderRadius = '10px';
+
+        containerEl.style.transition = `transform 440ms ${easeSpring}, opacity 360ms ${easeSpring}, border-radius 440ms ${easeSpring}`;
+        containerEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        containerEl.style.opacity = '1';
+        containerEl.style.borderRadius = '0px';
+
+        if (controlsEl) {
+          controlsEl.style.transition = `opacity 340ms ${easeSpring} 80ms, transform 400ms ${easeSpring} 80ms`;
+          controlsEl.style.opacity = '1';
+          controlsEl.style.transform = 'translate3d(0, 0, 0)';
+        }
+        if (sideEl) {
+          sideEl.style.transition = `opacity 340ms ${easeSpring} 100ms, transform 400ms ${easeSpring} 100ms`;
+          sideEl.style.opacity = '1';
+          sideEl.style.transform = 'translate3d(0, 0, 0)';
+        }
+        if (headerEl) {
+          headerEl.style.transition = `opacity 300ms ${easeSpring} 120ms, transform 340ms ${easeSpring} 120ms`;
+          headerEl.style.opacity = '1';
+          headerEl.style.transform = 'translate3d(0, 0, 0)';
+        }
+      });
+    });
+
+    const timer = setTimeout(() => {
+      phaseRef.current = 'expanded';
+      setPhase('expanded');
+      if (artEl) {
+        artEl.style.transition = '';
+        artEl.style.transform = '';
+      }
+      if (containerEl) {
+        containerEl.style.transition = '';
+        containerEl.style.transform = '';
+        containerEl.style.borderRadius = '';
+      }
+      if (controlsEl) {
+        controlsEl.style.transition = '';
+        controlsEl.style.transform = '';
+      }
+      if (sideEl) {
+        sideEl.style.transition = '';
+        sideEl.style.transform = '';
+      }
+      if (headerEl) {
+        headerEl.style.transition = '';
+        headerEl.style.transform = '';
+      }
+    }, 480);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // Collapse / Minimize Animation
+  const startCollapse = useCallback(() => {
+    if (phaseRef.current === 'collapsing' || phaseRef.current === 'collapsed') return;
+    phaseRef.current = 'collapsing';
+    setPhase('collapsing');
+
+    const miniEl = document.getElementById('miniplayer-artwork');
+    const artEl = artworkMorphRef.current;
+    const containerEl = containerRef.current;
+    const controlsEl = controlsRef.current;
+    const sideEl = sideColumnRef.current;
+    const headerEl = headerRef.current;
+
+    let dx = savedCoords.current.dx;
+    let dy = savedCoords.current.dy;
+    let scale = savedCoords.current.scale;
+
+    if (miniEl && artEl) {
+      const miniRect = miniEl.getBoundingClientRect();
+      const artRect = artEl.getBoundingClientRect();
+      if (artRect.width > 0 && miniRect.width > 0) {
+        scale = miniRect.width / artRect.width;
+        dx = (miniRect.left + miniRect.width / 2) - (artRect.left + artRect.width / 2);
+        dy = (miniRect.top + miniRect.height / 2) - (artRect.top + artRect.height / 2);
+      }
+    }
+
+    const collapseEase = 'cubic-bezier(0.32, 0.72, 0, 1)';
+
+    if (controlsEl) {
+      controlsEl.style.transition = `opacity 180ms ease-out, transform 220ms ${collapseEase}`;
+      controlsEl.style.opacity = '0';
+      controlsEl.style.transform = 'translate3d(0, 18px, 0)';
+    }
+
+    if (sideEl) {
+      sideEl.style.transition = `opacity 180ms ease-out, transform 220ms ${collapseEase}`;
+      sideEl.style.opacity = '0';
+      sideEl.style.transform = 'translate3d(18px, 0, 0)';
+    }
+
+    if (headerEl) {
+      headerEl.style.transition = 'opacity 150ms ease-out, transform 180ms ease-out';
+      headerEl.style.opacity = '0';
+      headerEl.style.transform = 'translate3d(0, -10px, 0)';
+    }
+
+    if (artEl) {
+      artEl.style.transition = `transform 340ms ${collapseEase}, border-radius 340ms ${collapseEase}`;
+      artEl.style.transformOrigin = 'center center';
+      artEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
+      artEl.style.borderRadius = `${Math.round(6 / Math.max(scale, 0.01))}px`;
+    }
+
+    if (containerEl) {
+      containerEl.style.transition = `transform 340ms ${collapseEase}, opacity 300ms ${collapseEase}, border-radius 340ms ${collapseEase}`;
+      containerEl.style.transform = 'translate3d(0, 44px, 0) scale(0.96)';
+      containerEl.style.opacity = '0';
+      containerEl.style.borderRadius = '32px';
+    }
+
+    // Synchronously signal fullScreen to false so PlayerBar starts reappearing smoothly
+    setFullScreen(false);
+
+    if (collapseTimer.current) clearTimeout(collapseTimer.current);
+    collapseTimer.current = setTimeout(() => {
+      phaseRef.current = 'collapsed';
+      setPhase('collapsed');
+      onDismissedRef.current?.();
+    }, 340);
+  }, [setFullScreen]);
+
+  // Synchronize when open prop changes
+  useEffect(() => {
+    if (!open && (phaseRef.current === 'expanded' || phaseRef.current === 'expanding')) {
+      startCollapse();
+    }
+  }, [open, startCollapse]);
+
   // A title, artist or album link went somewhere: get out of the way so the page shows.
   useEffect(() => {
-    if (pathname !== openedAt.current) setFullScreen(false);
-  }, [pathname, setFullScreen]);
+    if (pathname !== openedAt.current) startCollapse();
+  }, [pathname, startCollapse]);
 
   // Nothing left to show once the queue ends.
   useEffect(() => {
-    if (!nowPlaying) setFullScreen(false);
-  }, [nowPlaying, setFullScreen]);
+    if (!nowPlaying) startCollapse();
+  }, [nowPlaying, startCollapse]);
+
+  // Swipe / Drag Down Gesture to dismiss
+  const dragRef = useRef<{
+    pointerId: number | null;
+    startY: number;
+    startX: number;
+    isDragging: boolean;
+  }>({
+    pointerId: null,
+    startY: 0,
+    startX: 0,
+    isDragging: false,
+  });
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    wake();
+    if (phaseRef.current !== 'expanded') return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('button, a, input, select, textarea, [role="button"], [role="slider"], [data-no-drag]')) {
+      return;
+    }
+    if (target.closest('.overflow-y-auto, .overflow-y-scroll, [data-scrollable]')) {
+      return;
+    }
+
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startY: e.clientY,
+      startX: e.clientX,
+      isDragging: false,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    wake();
+    const drag = dragRef.current;
+    if (drag.pointerId !== e.pointerId) return;
+
+    const dy = e.clientY - drag.startY;
+    const dx = e.clientX - drag.startX;
+
+    if (!drag.isDragging) {
+      if (dy > 8 && dy > Math.abs(dx)) {
+        drag.isDragging = true;
+        try {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {
+          // fallback
+        }
+      } else if (Math.abs(dx) > 10 || dy < -10) {
+        drag.pointerId = null;
+        return;
+      }
+    }
+
+    if (drag.isDragging && containerRef.current) {
+      const pullY = Math.max(0, dy);
+      const scale = Math.max(0.9, 1 - (pullY / window.innerHeight) * 0.15);
+      const radius = Math.min(32, (pullY / 150) * 32);
+      const opacity = Math.max(0.6, 1 - (pullY / window.innerHeight) * 0.4);
+
+      containerRef.current.style.transition = 'none';
+      containerRef.current.style.transform = `translate3d(0, ${pullY}px, 0) scale(${scale})`;
+      containerRef.current.style.borderRadius = `${radius}px`;
+      containerRef.current.style.opacity = `${opacity}`;
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (drag.pointerId !== e.pointerId) return;
+
+    const dy = e.clientY - drag.startY;
+    const wasDragging = drag.isDragging;
+    drag.pointerId = null;
+    drag.isDragging = false;
+
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+
+    if (wasDragging) {
+      if (dy > 100) {
+        startCollapse();
+      } else if (containerRef.current) {
+        const easeSpring = 'cubic-bezier(0.25, 1, 0.35, 1)';
+        containerRef.current.style.transition = `transform 300ms ${easeSpring}, opacity 260ms ease-out, border-radius 300ms ${easeSpring}`;
+        containerRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        containerRef.current.style.opacity = '1';
+        containerRef.current.style.borderRadius = '0px';
+      }
+    }
+  };
 
   const toggleBrowserFullScreen = () => {
     if (document.fullscreenElement) {
@@ -402,16 +723,19 @@ export function FullScreenPlayer() {
 
   return (
     <div
+      ref={containerRef}
       // Over everything but menus and dialogs, which portal above it. The on-dark colours come from tokens.css (data-full-screen).
       // --art, the artwork's side: Apple's 461px at 1440px wide, and never taller than the screen leaves room for.
-      className="fixed inset-0 z-[calc(var(--z-contextual-menus)-2)] isolate animate-enter overflow-hidden text-primary [--art:min(32vw,calc(100dvh-330px),720px)] motion-reduce:[animation-name:fade-in] max-md:[--art:min(84vw,calc(100dvh-330px),420px)]"
+      className="fixed inset-0 z-[calc(var(--z-contextual-menus)-2)] isolate overflow-hidden text-primary [--art:min(32vw,calc(100dvh-330px),720px)] motion-reduce:transition-none max-md:[--art:min(84vw,calc(100dvh-330px),420px)]"
       role="dialog"
       aria-modal="true"
       aria-label="Now Playing"
       data-full-screen
       data-paused={!playing || undefined}
-      onPointerMove={wake}
-      onPointerDown={wake}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onKeyDown={wake}
       style={theater && playing && idle ? { cursor: 'none' } : undefined}
     >
@@ -422,32 +746,39 @@ export function FullScreenPlayer() {
         </div>
       )}
 
-      <button ref={close} className={`${corner} top-4 left-5`} aria-label="Close" onClick={() => setFullScreen(false)}>
-        <X size={20} />
-      </button>
-      {/* The music video's quality, just inside the full-screen button. */}
-      {video && (
-        <VideoQuality
-          className={`absolute top-[18px] z-1${hidden}${
-            document.fullscreenEnabled
-              ? isDesktopApp()
-                ? ' right-46'
-                : ' right-15'
-              : isDesktopApp()
-                ? ' right-36'
-                : ' right-5'
-          }`}
-        />
-      )}
-      {video && document.fullscreenEnabled && (
-        <button
-          className={`${corner} top-4 ${isDesktopApp() ? 'right-36' : 'right-5'}`}
-          aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
-          onClick={toggleBrowserFullScreen}
-        >
-          {browserFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
+      {/* Subtle top grabber handle matching Apple sheet gesture */}
+      <div className="pointer-events-none absolute inset-x-0 top-2.5 z-1 flex justify-center opacity-60">
+        <div className="h-1 w-9 rounded-full bg-white/25" />
+      </div>
+
+      <div ref={headerRef} className="contents will-change-transform">
+        <button ref={close} className={`${corner} top-4 left-5`} aria-label="Minimize" onClick={startCollapse}>
+          <ChevronDown size={22} strokeWidth={2.5} />
         </button>
-      )}
+        {/* The music video's quality, just inside the full-screen button. */}
+        {video && (
+          <VideoQuality
+            className={`absolute top-[18px] z-1${hidden}${
+              document.fullscreenEnabled
+                ? isDesktopApp()
+                  ? ' right-46'
+                  : ' right-15'
+                : isDesktopApp()
+                  ? ' right-36'
+                  : ' right-5'
+            }`}
+          />
+        )}
+        {video && document.fullscreenEnabled && (
+          <button
+            className={`${corner} top-4 ${isDesktopApp() ? 'right-36' : 'right-5'}`}
+            aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
+            onClick={toggleBrowserFullScreen}
+          >
+            {browserFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
+          </button>
+        )}
+      </div>
 
       {/* Apple's grid areas "controls lyrics": the artwork column, then the lyrics. */}
       <div
@@ -468,113 +799,122 @@ export function FullScreenPlayer() {
           }
           aria-label="Player"
         >
-          {/* Shrinks a touch while paused, as Apple's does. Beside a column, a music video plays here at 16:9. */}
-          <div
-            className={`relative w-(--art) rounded-[10px] transition-[scale] duration-450 ease-[cubic-bezier(0.34,1.3,0.64,1)] motion-reduce:transition-none${
-              video && !squareVideoThumbnails ? ' aspect-video overflow-hidden bg-black' : ' aspect-square'
-            }${playing ? '' : ' scale-92'}${column ? ' max-md:hidden' : ''}${theater ? ' hidden' : ''}`}
-          >
-            {nowPlaying.artworkUrl && (
-              <>
-                <img
-                  key={`glow-${nowPlaying.artworkUrl}`}
-                  // The radiosity glow: a small copy, blurred and saturated, behind the artwork.
-                  className={`${artworkLayer} -z-1 translate-y-2 scale-96 blur-[20px] saturate-200 data-loaded:opacity-40`}
-                  src={sizedArtwork(nowPlaying.artworkUrl, 60)}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  decoding="async"
-                  onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
+          {/* FLIP artwork wrapper: morphs between miniplayer coordinates/size and full screen */}
+          <div ref={artworkMorphRef} className="relative flex items-center justify-center will-change-transform">
+            {/* Shrinks a touch while paused, as Apple's does. Beside a column, a music video plays here at 16:9. */}
+            <div
+              className={`relative w-(--art) rounded-[10px] transition-[scale] duration-450 ease-[cubic-bezier(0.34,1.3,0.64,1)] motion-reduce:transition-none${
+                video && !squareVideoThumbnails ? ' aspect-video overflow-hidden bg-black' : ' aspect-square'
+              }${playing ? '' : ' scale-92'}${column ? ' max-md:hidden' : ''}${theater ? ' hidden' : ''}`}
+            >
+              {nowPlaying.artworkUrl && (
+                <>
+                  <img
+                    key={`glow-${nowPlaying.artworkUrl}`}
+                    // The radiosity glow: a small copy, blurred and saturated, behind the artwork.
+                    className={`${artworkLayer} -z-1 translate-y-2 scale-96 blur-[20px] saturate-200 data-loaded:opacity-40`}
+                    src={sizedArtwork(nowPlaying.artworkUrl, 60)}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    decoding="async"
+                    onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
+                  />
+                  <img
+                    key={nowPlaying.artworkUrl}
+                    className={`${artworkLayer} bg-[#ffffff12] shadow-[0_4px_10px_#0000001a] data-loaded:opacity-100`}
+                    src={sizedArtwork(nowPlaying.artworkUrl, 600)}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    decoding="async"
+                    onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
+                  />
+                </>
+              )}
+              {/* Apple's motion artwork, over the cover once it's playing. */}
+              {motion && (
+                <MotionArtwork
+                  key={motion.url}
+                  motion={motion}
+                  className="absolute inset-0 size-full rounded-[inherit] object-cover opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
+                  playing={playing}
                 />
-                <img
-                  key={nowPlaying.artworkUrl}
-                  className={`${artworkLayer} bg-[#ffffff12] shadow-[0_4px_10px_#0000001a] data-loaded:opacity-100`}
-                  src={sizedArtwork(nowPlaying.artworkUrl, 600)}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  decoding="async"
-                  onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
-                />
-              </>
-            )}
-            {/* Apple's motion artwork, over the cover once it's playing. */}
-            {motion && (
-              <MotionArtwork
-                key={motion.url}
-                motion={motion}
-                className="absolute inset-0 size-full rounded-[inherit] object-cover opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
-                playing={playing}
-              />
-            )}
-            {video && !theater && <VideoSurface className="absolute inset-0" />}
+              )}
+              {video && !theater && <VideoSurface className="absolute inset-0" />}
+            </div>
           </div>
 
-          <div className={`flex items-center gap-3${theater ? '' : ' mt-[clamp(20px,3.2vh,32px)]'}${column ? ' max-md:mt-0' : ''}`}>
-            {/* As the mini player's: the title opens the album, each credited name its artist. */}
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div className="flex min-w-0 items-center gap-2">
-                <PageLink
-                  className={`min-w-0 max-w-full self-start truncate type-[600_17px/22px] ${pageLink}`}
-                  href={albumHref(album?.id ?? null)}
-                  resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
-                >
-                  {title}
-                </PageLink>
-                {track?.explicit && <ExplicitBadge size={14} />}
-              </div>
-              <span className="truncate type-title-3 text-secondary">
-                {artist && <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} className={pageLink} />}
-                {artist && album?.name && ' — '}
-                {album?.name && (
+          <div ref={controlsRef} className="flex flex-col will-change-transform">
+            <div className={`flex items-center gap-3${theater ? '' : ' mt-[clamp(20px,3.2vh,32px)]'}${column ? ' max-md:mt-0' : ''}`}>
+              {/* As the mini player's: the title opens the album, each credited name its artist. */}
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="flex min-w-0 items-center gap-2">
                   <PageLink
-                    className={pageLink}
-                    href={albumHref(album.id ?? null)}
+                    className={`min-w-0 max-w-full self-start truncate type-[600_17px/22px] ${pageLink}`}
+                    href={albumHref(album?.id ?? null)}
                     resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
                   >
-                    {album.name}
+                    {title}
                   </PageLink>
-                )}
-              </span>
-              <NerdStats />
-            </div>
-            <FavoriteButton
-              videoId={nowPlaying.videoId}
-              className="grid size-8 flex-none place-items-center rounded-full bg-quinary text-primary hover:bg-quaternary"
-              size={18}
-            />
-            {track && (
-              <TrackMenu
-                track={track}
+                  {track?.explicit && <ExplicitBadge size={14} />}
+                </div>
+                <span className="truncate type-title-3 text-secondary">
+                  {artist && <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} className={pageLink} />}
+                  {artist && album?.name && ' — '}
+                  {album?.name && (
+                    <PageLink
+                      className={pageLink}
+                      href={albumHref(album.id ?? null)}
+                      resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
+                    >
+                      {album.name}
+                    </PageLink>
+                  )}
+                </span>
+                <NerdStats />
+              </div>
+              <FavoriteButton
+                videoId={nowPlaying.videoId}
                 className="grid size-8 flex-none place-items-center rounded-full bg-quinary text-primary hover:bg-quaternary"
-                placement="above-end"
+                size={18}
               />
-            )}
-          </div>
+              {track && (
+                <TrackMenu
+                  track={track}
+                  className="grid size-8 flex-none place-items-center rounded-full bg-quinary text-primary hover:bg-quaternary"
+                  placement="above-end"
+                />
+              )}
+            </div>
 
-          <Scrubber />
-          <Transport />
-          <PlayerVolumeBar />
-          <PlayerActionRow
-            showLyrics={showLyrics}
-            showQueue={showQueue}
-            onToggleLyrics={() => togglePanel('lyrics')}
-            onToggleQueue={() => togglePanel('queue')}
-          />
+            <Scrubber />
+            <Transport />
+            <PlayerVolumeBar />
+            <PlayerActionRow
+              showLyrics={showLyrics}
+              showQueue={showQueue}
+              onToggleLyrics={() => togglePanel('lyrics')}
+              onToggleQueue={() => togglePanel('queue')}
+            />
+          </div>
         </section>
 
-        {showLyrics && (
-          <section className="flex min-h-0 animate-fade-in self-stretch" aria-label="Lyrics">
-            <LyricsPanel variant="full" />
-          </section>
-        )}
-        {showQueue && (
-          // Up Next in the right-hand column: the side panel's list, laid out as a column.
-          <section
-            className="flex min-h-0 animate-fade-in flex-col self-stretch [mask-image:linear-gradient(180deg,#000_calc(100%-80px),transparent)]"
-            aria-label="Up Next"
-          >
-            <UpNext />
-          </section>
+        {column && (
+          <div ref={sideColumnRef} className="flex min-h-0 self-stretch will-change-transform">
+            {showLyrics && (
+              <section className="flex size-full min-h-0 animate-fade-in" aria-label="Lyrics">
+                <LyricsPanel variant="full" />
+              </section>
+            )}
+            {showQueue && (
+              // Up Next in the right-hand column: the side panel's list, laid out as a column.
+              <section
+                className="flex size-full min-h-0 animate-fade-in flex-col [mask-image:linear-gradient(180deg,#000_calc(100%-80px),transparent)]"
+                aria-label="Up Next"
+              >
+                <UpNext />
+              </section>
+            )}
+          </div>
         )}
       </div>
     </div>
