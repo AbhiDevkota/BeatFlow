@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, Cpu, SlidersHorizontal, AudioWaveform, Volume2 } from 'lucide-react';
 import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
@@ -39,15 +39,20 @@ function PipelineRule() {
 function PipelineSection({
   icon: Icon,
   title,
+  nodeRef,
   children,
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   title: string;
+  nodeRef?: React.Ref<HTMLDivElement>;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex w-full px-4 pt-3 pb-3 gap-[14px]">
-      <div className="size-6 rounded-full border border-white/30 bg-[#141416] flex items-center justify-center shrink-0 z-10 shadow-xs mt-0.5">
+    <div className="flex w-full px-4 pt-3 pb-3 gap-[14px] relative z-10">
+      <div
+        ref={nodeRef}
+        className="size-6 rounded-full border border-white/30 bg-[#131315] flex items-center justify-center shrink-0 z-10 shadow-xs mt-0.5"
+      >
         <Icon size={14} className="text-white/90" />
       </div>
       <div className="flex-1 min-w-0">
@@ -66,8 +71,51 @@ function PipelineSection({
  */
 export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageNodeRefs = useRef<(HTMLDivElement | null)[]>([]);
+
   const nowPlaying = usePlayer((s) => s.nowPlaying);
+  const isPlaying = usePlayer((s) => s.status === 'playing');
   const [rustInfo, setRustInfo] = useState<any>(null);
+
+  // Custom Apple / iOS style floating overlay scrollbar
+  const [scrollPill, setScrollPill] = useState<{ top: number; height: number; visible: boolean }>({
+    top: 0,
+    height: 0,
+    visible: false,
+  });
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    if (scrollHeight <= clientHeight + 4) {
+      setScrollPill({ top: 0, height: 0, visible: false });
+      return;
+    }
+    const trackHeight = clientHeight - 8;
+    const minHeight = 24;
+    const maxHeight = 64;
+    const ratio = clientHeight / scrollHeight;
+    const computedHeight = Math.max(minHeight, Math.min(maxHeight, Math.round(ratio * trackHeight)));
+    const maxScroll = scrollHeight - clientHeight;
+    const maxThumbTop = trackHeight - computedHeight;
+    const scrollRatio = maxScroll > 0 ? scrollTop / maxScroll : 0;
+    const computedTop = 4 + scrollRatio * maxThumbTop;
+
+    setScrollPill({
+      top: computedTop,
+      height: computedHeight,
+      visible: true,
+    });
+
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => {
+      setScrollPill((prev) => ({ ...prev, visible: false }));
+    }, 800);
+  }, []);
 
   useEffect(() => {
     if (isDesktopApp()) {
@@ -89,6 +137,208 @@ export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
       window.removeEventListener('keydown', handleKey);
     };
   }, [onClose]);
+
+  // 1-to-1 Android AudioPipelineDialog: 60fps dynamic signal bus & travelling energy pulse canvas animation
+  useEffect(() => {
+    let animId: number;
+    const canvas = canvasRef.current;
+    const container = scrollContainerRef.current;
+    if (!canvas || !container) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const nodeRadius = 12; // 24px diameter / 2
+    const xCenter = 28; // 16px padding + 12px
+
+    const render = (time: number) => {
+      const containerRect = container.getBoundingClientRect();
+      const points: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const el = stageNodeRefs.current[i];
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          points.push(rect.top - containerRect.top + container.scrollTop + rect.height / 2);
+        }
+      }
+
+      const dpr = window.devicePixelRatio || 1;
+      const w = 56;
+      const h = container.scrollHeight;
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+      }
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      if (points.length === 5 && points[0] !== undefined && points[4] !== undefined) {
+        const y0 = points[0];
+        const y4 = points[4];
+        const totalHeight = y4 - y0;
+
+        // 1. Static Node-to-Node Signal Bus Segments (~2px)
+        const busAlpha = isPlaying ? 0.28 : 0.18;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${busAlpha})`;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'butt';
+
+        for (let i = 0; i < points.length - 1; i++) {
+          const ptStart = points[i];
+          const ptEnd = points[i + 1];
+          if (ptStart === undefined || ptEnd === undefined) continue;
+          const yStart = ptStart + nodeRadius;
+          const yEnd = ptEnd - nodeRadius;
+          if (yEnd > yStart) {
+            ctx.beginPath();
+            ctx.moveTo(xCenter, yStart);
+            ctx.lineTo(xCenter, yEnd);
+            ctx.stroke();
+
+            // Subtle ambient under-glow along the bus when playing
+            if (isPlaying) {
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+              ctx.lineWidth = 4.5;
+              ctx.beginPath();
+              ctx.moveTo(xCenter, yStart);
+              ctx.lineTo(xCenter, yEnd);
+              ctx.stroke();
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = `rgba(255, 255, 255, ${busAlpha})`;
+            }
+          }
+        }
+
+        // 2. Dynamic Travelling Signal Pulse along Segments (When Playing)
+        let yPulse = -100;
+        if (isPlaying && totalHeight > 0) {
+          const pulseProgress = (time % 2400) / 2400;
+          const s = Math.min(1, pulseProgress / 0.85);
+          yPulse = y0 + s * totalHeight;
+          const tailLength = 38;
+          const leadLength = 8;
+
+          for (let i = 0; i < points.length - 1; i++) {
+            const ptStart = points[i];
+            const ptEnd = points[i + 1];
+            if (ptStart === undefined || ptEnd === undefined) continue;
+            const yStart = ptStart + nodeRadius;
+            const yEnd = ptEnd - nodeRadius;
+            if (yEnd <= yStart) continue;
+
+            const pStart = Math.max(yStart, yPulse - tailLength);
+            const pEnd = Math.min(yEnd, yPulse + leadLength);
+
+            if (pEnd > pStart) {
+              // A. Soft Halo Line
+              const haloGrad = ctx.createLinearGradient(xCenter, yPulse - tailLength, xCenter, yPulse + leadLength);
+              haloGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+              haloGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.14)');
+              haloGrad.addColorStop(0.88, 'rgba(255, 255, 255, 0.28)');
+              haloGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+              ctx.strokeStyle = haloGrad;
+              ctx.lineWidth = 6;
+              ctx.beginPath();
+              ctx.moveTo(xCenter, pStart);
+              ctx.lineTo(xCenter, pEnd);
+              ctx.stroke();
+
+              // B. Brilliant Core Energy Line
+              const coreGrad = ctx.createLinearGradient(xCenter, yPulse - tailLength, xCenter, yPulse + leadLength);
+              coreGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+              coreGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.45)');
+              coreGrad.addColorStop(0.86, 'rgba(255, 255, 255, 0.98)');
+              coreGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+              ctx.strokeStyle = coreGrad;
+              ctx.lineWidth = 2.25;
+              ctx.beginPath();
+              ctx.moveTo(xCenter, pStart);
+              ctx.lineTo(xCenter, pEnd);
+              ctx.stroke();
+
+              // C. Leading Micro-Photon Pip
+              if (yPulse >= yStart && yPulse <= yEnd) {
+                const pipGlow = ctx.createRadialGradient(xCenter, yPulse, 0, xCenter, yPulse, 7);
+                pipGlow.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+                pipGlow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = pipGlow;
+                ctx.beginPath();
+                ctx.arc(xCenter, yPulse, 7, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
+                ctx.beginPath();
+                ctx.arc(xCenter, yPulse, 1.8, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+          }
+        }
+
+        // 3. Precision Node Anchors & Outline Glow at each stage
+        for (let i = 0; i < points.length; i++) {
+          const cy = points[i];
+          if (cy === undefined) continue;
+          const dist = Math.abs(yPulse - cy);
+          const act = isPlaying && dist < 24 ? Math.cos((dist / 24) * (Math.PI / 2)) : 0;
+
+          // A. Dark Backing Base
+          ctx.fillStyle = '#131315';
+          ctx.beginPath();
+          ctx.arc(xCenter, cy, nodeRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // B. Ambient Halo
+          const haloAlpha = 0.10 + 0.24 * act;
+          const nodeHalo = ctx.createRadialGradient(xCenter, cy, nodeRadius - 2, xCenter, cy, nodeRadius + 5);
+          nodeHalo.addColorStop(0, `rgba(255, 255, 255, ${haloAlpha * 0.4})`);
+          nodeHalo.addColorStop(0.5, `rgba(255, 255, 255, ${haloAlpha})`);
+          nodeHalo.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.fillStyle = nodeHalo;
+          ctx.beginPath();
+          ctx.arc(xCenter, cy, nodeRadius + 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // C. Active Outer Luminous Flare Ring
+          if (act > 0.02) {
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.22 * act})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(xCenter, cy, nodeRadius + 1.2, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          // D. Precision Outline Micro-Ring
+          const ringAlpha = Math.min(1, 0.35 + 0.55 * act);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${ringAlpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(xCenter, cy, nodeRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // E. High-Luminance Core Edge
+          if (act > 0.05) {
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.6 * act})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(xCenter, cy, nodeRadius, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+      }
+
+      ctx.restore();
+      animId = requestAnimationFrame(render);
+    };
+
+    animId = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(animId);
+  }, [isPlaying]);
 
   if (!nowPlaying) return null;
   if (typeof document === 'undefined') return null;
@@ -178,7 +428,7 @@ export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-fade select-none"
+      className="fixed inset-0 z-[var(--z-modal,10001)] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-fade select-none"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -188,7 +438,7 @@ export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
     >
       <div
         ref={ref}
-        className="w-[320px] max-w-[calc(100vw-32px)] rounded-[18px] bg-[#1c1c20]/95 backdrop-blur-2xl border border-white/15 shadow-2xl overflow-hidden flex flex-col text-white animate-zoom"
+        className="w-[320px] max-w-[calc(100vw-32px)] rounded-[18px] bg-[#1c1c20]/95 backdrop-blur-2xl border border-white/15 shadow-2xl overflow-hidden flex flex-col text-white animate-zoom relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Centered Header matching Android AudioPopupCard */}
@@ -201,57 +451,107 @@ export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
           </div>
         </div>
 
-        {/* Scrolling Pipeline Stages with Signal Bus line */}
-        <div className="relative max-h-[420px] overflow-y-auto">
-          {/* Signal Bus vertical line */}
-          <div className="absolute left-[28px] top-[24px] bottom-[24px] w-[1.5px] bg-white/20 -translate-x-1/2 pointer-events-none" />
+        {/* Scrolling Pipeline Stages with Signal Bus line & Custom Scrollbar */}
+        <div className="relative overflow-hidden">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="relative max-h-[420px] overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {/* Live animated canvas drawing the signal bus, travelling photon pulses & node halos */}
+            <canvas ref={canvasRef} className="absolute left-0 top-0 w-[56px] pointer-events-none z-0" />
 
-          {/* 1. Track Info Stage */}
-          <PipelineSection icon={FileText} title="Track Info">
-            <PipelineRow label="Source" value={sourceName} />
-            <PipelineRow label="Format" value={format} />
-            <PipelineRow label="Bit Depth" value={bitDepthText} />
-            <PipelineRow label="Sample Rate" value={sampleRateText} />
-            <PipelineRow label="Bitrate" value={bitrateText} />
-            <PipelineRow label="PCM Data Rate" value={pcmDataRateText} />
-            <PipelineRow label="Channels" value={channelsText} />
-          </PipelineSection>
+            {/* 1. Track Info Stage */}
+            <PipelineSection
+              icon={FileText}
+              title="Track Info"
+              nodeRef={(el) => {
+                stageNodeRefs.current[0] = el;
+              }}
+            >
+              <PipelineRow label="Source" value={sourceName} />
+              <PipelineRow label="Format" value={format} />
+              <PipelineRow label="Bit Depth" value={bitDepthText} />
+              <PipelineRow label="Sample Rate" value={sampleRateText} />
+              <PipelineRow label="Bitrate" value={bitrateText} />
+              <PipelineRow label="PCM Data Rate" value={pcmDataRateText} />
+              <PipelineRow label="Channels" value={channelsText} />
+            </PipelineSection>
 
-          <PipelineRule />
+            <PipelineRule />
 
-          {/* 2. Decoder Stage */}
-          <PipelineSection icon={Cpu} title="Decoder">
-            <PipelineRow label="Decoder Name" value={decoderName} />
-            <PipelineRow label="Format" value={decoderFormat} />
-          </PipelineSection>
+            {/* 2. Decoder Stage */}
+            <PipelineSection
+              icon={Cpu}
+              title="Decoder"
+              nodeRef={(el) => {
+                stageNodeRefs.current[1] = el;
+              }}
+            >
+              <PipelineRow label="Decoder Name" value={decoderName} />
+              <PipelineRow label="Format" value={decoderFormat} />
+            </PipelineSection>
 
-          <PipelineRule />
+            <PipelineRule />
 
-          {/* 3. Resampler Stage */}
-          <PipelineSection icon={SlidersHorizontal} title="Resampler">
-            <PipelineRow label="I/O Rate" value={ioRateText} />
-            <PipelineRow label="Type" value="None" />
-            <PipelineRow label="Quality" value="Passthrough" />
-          </PipelineSection>
+            {/* 3. Resampler Stage */}
+            <PipelineSection
+              icon={SlidersHorizontal}
+              title="Resampler"
+              nodeRef={(el) => {
+                stageNodeRefs.current[2] = el;
+              }}
+            >
+              <PipelineRow label="I/O Rate" value={ioRateText} />
+              <PipelineRow label="Type" value="None" />
+              <PipelineRow label="Quality" value="Passthrough" />
+            </PipelineSection>
 
-          <PipelineRule />
+            <PipelineRule />
 
-          {/* 4. DSP Stage */}
-          <PipelineSection icon={AudioWaveform} title="DSP">
-            <PipelineRow label="PCM Format" value="Float32" />
-            <PipelineRow label="Sample Rate" value={sampleRateText} />
-            <PipelineRow label="Bit-Exact" value={bitExactVerdict} />
-          </PipelineSection>
+            {/* 4. DSP Stage */}
+            <PipelineSection
+              icon={AudioWaveform}
+              title="DSP"
+              nodeRef={(el) => {
+                stageNodeRefs.current[3] = el;
+              }}
+            >
+              <PipelineRow label="PCM Format" value="Float32" />
+              <PipelineRow label="Sample Rate" value={sampleRateText} />
+              <PipelineRow label="Bit-Exact" value={bitExactVerdict} />
+            </PipelineSection>
 
-          <PipelineRule />
+            <PipelineRule />
 
-          {/* 5. Output Device Stage */}
-          <PipelineSection icon={Volume2} title="Output Device">
-            <PipelineRow label="Device Name" value="System default" />
-            <PipelineRow label="Route" value="Direct System Audio" />
-            <PipelineRow label="Transport" value={transportText} />
-            <PipelineRow label="Direct" value="Active (Direct Audio Path)" />
-          </PipelineSection>
+            {/* 5. Output Device Stage */}
+            <PipelineSection
+              icon={Volume2}
+              title="Output Device"
+              nodeRef={(el) => {
+                stageNodeRefs.current[4] = el;
+              }}
+            >
+              <PipelineRow label="Device Name" value="System default" />
+              <PipelineRow label="Route" value="Direct System Audio" />
+              <PipelineRow label="Transport" value={transportText} />
+              <PipelineRow label="Direct" value="Active (Direct Audio Path)" />
+            </PipelineSection>
+          </div>
+
+          {/* BeatFlow / Apple style floating overlay scrollbar pill */}
+          <div
+            className="absolute right-1 top-2 bottom-2 w-1.5 pointer-events-none transition-opacity duration-300 z-20"
+            style={{ opacity: scrollPill.visible ? 1 : 0 }}
+          >
+            <div
+              className="w-1 rounded-full bg-white/40 transition-[height,transform] duration-75 ease-out ml-auto"
+              style={{
+                height: `${scrollPill.height}px`,
+                transform: `translateY(${scrollPill.top}px)`,
+              }}
+            />
+          </div>
         </div>
 
         {/* Full-width hairline and Done action matching Android */}
