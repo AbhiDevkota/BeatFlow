@@ -67,6 +67,16 @@ pub struct Candidate {
     pub format: String,
     pub atmos: bool,
     pub stream_url: Option<String>,
+    /// The addon's cover for this recording, when it offers one.
+    pub artwork: Option<String>,
+}
+
+/// A resolved addon stream for a download, plus the cover the addon gave for it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadSource {
+    pub stream: StreamInfo,
+    pub artwork: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -382,6 +392,9 @@ fn parse_candidate(v: &Value) -> Option<Candidate> {
             .or_else(|| v.get("url").and_then(Value::as_str))
             .or_else(|| v.get("file").and_then(Value::as_str))
             .map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned),
+        artwork: ["artwork", "thumbnail", "cover", "image"].iter()
+            .find_map(|key| v.get(*key).and_then(Value::as_str))
+            .map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned),
     })
 }
 
@@ -648,9 +661,45 @@ pub async fn find_best_upgrade(
     duration_sec: Option<u32>,
     prefer_atmos: bool,
 ) -> anyhow::Result<Option<StreamInfo>> {
-    let enabled_addons: Vec<&InstalledAddon> = addons.iter().filter(|a| a.enabled).collect();
+    Ok(find_best_source(http, addons, title, artist, duration_sec, prefer_atmos, false)
+        .await?
+        .map(|found| found.stream))
+}
+
+/// The same walk as [find_best_upgrade], but only addons that permit downloads.
+/// Android's `SourceRegistry.activeForDownload` is the model: an enabled addon
+/// whose manifest says `allowDownloads: false` sits out, and the next source in
+/// line serves the file.
+pub async fn find_download_source(
+    http: &reqwest::Client,
+    addons: &[InstalledAddon],
+    title: &str,
+    artist: &str,
+    duration_sec: Option<u32>,
+    prefer_atmos: bool,
+) -> anyhow::Result<Option<DownloadSource>> {
+    find_best_source(http, addons, title, artist, duration_sec, prefer_atmos, true).await
+}
+
+async fn find_best_source(
+    http: &reqwest::Client,
+    addons: &[InstalledAddon],
+    title: &str,
+    artist: &str,
+    duration_sec: Option<u32>,
+    prefer_atmos: bool,
+    downloads_only: bool,
+) -> anyhow::Result<Option<DownloadSource>> {
+    let enabled_addons: Vec<&InstalledAddon> = addons
+        .iter()
+        .filter(|a| a.enabled)
+        .filter(|a| !downloads_only || a.allow_downloads != Some(false))
+        .collect();
     if enabled_addons.is_empty() {
-        println!("[BeatFlow Engine] ℹ️ No addons enabled for quality upgrade");
+        println!(
+            "[BeatFlow Engine] ℹ️ No addons enabled for {}",
+            if downloads_only { "downloads" } else { "quality upgrade" }
+        );
         return Ok(None);
     }
 
@@ -668,7 +717,8 @@ pub async fn find_best_upgrade(
     }
 
     println!(
-        "[BeatFlow Engine] 🔍 Upgrading: \"{}\" - \"{}\" | searchable: \"{}\" (primary: \"{}\", prefer_atmos: {}) across {} addon(s)",
+        "[BeatFlow Engine] 🔍 Resolving ({}) \"{}\" - \"{}\" | searchable: \"{}\" (primary: \"{}\", prefer_atmos: {}) across {} addon(s)",
+        if downloads_only { "download" } else { "upgrade" },
         title, artist, searchable, primary, prefer_atmos, enabled_addons.len()
     );
 
@@ -745,7 +795,7 @@ pub async fn find_best_upgrade(
                                 println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", stream.codec, stream.container);
                                 println!("[BeatFlow Engine]    BitDepth: {:?} | SampleRate: {:?} | Bitrate: {:?}", stream.bit_depth, stream.sample_rate, stream.bitrate_kbps);
                                 println!("[BeatFlow Engine]    Atmos: {} | Lossless: {} | HiRes: {} | Badge: {}", stream.atmos, stream.lossless, stream.hires, stream.badge);
-                                return Ok(Some(stream));
+                                return Ok(Some(DownloadSource { stream, artwork: candidate.artwork.clone() }));
                             }
                             Ok(None) => {
                                 println!("[BeatFlow Engine] ⚠️ Candidate \"{}\" returned no playable stream", candidate.id);
@@ -795,6 +845,7 @@ mod tests {
             format: String::new(),
             atmos: false,
             stream_url: None,
+            artwork: None,
         };
         let pick = |title: &str| rank(vec![target(title)], "Call Me Maybe", "Carly Rae Jepsen", Some(202), false).len();
         assert_eq!(pick("Call Me Maybe"), 1);
@@ -813,6 +864,7 @@ mod tests {
             format: String::new(),
             atmos: false,
             stream_url: None,
+            artwork: None,
         };
         let pick = |artist: &str| rank(vec![row(artist)], "Call Me Maybe", "Carly Rae Jepsen", Some(202), false).len();
         assert_eq!(pick(""), 0);

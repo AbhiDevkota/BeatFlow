@@ -434,24 +434,51 @@ export async function youtubeMusicLyrics(q: LyricsQuery): Promise<Parsed | null>
   }
 }
 
-/** Timed captions for the exact playing video (Innertube.transcript). */
+/** Timed captions for the exact playing video, from the player response's caption tracks. */
 export async function youtubeCaptions(q: LyricsQuery): Promise<Parsed | null> {
   if (!/^[A-Za-z0-9_-]{11}$/.test(q.videoId)) return null;
   try {
+    const { playerRequest } = await import('@/playback/youtube/resolver');
     const { getMusicClient } = await import('@/playback/youtube/innertube');
     const yt = await getMusicClient();
-    // get_transcript takes a tiny protobuf: field 1, length, the video id.
-    const id = new TextEncoder().encode(q.videoId);
-    const params = btoa(String.fromCharCode(10, id.length, ...id));
-    const response = await yt.actions.execute('/get_transcript', { params, client: 'YTMUSIC' });
-    const lines = [...objectsNamed(response.data, 'transcriptCueRenderer')]
-      .map((cue) => {
-        const start = Number(cue.startOffsetMs);
-        const text = youtubeText(cue.cue).replace(/^[\s♪]+|[\s♪]+$/g, '');
-        return Number.isFinite(start) && text ? line(start, text) : null;
-      })
-      .filter((l): l is LyricLine => !!l)
-      .sort((a, b) => a.timeMs - b.timeMs);
+    let tracks: any[] | null = null;
+    for (const client of ['YTMUSIC', 'WEB'] as const) {
+      try {
+        const response = await playerRequest(yt, q.videoId, client);
+        const data: any = response?.data ?? {};
+        const found = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+        if (Array.isArray(found) && found.length) {
+          tracks = found;
+          break;
+        }
+      } catch {
+        // Try the next client.
+      }
+    }
+    if (!tracks) return null;
+    // Prefer a manually uploaded track over auto-generated captions.
+    const chosen = tracks.find((t: any) => t.kind !== 'asr') ?? tracks[0];
+    const baseUrl = chosen?.baseUrl;
+    if (!baseUrl) return null;
+    const res = await fetch(`${baseUrl}${baseUrl.includes('?') ? '&' : '?'}fmt=json3`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const events = Array.isArray(json?.events) ? json.events : [];
+    const lines: LyricLine[] = [];
+    for (const ev of events) {
+      const start = Number(ev?.tStartMs);
+      if (!Number.isFinite(start)) continue;
+      const segs = Array.isArray(ev?.segs) ? ev.segs : [];
+      const text = segs
+        .map((s: any) => (typeof s?.utf8 === 'string' ? s.utf8 : ''))
+        .join('')
+        .replace(/\n/g, ' ')
+        .replace(/^[\s♪]+|[\s♪]+$/g, '')
+        .trim();
+      if (!text) continue;
+      lines.push(line(start, text));
+    }
+    lines.sort((a, b) => a.timeMs - b.timeMs);
     return fromLines(lines);
   } catch {
     return null;

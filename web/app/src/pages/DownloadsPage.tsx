@@ -103,36 +103,20 @@ function HeroMosaic({ covers }: { covers: string[] }) {
   return (
     <div className="relative w-[270px] flex-none max-lg:w-[220px] max-md:w-[min(240px,62vw)]">
       <div className="absolute inset-4 -z-1 rounded-full bg-key/25 blur-3xl" aria-hidden="true" />
-      {covers[0] && (
-        <div className="absolute inset-0 -z-1 scale-90 opacity-35 blur-[28px] saturate-200" aria-hidden="true">
-          <img src={covers[0]} alt="" className="size-full rounded-artwork-lg object-cover" draggable={false} />
-        </div>
-      )}
-      {covers.length === 0 ? (
+      {covers[0] ? (
+        <>
+          <div className="absolute inset-0 -z-1 scale-90 opacity-35 blur-[28px] saturate-200" aria-hidden="true">
+            <img src={covers[0]} alt="" className="size-full rounded-artwork-lg object-cover" draggable={false} />
+          </div>
+          <div className="artwork-stroke relative aspect-square overflow-hidden rounded-artwork-lg shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
+            <img src={covers[0]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+          </div>
+        </>
+      ) : (
         <div className="artwork-stroke relative grid aspect-square place-items-center overflow-hidden rounded-artwork-lg bg-gradient-to-br from-key via-key/75 to-key/35 shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
           <span className="grid size-20 place-items-center rounded-full bg-white/15 text-white shadow-lg backdrop-blur-md">
             <ArrowDown size={34} strokeWidth={2.2} />
           </span>
-        </div>
-      ) : (
-        <div className="artwork-stroke relative grid aspect-square grid-cols-2 grid-rows-2 overflow-hidden rounded-artwork-lg shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
-          {Array.from({ length: 4 }, (_, i) => {
-            const cover = covers[i];
-            return cover ? (
-              <img
-                key={`${cover}-${i}`}
-                src={cover}
-                alt=""
-                className="size-full object-cover"
-                loading={i < 2 ? 'eager' : 'lazy'}
-                draggable={false}
-              />
-            ) : (
-              <div key={`empty-${i}`} className="grid size-full place-items-center bg-quaternary text-tertiary" aria-hidden="true">
-                <Music2 size={26} strokeWidth={1.6} />
-              </div>
-            );
-          })}
         </div>
       )}
     </div>
@@ -258,16 +242,14 @@ function RefreshError({ message }: { message: string }) {
 
 function EmptyDownloads() {
   return (
-    <div className="mx-(--body-gutter) mt-7">
-      <div className="flex flex-col items-center rounded-[18px] border border-dashed border-divider/60 bg-quaternary/10 px-6 py-14 text-center">
-        <span className="grid size-16 place-items-center rounded-full bg-key/10 text-key">
-          <Download size={27} strokeWidth={1.9} />
-        </span>
-        <p className="mt-4 type-title-2-emphasized">No downloaded songs yet</p>
-        <p className="mt-1 max-w-[390px] type-body-tall text-secondary">
-          Download a song from its ⋯ menu and it will appear here, ready to play without a connection.
-        </p>
-      </div>
+    <div className="mx-(--body-gutter) mt-7 flex flex-col items-center py-14 text-center">
+      <span className="grid size-20 place-items-center rounded-full bg-key/10 text-key">
+        <Download size={34} strokeWidth={1.9} />
+      </span>
+      <p className="mt-5 type-title-2-emphasized">No downloaded songs yet</p>
+      <p className="mt-1 max-w-[390px] type-body-tall text-secondary">
+        Download a song from its ⋯ menu and it will appear here, ready to play without a connection.
+      </p>
     </div>
   );
 }
@@ -316,7 +298,6 @@ export default function DownloadsPage() {
   const error = useDownloadsStore((s) => s.error);
   const refresh = useDownloadsStore((s) => s.refresh);
   const [query, setQuery] = useState('');
-  const [lyricsOnly, setLyricsOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>('recent');
 
   // Every visit re-reads the folder; the shell's own call is deduplicated in the store.
@@ -358,7 +339,6 @@ export default function DownloadsPage() {
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const list = downloaded.filter((item) => {
-      if (lyricsOnly && !item.hasLyrics) return false;
       if (!needle) return true;
       return `${item.title} ${item.artist} ${item.fileName}`.toLowerCase().includes(needle);
     });
@@ -374,20 +354,18 @@ export default function DownloadsPage() {
           return b.modified - a.modified || a.title.localeCompare(b.title);
       }
     });
-  }, [downloaded, lyricsOnly, query, sort]);
+  }, [downloaded, query, sort]);
 
   const filteredTracks = useMemo<Track[]>(() => filtered.map(toTrackFromDownloaded), [filtered]);
   const totalBytes = useMemo(() => downloaded.reduce((sum, item) => sum + item.size, 0), [downloaded]);
-  const lyricsCount = useMemo(() => downloaded.filter((item) => item.hasLyrics).length, [downloaded]);
   const covers = useMemo(
     () => downloaded.flatMap((item) => (item.thumbnail ? [item.thumbnail] : [])).slice(0, 4),
     [downloaded],
   );
   const activeList = Object.values(activeDownloads);
-  const filtersActive = query.trim().length > 0 || lyricsOnly;
+  const filtersActive = query.trim().length > 0;
   const clearFilters = () => {
     setQuery('');
-    setLyricsOnly(false);
   };
 
   const goBack = () => {
@@ -425,9 +403,7 @@ export default function DownloadsPage() {
 
   const metaLine =
     tracks.length > 0
-      ? `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} · ${formatBytes(totalBytes)}${
-          lyricsCount > 0 ? ` · ${lyricsCount} with lyrics` : ''
-        }`
+      ? `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} · ${formatBytes(totalBytes)}`
       : 'Songs you save for offline listening will live here.';
 
   return (
@@ -478,12 +454,12 @@ export default function DownloadsPage() {
       {error && <RefreshError message={error} />}
 
       {tracks.length > 0 && (
-        <div className="mx-(--body-gutter) mt-8 flex flex-wrap items-center gap-2 rounded-[14px] border border-divider/40 bg-quaternary/20 p-2.5">
-          <div className="relative min-w-[190px] flex-1 md:max-w-[330px]">
+        <div className="mx-(--body-gutter) mt-8 flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[220px] flex-1 md:max-w-[360px]">
             <Search
               size={15}
               strokeWidth={2.4}
-              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-secondary"
+              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-secondary"
               aria-hidden="true"
             />
             <input
@@ -492,7 +468,7 @@ export default function DownloadsPage() {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by song, artist, or file"
               aria-label="Search downloads"
-              className="h-9 w-full rounded-full border border-search-border bg-page pr-8 pl-9 type-body text-primary transition-colors placeholder:text-tertiary focus:border-key/60 [&::-webkit-search-cancel-button]:hidden"
+              className="h-[38px] w-full rounded-pill border border-search-border bg-page pt-1.5 pr-[30px] pb-[5px] pl-7 type-body text-primary placeholder:text-tertiary transition-colors focus:border-key/60 [&::-webkit-search-cancel-button]:hidden"
             />
             {query && (
               <button
@@ -506,17 +482,14 @@ export default function DownloadsPage() {
             )}
           </div>
 
-          <div className="relative inline-flex items-center">
-            <ArrowUpDown
-              size={13}
-              className="pointer-events-none absolute left-2.5 text-secondary"
-              aria-hidden="true"
-            />
+          <label className="inline-flex cursor-pointer items-center gap-1.5 type-callout-emphasized text-secondary">
+            <ArrowUpDown size={13} className="text-secondary" aria-hidden="true" />
+            <span className="sr-only">Sort downloads</span>
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as SortKey)}
               aria-label="Sort downloads"
-              className="h-9 cursor-pointer appearance-none rounded-full border border-divider/40 bg-page pr-8 pl-7 type-callout-emphasized text-primary transition-colors hover:bg-quaternary/50"
+              className="cursor-pointer appearance-none bg-transparent pr-1 type-callout-emphasized text-primary focus:outline-none"
             >
               {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
                 <option key={key} value={key}>
@@ -524,33 +497,9 @@ export default function DownloadsPage() {
                 </option>
               ))}
             </select>
-            <ChevronDown size={13} className="pointer-events-none absolute right-2.5 text-secondary" aria-hidden="true" />
-          </div>
+          </label>
 
-          {lyricsCount > 0 && (
-            <button
-              type="button"
-              aria-pressed={lyricsOnly}
-              onClick={() => setLyricsOnly((value) => !value)}
-              className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 type-callout-emphasized transition-colors ${
-                lyricsOnly
-                  ? 'border-key/40 bg-key/10 text-key'
-                  : 'border-divider/40 bg-page text-secondary hover:bg-quaternary/50 hover:text-primary'
-              }`}
-            >
-              <MicVocal size={14} strokeWidth={2.2} />
-              With lyrics
-              <span
-                className={`rounded-full px-1.5 type-caption-2 font-semibold tabular-nums ${
-                  lyricsOnly ? 'bg-key/15 text-key' : 'bg-quaternary/70 text-tertiary'
-                }`}
-              >
-                {lyricsCount}
-              </span>
-            </button>
-          )}
-
-          <span className="ms-auto pe-1 type-callout text-secondary">
+          <span className="ms-auto type-callout text-secondary">
             {filtersActive ? `${filtered.length} of ${tracks.length} songs` : `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}`}
           </span>
         </div>
@@ -567,7 +516,7 @@ export default function DownloadsPage() {
             No downloads match {query.trim() ? `“${query.trim()}”` : 'this filter'}
           </p>
           <p className="type-callout text-secondary">
-            {lyricsOnly && !query.trim() ? 'Try turning off the lyrics filter.' : 'Try a different title, artist, or file name.'}
+            {query.trim() ? 'Try a different title, artist, or file name.' : 'Try a different title, artist, or file name.'}
           </p>
           <button
             type="button"

@@ -275,6 +275,9 @@ export interface BridgeMethods {
       filePath: string;
       title: string;
       artist: string;
+      album?: string | null;
+      durationSec?: number;
+      source?: string | null;
       extension: string;
       sizeBytes: number;
       modifiedMs: number;
@@ -292,6 +295,9 @@ export interface BridgeMethods {
       extension?: string;
       thumbnailUrl?: string;
       lyrics?: string;
+      album?: string;
+      durationSec?: number;
+      source?: string;
     };
     result: {
       success: boolean;
@@ -309,6 +315,10 @@ export interface BridgeMethods {
   'downloads.checkExists': {
     params: { title?: string; artist?: string; fileName?: string };
     result: { exists: boolean; fileName: string | null; localUrl?: string | null };
+  };
+  'downloads.resolveSource': {
+    params: { videoId?: string; title: string; artist?: string; durationSec?: number | null };
+    result: { stream: any; artwork?: string | null } | null;
   };
   'shell.open': {
     params: { url: string };

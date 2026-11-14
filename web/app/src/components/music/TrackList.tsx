@@ -1,6 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, MicVocal } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { PauseIcon, PlayIcon } from '@/components/icons/Transport';
 import type { ArtistRef, Track } from '@/data/music/types';
@@ -222,22 +222,15 @@ function Row({ track, variant, position, fallbackArtwork, downloadMeta, onPlayRo
             </span>
           </div>
           <div className={`${tertiary} ${dimmed}`}>
-            <span className="flex min-w-0 items-center gap-2 type-body">
-              <span className="rounded-[4px] bg-quaternary/70 px-1.5 py-0.5 type-caption-2 font-semibold uppercase tracking-[0.06em] text-secondary">
-                {downloadMeta?.format ?? 'audio'}
-              </span>
-              {downloadMeta && (
-                <span className="truncate tabular-nums text-secondary">{downloadMeta.size}</span>
-              )}
-              {downloadMeta?.hasLyrics && (
-                <span
-                  className="inline-flex shrink-0 items-center gap-1 type-caption-2 font-semibold text-key"
-                  title="Lyrics saved with this download"
-                >
-                  <MicVocal size={11} strokeWidth={2.4} />
-                  Lyrics
-                </span>
-              )}
+            <span className="truncate type-body">
+              {track.album &&
+                (albumHref(track.album.id) ? (
+                  <PrefetchLink to={albumHref(track.album.id)!} className={link}>
+                    {track.album.name}
+                  </PrefetchLink>
+                ) : (
+                  track.album.name
+                ))}
             </span>
           </div>
         </>
@@ -267,7 +260,7 @@ function Row({ track, variant, position, fallbackArtwork, downloadMeta, onPlayRo
 
 function Header({ variant }: { variant: Variant }) {
   const last = variant === 'downloads' ? 'Added' : 'Time';
-  const third = variant === 'downloads' ? 'File' : 'Album';
+  const third = 'Album';
   return (
     <div className={`grid h-8 items-center ${playlistColumns} type-callout-emphasized text-secondary max-md:hidden`} aria-hidden="true">
       <div className={`${cell} gap-3 ps-[7px]`}>Song</div>

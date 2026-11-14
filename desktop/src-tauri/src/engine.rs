@@ -146,6 +146,7 @@ impl BeatflowEngine {
             format: "FLAC".to_string(),
             atmos: prefer_atmos,
             stream_url: None,
+            artwork: None,
         };
 
         let stream_info = client.stream(&self.http, &manifest, &candidate, prefer_atmos).await?
@@ -202,6 +203,33 @@ impl BeatflowEngine {
         }
 
         Ok(stream)
+    }
+
+    /// Resolves a download source from an enabled addon that permits downloads.
+    /// Unlike [upgrade_quality] this leaves playback state alone: the file is
+    /// fetched in the background while whatever is playing keeps its stream.
+    pub async fn resolve_download_source(
+        &self,
+        track: TrackPayload,
+        addons_override: Option<&[InstalledAddon]>,
+    ) -> anyhow::Result<Option<hires::DownloadSource>> {
+        let owned_addons = if addons_override.is_none() {
+            Some(self.addons.read().await.clone())
+        } else {
+            None
+        };
+        let addons: &[InstalledAddon] = addons_override.unwrap_or_else(|| owned_addons.as_deref().unwrap());
+
+        let prefer_atmos = *self.prefer_atmos.read().await;
+        hires::find_download_source(
+            &self.http,
+            addons,
+            &track.title,
+            &track.artist,
+            track.duration_sec,
+            prefer_atmos,
+        )
+        .await
     }
 
     /// Reverts an upgraded track back to its original YouTube Music source.

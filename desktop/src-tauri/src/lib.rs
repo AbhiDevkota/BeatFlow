@@ -853,6 +853,50 @@ fn mime_for_ext(ext: &str) -> &'static str {
   }
 }
 
+/// The saved cover for a download. Hosts answer with JPEG, PNG or WebP
+/// depending on what the addon or YouTube served, so all three are looked for.
+fn thumbnail_path_for(thumbs_dir: &Path, stem: &str) -> Option<PathBuf> {
+  ["jpg", "jpeg", "png", "webp"]
+    .iter()
+    .map(|ext| thumbs_dir.join(format!("{}.{}", stem, ext)))
+    .find(|path| path.exists())
+}
+
+fn image_mime_for(path: &Path) -> &'static str {
+  match path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() {
+    Some("png") => "image/png",
+    Some("webp") => "image/webp",
+    Some("gif") => "image/gif",
+    _ => "image/jpeg",
+  }
+}
+
+/// The fields a download knows that the file name doesn't carry. Stored next
+/// to the audio as `<stem>.beatflow.json`; Android writes the same facts into
+/// the container's tags, which the desktop keeps beside the file instead.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadMeta {
+  #[serde(default)]
+  album: Option<String>,
+  #[serde(default)]
+  duration_sec: Option<u32>,
+  #[serde(default)]
+  source: Option<String>,
+}
+
+fn download_meta_path(songs_dir: &Path, stem: &str) -> PathBuf {
+  songs_dir.join(format!("{}.beatflow.json", stem))
+}
+
+fn read_download_meta(songs_dir: &Path, stem: &str) -> DownloadMeta {
+  fs::read_to_string(download_meta_path(songs_dir, stem))
+    .ok()
+    .and_then(|raw| serde_json::from_str(&raw).ok())
+    .unwrap_or_default()
+}
+
+
 fn client() -> &'static reqwest::Client {
   HTTP_CLIENT.get_or_init(|| {
     reqwest::Client::builder()
@@ -1889,6 +1933,38 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       open_in_file_manager(&target_path);
       Ok(json!({ "opened": true }))
     }
+    "downloads.resolveSource" => {
+      let video_id = params.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let title = params.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let artist = params.get("artist").and_then(|v| v.as_str()).unwrap_or("").to_string();
+      let duration_sec = params.get("durationSec").and_then(|v| v.as_u64()).map(|d| d as u32);
+
+      // The addon list is synced by the app, but a download can start before
+      // that round-trip lands; the folder config is the source of truth.
+      if engine().get_addons().await.is_empty() {
+        let on_disk = load_addons_from_disk();
+        if !on_disk.is_empty() {
+          engine().set_addons(on_disk).await;
+        }
+      }
+
+      println!("[BeatFlow Engine] >>> downloads.resolveSource: \"{}\" - \"{}\"", title, artist);
+      let track = TrackPayload {
+        video_id,
+        title,
+        artist,
+        duration_sec,
+        thumbnail: None,
+        album: None,
+      };
+      match engine().resolve_download_source(track, None).await {
+        Ok(found) => Ok(json!(found)),
+        Err(e) => {
+          println!("[BeatFlow Engine] ⚠️ resolve_download_source error: {:#}", e);
+          Ok(Value::Null)
+        }
+      }
+    }
     "downloads.list" => {
       let songs_dir = get_songs_dir();
       let root_dir = get_music_dir();
@@ -1943,14 +2019,11 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
 
               let local_url = format!("beatflow://local/{}", file_name);
 
-              let thumb_file = format!("{}.jpg", stem);
-              let thumbnail = if thumbs_dir.join(&thumb_file).exists() {
-                Some(format!("beatflow://thumbnail/{}", thumb_file))
-              } else {
-                None
-              };
+              let thumbnail = thumbnail_path_for(&thumbs_dir, stem)
+                .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("beatflow://thumbnail/{}", f)));
 
               let has_lyrics = lyrics_dir.join(format!("{}.lrc", stem)).exists();
+              let meta = read_download_meta(&songs_dir, stem);
 
               items.push(json!({
                 "id": format!("local_{}", file_name),
@@ -1959,6 +2032,9 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
                 "filePath": path.to_string_lossy(),
                 "title": title,
                 "artist": artist,
+                "album": meta.album,
+                "durationSec": meta.duration_sec.unwrap_or(0),
+                "source": meta.source,
                 "extension": ext,
                 "sizeBytes": file_size,
                 "modifiedMs": modified_ms,
@@ -1985,6 +2061,9 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       let ext_param = params.get("extension").and_then(|v| v.as_str()).unwrap_or("m4a");
       let thumbnail_url = params.get("thumbnailUrl").and_then(|v| v.as_str());
       let lyrics_text = params.get("lyrics").and_then(|v| v.as_str());
+      let album = params.get("album").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
+      let duration_sec = params.get("durationSec").and_then(|v| v.as_u64()).map(|d| d as u32);
+      let source = params.get("source").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
 
       let artist_clean = sanitize_stem(artist_raw);
       let title_clean = sanitize_stem(title_raw);
@@ -2037,14 +2116,38 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       println!("[Rust Bridge] Writing downloaded track '{}' ({} bytes) to {:?}", file_name, bytes.len(), file_path);
       fs::write(&file_path, &bytes).map_err(|e| e.to_string())?;
 
-      // Download album art thumbnail if provided
+      // Download album art thumbnail if provided. The extension follows what
+      // the host actually sent, so a PNG from an addon stays a PNG.
       if let Some(t_url) = thumbnail_url && !t_url.is_empty() {
-        let thumb_path = get_thumbnails_dir().join(format!("{}.jpg", file_stem));
         if let Ok(t_resp) = client().get(t_url).send().await
           && t_resp.status().is_success()
-          && let Ok(t_bytes) = t_resp.bytes().await
         {
-          let _ = fs::write(&thumb_path, &t_bytes);
+          let ext = match t_resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
+            Some(ct) if ct.contains("png") => "png",
+            Some(ct) if ct.contains("webp") => "webp",
+            _ => "jpg",
+          };
+          if let Ok(t_bytes) = t_resp.bytes().await {
+            for old in ["jpg", "jpeg", "png", "webp"] {
+              if old != ext {
+                let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.{}", file_stem, old)));
+              }
+            }
+            let _ = fs::write(get_thumbnails_dir().join(format!("{}.{}", file_stem, ext)), &t_bytes);
+          }
+        }
+      }
+
+      // Save the facts the file name doesn't carry, so Downloads can show the
+      // album and the length without opening the audio.
+      let meta = DownloadMeta {
+        album: album.map(str::to_owned),
+        duration_sec,
+        source: source.map(str::to_owned),
+      };
+      if meta.album.is_some() || meta.duration_sec.is_some() || meta.source.is_some() {
+        if let Ok(raw) = serde_json::to_string_pretty(&meta) {
+          let _ = fs::write(download_meta_path(&songs_dir, &file_stem), raw);
         }
       }
 
@@ -2089,8 +2192,11 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }
       let stem = Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
       if !stem.is_empty() {
-        let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.jpg", stem)));
+        for ext in ["jpg", "jpeg", "png", "webp"] {
+          let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.{}", stem, ext)));
+        }
         let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.lrc", stem)));
+        let _ = fs::remove_file(download_meta_path(&get_songs_dir(), stem));
       }
       Ok(json!({ "deleted": deleted, "fileName": file_name }))
     }
@@ -2228,6 +2334,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         format: String::new(),
         atmos,
         stream_url: None,
+        artwork: None,
       };
       let stream_info = addon_client.stream(client(), &manifest, &candidate, atmos).await.map_err(|e| e.to_string())?;
       let stream_info = stream_info.ok_or("Addon returned no playable stream")?;
@@ -3238,7 +3345,7 @@ pub fn run() {
             if let Ok(bytes) = fs::read(&target_file) {
               let resp = tauri::http::Response::builder()
                 .status(200)
-                .header("Content-Type", "image/jpeg")
+                .header("Content-Type", image_mime_for(&target_file))
                 .header("Content-Length", bytes.len().to_string())
                 .header("Access-Control-Allow-Origin", "*")
                 .body(bytes)

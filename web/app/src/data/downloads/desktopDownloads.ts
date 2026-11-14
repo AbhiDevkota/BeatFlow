@@ -2,6 +2,8 @@ import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
 import { create } from 'zustand';
 import type { Track } from '@/data/music/types';
 import { resolveAudioUrl } from '@/playback/automix/fetchAudio';
+import { getCanonicalVideoId } from '@/state/player';
+import { useLyricsUi } from '@/lyrics/useLyrics';
 
 export interface DownloadedItem {
   fileName: string;
@@ -10,10 +12,12 @@ export interface DownloadedItem {
   modified: number;
   title: string;
   artist: string;
+  album?: string | null;
   durationSec: number;
   localUrl: string;
   thumbnail?: string | null;
   hasLyrics?: boolean;
+  source?: string | null;
 }
 
 export interface DownloadsFolderInfo {
@@ -165,10 +169,12 @@ export async function listDownloadedTracks(): Promise<DownloadedItem[]> {
     modified: it.modifiedMs,
     title: it.title,
     artist: it.artist,
-    durationSec: 0,
+    album: it.album ?? null,
+    durationSec: it.durationSec ?? 0,
     localUrl: it.localUrl,
     thumbnail: it.thumbnail ?? null,
     hasLyrics: it.hasLyrics ?? false,
+    source: it.source ?? null,
   }));
 }
 
@@ -217,6 +223,46 @@ export async function downloadTrack(
   try {
     let audioUrl = customAudioUrl;
     let extension = 'm4a';
+    let resolvedThumbnailUrl: string | null | undefined = track.thumbnail ?? null;
+    let resolvedAlbum: string | null = track.album?.name ?? null;
+    let resolvedDurationSec: number | undefined = track.durationSec ?? undefined;
+    let resolvedSource: string | undefined;
+
+    const deriveExt = (url: string) => {
+      const cleanUrl = url.split('?')[0] ?? '';
+      const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
+      if (extMatch && extMatch[1] && extMatch[1].toLowerCase() !== 'mpd') {
+        return extMatch[1].toLowerCase();
+      }
+      return null;
+    };
+
+    if (!audioUrl) {
+      try {
+        const source = await desktopBridge().call('downloads.resolveSource', {
+          videoId: track.videoId,
+          title,
+          artist,
+          durationSec: track.durationSec ?? null,
+        });
+        if (source?.stream?.url) {
+          audioUrl = source.stream.url;
+          resolvedThumbnailUrl = source.artwork ?? resolvedThumbnailUrl;
+          resolvedSource = source.stream.source ?? 'Addon';
+          const ext = deriveExt(audioUrl!);
+          if (ext) extension = ext;
+          else if (track.sourceFormat?.codec) {
+            const c = track.sourceFormat.codec.toLowerCase();
+            if (c.includes('flac')) extension = 'm4a';
+            else if (c.includes('mp3')) extension = 'mp3';
+            else if (c.includes('opus')) extension = 'opus';
+            else extension = 'm4a';
+          }
+        }
+      } catch {
+        // Fall through to the per-track resolution below.
+      }
+    }
 
     if (!audioUrl) {
       if (track.videoId.startsWith('addon:')) {
@@ -229,11 +275,9 @@ export async function downloadTrack(
           }
         }
         audioUrl = await resolveAddonStream(track.videoId);
-        const cleanUrl = audioUrl.split('?')[0] ?? '';
-        const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
-        if (extMatch && extMatch[1] && extMatch[1].toLowerCase() !== 'mpd') {
-          extension = extMatch[1].toLowerCase();
-        } else if (track.sourceFormat?.codec) {
+        const ext = deriveExt(audioUrl ?? '');
+        if (ext) extension = ext;
+        else if (track.sourceFormat?.codec) {
           const c = track.sourceFormat.codec.toLowerCase();
           if (c.includes('flac')) extension = 'm4a';
           else if (c.includes('mp3')) extension = 'mp3';
@@ -244,11 +288,8 @@ export async function downloadTrack(
         }
       } else if (track.videoId.startsWith('http://') || track.videoId.startsWith('https://')) {
         audioUrl = track.videoId;
-        const cleanUrl = audioUrl.split('?')[0] ?? '';
-        const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
-        if (extMatch && extMatch[1]) {
-          extension = extMatch[1].toLowerCase();
-        }
+        const ext = deriveExt(audioUrl!);
+        if (ext) extension = ext;
       } else {
         const resolved = await resolveAudioUrl(track.videoId);
         audioUrl = resolved.url.toString();
@@ -256,17 +297,29 @@ export async function downloadTrack(
       }
     }
 
-    // Attempt to fetch lyrics to save along with the song
+    // Attempt to fetch lyrics to save along with the song. Prefer the source
+    // the user picked for this track (useLyricsUi.picked, keyed by canonical
+    // video id); otherwise run the normal provider chain. Bounded so a slow
+    // lyric server can't hold a finished download up.
     let lyricsText: string | undefined;
     try {
       const { lookupLyrics } = await import('@/lyrics/repository');
-      const lyrics = await lookupLyrics({
-        videoId: track.videoId,
-        title: track.title,
-        artist: artist,
-        durationMs: (track.durationSec ?? 0) * 1000,
-        album: track.album?.name ?? null,
-      });
+      const canonicalId = getCanonicalVideoId(track.videoId) ?? track.videoId;
+      const picked = useLyricsUi.getState().picked[canonicalId];
+      const lookup = lookupLyrics(
+        {
+          videoId: track.videoId,
+          title: track.title,
+          artist: artist,
+          durationMs: (track.durationSec ?? 0) * 1000,
+          album: track.album?.name ?? null,
+        },
+        picked ? { only: picked } : {},
+      );
+      const lyrics = (await Promise.race([
+        lookup,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 30000)),
+      ])) as Awaited<ReturnType<typeof lookupLyrics>> | null;
       if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
         lyricsText = lyrics.lines
           .map((line) => {
@@ -282,13 +335,16 @@ export async function downloadTrack(
 
     const bridge = desktopBridge();
     const res = await bridge.call('downloads.downloadTrack', {
-      audioUrl,
+      audioUrl: audioUrl!,
       title,
       artist,
       videoId: track.videoId,
       extension,
-      thumbnailUrl: track.thumbnail ?? undefined,
+      thumbnailUrl: resolvedThumbnailUrl ?? undefined,
       lyrics: lyricsText,
+      album: resolvedAlbum ?? undefined,
+      durationSec: resolvedDurationSec,
+      source: resolvedSource,
     });
 
     useDownloadsStore.getState().updateActiveDownload(track.videoId, { status: 'completed' });
@@ -331,7 +387,7 @@ export function toTrackFromDownloaded(item: DownloadedItem): Track {
     videoId: item.localUrl,
     title: item.title,
     artists: [{ name: item.artist, id: null }],
-    album: null,
+    album: item.album ? { name: item.album, id: null } : null,
     durationSec: item.durationSec > 0 ? item.durationSec : null,
     explicit: false,
     thumbnail: item.thumbnail ?? null,
