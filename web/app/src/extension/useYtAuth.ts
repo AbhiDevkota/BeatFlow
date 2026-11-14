@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import type { DetectedExtension, YtAuthState } from '@bitchord/shared/bridge';
+import { isDesktopApp, desktopBridge, type DetectedExtension, type YtAuthState } from '@bitchord/shared/bridge';
 import { queryClient } from '@/lib/queryClient';
 import { resetInnertubeSession } from '@/playback/youtube/innertube';
 import { extensionQueryKey, useExtension } from './useExtension';
@@ -89,8 +89,9 @@ function adopt(state: YtAuthState): void {
 
 async function readAuth(refresh: boolean): Promise<YtAuthState> {
   const extension = detected();
-  if (!extension || !supportsAuth(extension)) return SIGNED_OUT;
-  const state = await extension.bridge.call('yt.authState', { refresh }, { timeoutMs: 20_000 });
+  const bridge = extension && supportsAuth(extension) ? extension.bridge : (isDesktopApp() ? desktopBridge() : null);
+  if (!bridge) return SIGNED_OUT;
+  const state = await bridge.call('yt.authState', { refresh }, { timeoutMs: 20_000 });
   adopt(state);
   return state;
 }
@@ -107,7 +108,8 @@ export type YtAuthStatus = { state: 'checking' } | { state: 'unavailable' } | { 
 export function useYtAuth(): YtAuthStatus {
   const extension = useExtension();
   const present = extension.state === 'present' ? extension.extension : null;
-  const enabled = supportsAuth(present);
+  const desktop = isDesktopApp() ? desktopBridge() : null;
+  const enabled = supportsAuth(present) || !!desktop;
   const query = useQuery({
     queryKey: ytAuthQueryKey,
     queryFn: () => readAuth(false),
@@ -118,13 +120,14 @@ export function useYtAuth(): YtAuthStatus {
   });
 
   useEffect(() => {
-    if (!present || !enabled) return;
-    return present.bridge.subscribe((event) => {
+    const bridge = present?.bridge ?? desktop;
+    if (!bridge || !enabled) return;
+    return bridge.subscribe((event) => {
       if (event.event === 'yt.authState') adopt(event.data);
     });
-  }, [present, enabled]);
+  }, [present, desktop, enabled]);
 
-  if (extension.state === 'checking' || (enabled && query.isPending)) return { state: 'checking' };
+  if ((extension.state === 'checking' && !desktop) || (enabled && query.isPending)) return { state: 'checking' };
   if (!enabled) return { state: 'unavailable' };
   return { state: 'ready', auth: query.data ?? SIGNED_OUT };
 }
@@ -134,8 +137,9 @@ export function useSelectChannel() {
   return useMutation({
     mutationFn: async (channelId: string) => {
       const extension = detected();
-      if (!extension) throw new Error('The extension is not installed');
-      return extension.bridge.call('yt.selectChannel', { channelId });
+      const bridge = extension?.bridge ?? (isDesktopApp() ? desktopBridge() : null);
+      if (!bridge) throw new Error('No bridge available');
+      return bridge.call('yt.selectChannel', { channelId });
     },
     onSuccess: adopt,
   });
@@ -151,8 +155,9 @@ export function useSetConnected() {
   return useMutation({
     mutationFn: async (connected: boolean) => {
       const extension = detected();
-      if (!extension) throw new Error('The extension is not installed');
-      return extension.bridge.call('yt.setConnected', { connected });
+      const bridge = extension?.bridge ?? (isDesktopApp() ? desktopBridge() : null);
+      if (!bridge) throw new Error('No bridge available');
+      return bridge.call('yt.setConnected', { connected });
     },
     onSuccess: adopt,
   });

@@ -9,6 +9,7 @@ import { resolveDeepLink } from '@/lib/deepLink';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { queryClient } from '@/lib/queryClient';
 import { adoptYtAuthState, ytAuthQueryKey } from '@/extension/useYtAuth';
+import { adoptSpotifyAuthState } from '@/extension/useSpotifyAuth';
 import { config } from '@/config';
 import { useExtension } from '@/extension/useExtension';
 import { isDesktopApp, isMobileBrowser } from '@/lib/platform';
@@ -48,8 +49,19 @@ export function AppShell() {
         adoptYtAuthState(auth);
       }
     };
+    const handleSpotifyDetected = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const auth = customEvent.detail;
+      if (auth) {
+        adoptSpotifyAuthState(auth);
+      }
+    };
     window.addEventListener('beatflow:yt-auth-detected', handleAuthDetected);
-    return () => window.removeEventListener('beatflow:yt-auth-detected', handleAuthDetected);
+    window.addEventListener('beatflow:spotify-auth-detected', handleSpotifyDetected);
+    return () => {
+      window.removeEventListener('beatflow:yt-auth-detected', handleAuthDetected);
+      window.removeEventListener('beatflow:spotify-auth-detected', handleSpotifyDetected);
+    };
   }, []);
 
   // Listen for beatflow:// deep links (from desktop bridge, protocol handler, or window events)

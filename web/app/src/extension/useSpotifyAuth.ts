@@ -1,13 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import type { DetectedExtension, SpotifyAuthState } from '@bitchord/shared/bridge';
+import { isDesktopApp, desktopBridge, type DetectedExtension, type SpotifyAuthState } from '@bitchord/shared/bridge';
 import { queryClient } from '@/lib/queryClient';
 import { extensionQueryKey, useExtension } from './useExtension';
 
 /**
- * The browser's Spotify session as the extension reports it (prompt §7.1):
+ * The browser's Spotify session as the extension/desktop bridge reports it:
  * a name and a picture, never the cookie or a token. Kept current like the
- * YouTube one: a read on start, the extension's pushes, a re-read on focus.
+ * YouTube one: a read on start, bridge pushes, and a re-read on focus.
  */
 
 export const spotifyAuthQueryKey = ['spotify', 'auth'] as const;
@@ -20,6 +20,10 @@ function detected(): DetectedExtension | null {
 
 const supported = (extension: DetectedExtension | null) => !!extension?.info.capabilities.includes('spotify');
 
+export function adoptSpotifyAuthState(state: SpotifyAuthState): void {
+  adopt(state);
+}
+
 function adopt(state: SpotifyAuthState): void {
   const before = queryClient.getQueryData<SpotifyAuthState>(spotifyAuthQueryKey);
   queryClient.setQueryData(spotifyAuthQueryKey, state);
@@ -31,8 +35,9 @@ function adopt(state: SpotifyAuthState): void {
 
 async function readAuth(refresh: boolean): Promise<SpotifyAuthState> {
   const extension = detected();
-  if (!extension || !supported(extension)) return SIGNED_OUT;
-  const state = await extension.bridge.call('spotify.authState', { refresh }, { timeoutMs: 30_000 });
+  const bridge = extension && supported(extension) ? extension.bridge : (isDesktopApp() ? desktopBridge() : null);
+  if (!bridge) return SIGNED_OUT;
+  const state = await bridge.call('spotify.authState', { refresh }, { timeoutMs: 30_000 });
   adopt(state);
   return state;
 }
@@ -42,7 +47,8 @@ export type SpotifyAuthStatus = { state: 'checking' } | { state: 'unavailable' }
 export function useSpotifyAuth(): SpotifyAuthStatus {
   const extension = useExtension();
   const present = extension.state === 'present' ? extension.extension : null;
-  const enabled = supported(present);
+  const desktop = isDesktopApp() ? desktopBridge() : null;
+  const enabled = supported(present) || !!desktop;
   const query = useQuery({
     queryKey: spotifyAuthQueryKey,
     queryFn: () => readAuth(false),
@@ -53,13 +59,14 @@ export function useSpotifyAuth(): SpotifyAuthStatus {
   });
 
   useEffect(() => {
-    if (!present || !enabled) return;
-    return present.bridge.subscribe((event) => {
+    const bridge = present?.bridge ?? desktop;
+    if (!bridge || !enabled) return;
+    return bridge.subscribe((event) => {
       if (event.event === 'spotify.authState') adopt(event.data);
     });
-  }, [present, enabled]);
+  }, [present, desktop, enabled]);
 
-  if (extension.state === 'checking' || (enabled && query.isPending)) return { state: 'checking' };
+  if ((extension.state === 'checking' && !desktop) || (enabled && query.isPending)) return { state: 'checking' };
   if (!enabled) return { state: 'unavailable' };
   return { state: 'ready', auth: query.data ?? SIGNED_OUT };
 }
@@ -74,8 +81,9 @@ export function useSetSpotifyConnected() {
   return useMutation({
     mutationFn: async (connected: boolean) => {
       const extension = detected();
-      if (!extension) throw new Error('The extension is not installed');
-      return extension.bridge.call('spotify.setConnected', { connected });
+      const bridge = extension?.bridge ?? (isDesktopApp() ? desktopBridge() : null);
+      if (!bridge) throw new Error('No bridge available');
+      return bridge.call('spotify.setConnected', { connected });
     },
     onSuccess: adopt,
   });
@@ -86,5 +94,7 @@ export function useRefreshSpotifyAuth() {
 }
 
 export function openSpotifySignIn(): void {
-  void detected()?.bridge.call('spotify.signIn', {});
+  const extension = detected();
+  const bridge = extension?.bridge ?? (isDesktopApp() ? desktopBridge() : null);
+  void bridge?.call('spotify.signIn', {});
 }

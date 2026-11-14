@@ -1,4 +1,4 @@
-import type { DiscordPresenceOptions } from '@bitchord/shared/bridge';
+import { isDesktopApp, type DiscordPresenceOptions } from '@bitchord/shared/bridge';
 import { APPLE_ORIGINS, useAppleAccess } from '@/data/apple/artistArt';
 import { useAppleSettings } from '@/data/apple/motionArt';
 import { useHostAccess } from '@/extension/useHostAccess';
@@ -101,7 +101,7 @@ function spotifyText(auth: SpotifyAuthStatus): string {
   if (auth.state === 'checking') return 'Checking…';
   if (auth.state === 'unavailable') return 'Not available in this version yet';
   const { browserSignedIn, connected, signedIn, user } = auth.auth;
-  if (!browserSignedIn) return 'Not signed in in this browser';
+  if (!browserSignedIn) return isDesktopApp() ? 'Not signed in' : 'Not signed in in this browser';
   if (!connected) return 'Disconnected';
   return signedIn ? `Signed in as ${user?.name ?? 'your account'}` : 'Couldn’t read your account';
 }

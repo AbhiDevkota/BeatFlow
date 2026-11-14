@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { SiSpotify, SiYoutubemusic } from 'react-icons/si';
 import { GoogleSignInModal } from '@/components/GoogleSignInModal';
-import { isDesktopApp } from '@/lib/platform';
+import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
 import { useExtension } from '@/extension/useExtension';
 import { useRefreshYtAuth, useSelectChannel, useSetConnected, useYtAuth } from '@/extension/useYtAuth';
 import { SpotifyIntegration } from './IntegrationSettings';
@@ -90,7 +90,13 @@ export default function AccountManagementPage() {
               {ytReady && !ytAuth?.browserSignedIn && (
                 <button
                   type="button"
-                  onClick={() => setSignInModalOpen(true)}
+                  onClick={() => {
+                    if (desktop) {
+                      desktopBridge()?.call('auth.openLoginWindow', {});
+                    } else {
+                      setSignInModalOpen(true);
+                    }
+                  }}
                   className={settingsUi.inlineButton}
                 >
                   Sign In
@@ -168,7 +174,7 @@ export default function AccountManagementPage() {
               <span className="type-callout text-secondary">Canvas video and playlist sync</span>
             </div>
             <div className="flex-shrink-0">
-              {present ? (
+              {present || desktop ? (
                 <SpotifyIntegration />
               ) : (
                 <span className={settingsUi.value}>Needs {desktop ? 'engine' : 'extension'}</span>

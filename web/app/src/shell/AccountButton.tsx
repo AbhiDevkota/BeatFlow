@@ -1,5 +1,6 @@
 import { ArrowUpRight, ChevronsUpDown } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
 import { GoogleSignInModal } from '@/components/GoogleSignInModal';
 import { Menu, MenuHeader, MenuItem, MenuSeparator } from '@/components/Menu';
 import { useRefreshYtAuth, useSelectChannel, useSetConnected, useYtAuth } from '@/extension/useYtAuth';
@@ -78,8 +79,12 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
           title="Continue With Google"
           onClick={() => {
             onNavigate?.();
-            setGoogleModalUrl(undefined);
-            setGoogleModalOpen(true);
+            if (isDesktopApp()) {
+              void desktopBridge()?.call('auth.openLoginWindow', {});
+            } else {
+              setGoogleModalUrl(undefined);
+              setGoogleModalOpen(true);
+            }
           }}
         >
           <GoogleLogo size={18} />

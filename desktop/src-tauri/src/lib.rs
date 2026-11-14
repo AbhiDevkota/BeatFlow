@@ -504,6 +504,45 @@ pub fn save_yt_auth(val: &Value) {
   }
 }
 
+pub fn get_spotify_auth_path() -> PathBuf {
+  get_config_dir().join("spotify_auth.json")
+}
+
+pub fn load_spotify_auth() -> Option<Value> {
+  let path = get_spotify_auth_path();
+  if path.exists() {
+    if let Ok(content) = fs::read_to_string(&path) {
+      if let Ok(val) = serde_json::from_str::<Value>(&content) {
+        let has_sp_dc = val
+          .get("sp_dc")
+          .and_then(|c| c.as_str())
+          .map(|c| !c.is_empty())
+          .unwrap_or(false);
+        if has_sp_dc {
+          return Some(val);
+        }
+      }
+    }
+  }
+  None
+}
+
+pub fn save_spotify_auth(val: &Value) {
+  let has_sp_dc = val
+    .get("sp_dc")
+    .and_then(|c| c.as_str())
+    .map(|c| !c.is_empty())
+    .unwrap_or(false);
+  if !has_sp_dc {
+    println!("[BeatFlow Spotify Auth] ⚠️ Refusing to save spotify_auth without sp_dc cookie");
+    return;
+  }
+  let path = get_spotify_auth_path();
+  if let Ok(content) = serde_json::to_string_pretty(val) {
+    let _ = fs::write(&path, content);
+  }
+}
+
 fn set_deep_link(url: String) {
   let m = INITIAL_DEEP_LINK.get_or_init(|| std::sync::Mutex::new(None));
   if let Ok(mut lock) = m.lock() {
@@ -723,6 +762,131 @@ fn client() -> &'static reqwest::Client {
       .build()
       .expect("failed to create reqwest client")
   })
+}
+
+fn extract_account_from_menu_json(val: &Value) -> Option<(String, Option<String>, Option<String>)> {
+  if let Some(actions) = val.get("actions").and_then(|v| v.as_array()) {
+    for a in actions {
+      if let Some(h) = a.pointer("/openPopupAction/popup/multiPageMenuRenderer/header/activeAccountHeaderRenderer") {
+        let name = h.pointer("/accountName/runs/0/text")
+          .or_else(|| h.pointer("/accountName/simpleText"))
+          .and_then(|v| v.as_str())
+          .filter(|n| !n.is_empty() && *n != "YouTube Account" && *n != "YouTube Music User")
+          .map(|s| s.to_string());
+
+        let handle = h.pointer("/channelHandle/runs/0/text")
+          .or_else(|| h.pointer("/channelHandle/simpleText"))
+          .and_then(|v| v.as_str())
+          .map(|s| s.to_string());
+
+        let avatar = h.pointer("/avatar/thumbnails")
+          .and_then(|v| v.as_array())
+          .and_then(|thumbs| thumbs.last())
+          .and_then(|t| t.get("url"))
+          .and_then(|u| u.as_str())
+          .map(|s| s.to_string());
+
+        if let Some(n) = name {
+          return Some((n, handle, avatar));
+        }
+      }
+    }
+  }
+  None
+}
+
+async fn query_youtube_account_menu(cookies: &str) -> Option<(String, Option<String>, Option<String>)> {
+  // First attempt: YouTube Music endpoint (WEB_REMIX, client 67)
+  if let Some(auth_hdr) = compute_youtube_authorization(cookies, "https://music.youtube.com") {
+    let mut hm = HeaderMap::new();
+    hm.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.youtube.com"));
+    hm.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.youtube.com/"));
+    hm.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://music.youtube.com"));
+    hm.insert(HeaderName::from_static("x-youtube-client-name"), HeaderValue::from_static("67"));
+    hm.insert(HeaderName::from_static("x-youtube-client-version"), HeaderValue::from_static("1.20250219.01.00"));
+    hm.insert(
+      reqwest::header::USER_AGENT,
+      HeaderValue::from_static(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      ),
+    );
+    if let Ok(cval) = HeaderValue::from_str(cookies) {
+      hm.insert(reqwest::header::COOKIE, cval);
+    }
+    if let Ok(aval) = HeaderValue::from_str(&auth_hdr) {
+      hm.insert(reqwest::header::AUTHORIZATION, aval);
+    }
+    let body = json!({
+      "context": {
+        "client": {
+          "clientName": "WEB_REMIX",
+          "clientVersion": "1.20250219.01.00"
+        }
+      }
+    });
+    if let Ok(resp) = client()
+      .post("https://music.youtube.com/youtubei/v1/account/account_menu?prettyPrint=false")
+      .headers(hm)
+      .json(&body)
+      .send()
+      .await
+    {
+      if resp.status().is_success() {
+        if let Ok(val) = resp.json::<Value>().await {
+          if let Some(res) = extract_account_from_menu_json(&val) {
+            return Some(res);
+          }
+        }
+      }
+    }
+  }
+
+  // Second attempt: Main YouTube endpoint (WEB, client 1)
+  if let Some(auth_hdr) = compute_youtube_authorization(cookies, "https://www.youtube.com") {
+    let mut hm = HeaderMap::new();
+    hm.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://www.youtube.com"));
+    hm.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://www.youtube.com/"));
+    hm.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://www.youtube.com"));
+    hm.insert(HeaderName::from_static("x-youtube-client-name"), HeaderValue::from_static("1"));
+    hm.insert(HeaderName::from_static("x-youtube-client-version"), HeaderValue::from_static("2.20250219.01.00"));
+    hm.insert(
+      reqwest::header::USER_AGENT,
+      HeaderValue::from_static(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      ),
+    );
+    if let Ok(cval) = HeaderValue::from_str(cookies) {
+      hm.insert(reqwest::header::COOKIE, cval);
+    }
+    if let Ok(aval) = HeaderValue::from_str(&auth_hdr) {
+      hm.insert(reqwest::header::AUTHORIZATION, aval);
+    }
+    let body = json!({
+      "context": {
+        "client": {
+          "clientName": "WEB",
+          "clientVersion": "2.20250219.01.00"
+        }
+      }
+    });
+    if let Ok(resp) = client()
+      .post("https://www.youtube.com/youtubei/v1/account/account_menu?prettyPrint=false")
+      .headers(hm)
+      .json(&body)
+      .send()
+      .await
+    {
+      if resp.status().is_success() {
+        if let Ok(val) = resp.json::<Value>().await {
+          if let Some(res) = extract_account_from_menu_json(&val) {
+            return Some(res);
+          }
+        }
+      }
+    }
+  }
+
+  None
 }
 
 #[derive(Debug, Deserialize)]
@@ -1020,7 +1184,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
     }
     "lyrics.requestPermissions" => Ok(json!({ "granted": true })),
     "yt.authState" => {
-      let auth = load_yt_auth().unwrap_or_else(|| json!({
+      let mut auth = load_yt_auth().unwrap_or_else(|| json!({
         "browserSignedIn": false,
         "connected": false,
         "signedIn": false,
@@ -1028,6 +1192,50 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         "active": null,
         "problem": null
       }));
+
+      // Auto-heal: If session is valid but name was saved as generic, resolve it live from account_menu
+      let active_name = auth.pointer("/active/name").and_then(|v| v.as_str()).unwrap_or("");
+      if auth.get("browserSignedIn").and_then(|v| v.as_bool()).unwrap_or(false)
+        && (active_name.is_empty() || active_name == "YouTube Account" || active_name == "YouTube Music User")
+      {
+        if let Some(cookies) = auth.get("cookies").and_then(|v| v.as_str()) {
+          if let Some((real_name, real_handle, real_avatar)) = query_youtube_account_menu(cookies).await {
+            println!("[BeatFlow Auth] ✨ Upgraded generic username to real name: \"{}\"", real_name);
+            if let Some(map) = auth.as_object_mut() {
+              if let Some(active) = map.get_mut("active").and_then(|v| v.as_object_mut()) {
+                active.insert("name".to_string(), json!(real_name));
+                if let Some(ref h) = real_handle {
+                  active.insert("handle".to_string(), json!(h));
+                }
+                if let Some(ref a) = real_avatar {
+                  active.insert("avatarUrl".to_string(), json!(a));
+                }
+              }
+              if let Some(accounts) = map.get_mut("accounts").and_then(|v| v.as_array_mut()) {
+                if let Some(acc) = accounts.first_mut().and_then(|v| v.as_object_mut()) {
+                  acc.insert("name".to_string(), json!(real_name));
+                  if let Some(ref a) = real_avatar {
+                    acc.insert("avatarUrl".to_string(), json!(a));
+                  }
+                  if let Some(chans) = acc.get_mut("channels").and_then(|v| v.as_array_mut()) {
+                    if let Some(chan) = chans.first_mut().and_then(|v| v.as_object_mut()) {
+                      chan.insert("name".to_string(), json!(real_name));
+                      if let Some(ref h) = real_handle {
+                        chan.insert("handle".to_string(), json!(h));
+                      }
+                      if let Some(ref a) = real_avatar {
+                        chan.insert("avatarUrl".to_string(), json!(a));
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            save_yt_auth(&auth);
+          }
+        }
+      }
+
       Ok(auth)
     }
     "yt.setConnected" => {
@@ -1165,21 +1373,106 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
 
       Ok(auth)
     }
-    "spotify.authState" => Ok(json!({
-      "browserSignedIn": false,
-      "connected": false,
-      "signedIn": false,
-      "user": null,
-      "problem": null
-    })),
-    "spotify.setConnected" | "spotify.signIn" => Ok(json!({
-      "browserSignedIn": false,
-      "connected": false,
-      "signedIn": false,
-      "user": null,
-      "problem": null
-    })),
+    "spotify.authState" => {
+      let auth = load_spotify_auth().unwrap_or_else(|| json!({
+        "browserSignedIn": false,
+        "connected": false,
+        "signedIn": false,
+        "user": null,
+        "problem": null
+      }));
+      Ok(auth)
+    }
+    "spotify.setConnected" => {
+      let connected = params.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
+      if !connected {
+        let mut auth = load_spotify_auth().unwrap_or_else(|| json!({
+          "browserSignedIn": false,
+          "connected": false,
+          "signedIn": false,
+          "user": null,
+          "problem": null
+        }));
+        if let Some(map) = auth.as_object_mut() {
+          map.insert("connected".to_string(), json!(false));
+          map.insert("signedIn".to_string(), json!(false));
+        }
+        save_spotify_auth(&auth);
+        return Ok(auth);
+      }
+      let mut auth = load_spotify_auth().unwrap_or_else(|| json!({
+        "browserSignedIn": false,
+        "connected": false,
+        "signedIn": false,
+        "user": null,
+        "problem": null
+      }));
+      if let Some(map) = auth.as_object_mut() {
+        map.insert("connected".to_string(), json!(true));
+        let signed_in = map.get("sp_dc").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+        map.insert("signedIn".to_string(), json!(signed_in));
+      }
+      save_spotify_auth(&auth);
+      Ok(auth)
+    }
+    "spotify.signIn" | "auth.openSpotifyLoginWindow" => {
+      let url_str = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
+      if let Ok(parsed_url) = url::Url::parse(url_str) {
+        if let Some(existing) = app.get_webview_window("spotify-login") {
+          let _ = existing.show();
+          let _ = existing.set_focus();
+          let _ = existing.unminimize();
+        } else {
+          let _ = tauri::WebviewWindowBuilder::new(
+            &app,
+            "spotify-login",
+            tauri::WebviewUrl::External(parsed_url)
+          )
+          .title("Sign in to Spotify - BeatFlow")
+          .inner_size(520.0, 720.0)
+          .center()
+          .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
+          .build();
+        }
+      }
+      Ok(json!({ "opened": true }))
+    }
+    "spotify.signOut" | "spotify.clearAuth" | "auth.clearSpotifyAuth" => {
+      let path = get_spotify_auth_path();
+      if path.exists() {
+        let _ = fs::remove_file(&path);
+      }
+      println!("[BeatFlow Spotify Auth] 🗑️ Spotify auth cleared");
+      let auth = json!({
+        "browserSignedIn": false,
+        "connected": false,
+        "signedIn": false,
+        "user": null,
+        "problem": null
+      });
+      if let Some(main_win) = app.get_webview_window("main") {
+        let auth_str = serde_json::to_string(&auth).unwrap_or_default();
+        let bridge_event = json!({
+          "channel": "bitchord-bridge",
+          "direction": "event",
+          "payload": {
+            "event": "spotify.authState",
+            "data": auth
+          }
+        });
+        let bridge_str = serde_json::to_string(&bridge_event).unwrap_or_default();
+        let script = format!(
+          "window.dispatchEvent(new CustomEvent('beatflow:spotify-auth-detected', {{ detail: {auth_str} }})); window.postMessage({bridge_str}, '*');"
+        );
+        let _ = main_win.eval(&script);
+      }
+      Ok(auth)
+    }
     "spotify.canvas" => Ok(json!({ "url": null })),
+    "spotify.playlists" => Ok(json!({ "items": [], "total": 0, "offset": 0, "limit": 50 })),
+    "spotify.tracks" => Ok(json!({ "items": [], "total": 0, "offset": 0, "limit": 50 })),
+    "spotify.playlist" => Ok(json!({ "id": "", "name": "", "description": "", "images": [], "owner": { "name": "" }, "tracks": [] })),
+    "spotify.searchTracks" => Ok(json!([])),
     "discord.state" => Ok(json!({
       "available": false,
       "connected": false,
@@ -1880,16 +2173,34 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
     }
   }
 
-  let email = data.get("email").and_then(|v| v.as_str());
-  let name = data
+  let mut resolved_name = data
     .get("name")
     .and_then(|v| v.as_str())
-    .filter(|s| !s.is_empty() && *s != "YouTube Music User")
-    .or_else(|| email.map(|e| e.split('@').next().unwrap_or(e)))
-    .unwrap_or("YouTube Account");
+    .filter(|s| !s.is_empty() && *s != "YouTube Music User" && *s != "YouTube Account")
+    .map(|s| s.to_string());
+  let mut resolved_avatar = data.get("avatarUrl").and_then(|v| v.as_str()).map(|s| s.to_string());
+  let mut resolved_handle = data.get("handle").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-  let avatar_url = data.get("avatarUrl").and_then(|v| v.as_str());
-  let handle = data.get("handle").and_then(|v| v.as_str());
+  // If real name wasn't detected from the page DOM, query YouTube's account_menu directly using the authenticated session
+  if resolved_name.is_none() {
+    if let Some((n, hndl, av)) = query_youtube_account_menu(&resolved_cookies).await {
+      resolved_name = Some(n);
+      if resolved_handle.is_none() {
+        resolved_handle = hndl;
+      }
+      if resolved_avatar.is_none() {
+        resolved_avatar = av;
+      }
+    }
+  }
+
+  let email = data.get("email").and_then(|v| v.as_str());
+  let name = resolved_name
+    .or_else(|| email.map(|e| e.split('@').next().unwrap_or(e).to_string()))
+    .or_else(|| resolved_handle.clone().map(|h| h.trim_start_matches('@').to_string()))
+    .unwrap_or_else(|| "YouTube Account".to_string());
+  let avatar_url = resolved_avatar.as_deref().or_else(|| data.get("avatarUrl").and_then(|v| v.as_str()));
+  let handle = resolved_handle.as_deref().or_else(|| data.get("handle").and_then(|v| v.as_str()));
   let auth_user = data.get("authUser").and_then(|v| v.as_str()).unwrap_or("0");
 
   let channel_id = format!("{}:own", auth_user);
@@ -1940,6 +2251,76 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
       let _ = main_win.eval(&script);
     }
     if let Some(login_win) = app_handle.get_webview_window("google-login") {
+      let _ = login_win.close();
+    }
+  }
+
+  Ok(auth)
+}
+
+async fn handle_spotify_auth_callback(payload_str: &str) -> Result<Value, String> {
+  let data: Value = serde_json::from_str(payload_str).map_err(|e| e.to_string())?;
+  let sp_dc = data.get("sp_dc").and_then(|v| v.as_str()).unwrap_or("");
+  if sp_dc.is_empty() {
+    println!("[BeatFlow Spotify Auth] ⚠️ Rejected: missing sp_dc cookie");
+    return Err("Missing sp_dc".into());
+  }
+
+  let mut resolved_cookies = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("").to_string();
+  #[cfg(target_os = "windows")]
+  {
+    if let Some(app_handle) = APP_HANDLE.get() {
+      if let Some(login_win) = app_handle.get_webview_window("spotify-login") {
+        if let Some(c) = extract_webview2_cookies(&login_win) {
+          if c.contains("sp_dc=") {
+            resolved_cookies = c;
+          }
+        }
+      }
+    }
+  }
+
+  let name = data
+    .get("name")
+    .and_then(|v| v.as_str())
+    .filter(|s| !s.is_empty() && *s != "Spotify User")
+    .unwrap_or("Spotify Account");
+  let avatar_url = data.get("avatarUrl").and_then(|v| v.as_str());
+
+  let auth = json!({
+    "browserSignedIn": true,
+    "connected": true,
+    "signedIn": true,
+    "sp_dc": sp_dc,
+    "cookies": resolved_cookies,
+    "user": {
+      "name": name,
+      "avatarUrl": avatar_url
+    },
+    "problem": null
+  });
+
+  save_spotify_auth(&auth);
+  println!("[BeatFlow Spotify Auth] ✅ Spotify session saved for \"{}\"", name);
+
+  if let Some(app_handle) = APP_HANDLE.get() {
+    if let Some(main_win) = app_handle.get_webview_window("main") {
+      let auth_str = serde_json::to_string(&auth).unwrap_or_default();
+      let bridge_event = json!({
+        "channel": "bitchord-bridge",
+        "direction": "event",
+        "payload": {
+          "event": "spotify.authState",
+          "data": auth
+        }
+      });
+      let bridge_str = serde_json::to_string(&bridge_event).unwrap_or_default();
+      let script = format!(
+        "window.dispatchEvent(new CustomEvent('beatflow:spotify-auth-detected', {{ detail: {auth_str} }})); window.postMessage({bridge_str}, '*');"
+      );
+      let _ = main_win.eval(&script);
+    }
+    if let Some(login_win) = app_handle.get_webview_window("spotify-login") {
       let _ = login_win.close();
     }
   }
@@ -2019,6 +2400,31 @@ fn start_local_ipc_server(app_handle: tauri::AppHandle) {
                 }
               }
             }
+            let resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}";
+            let _ = socket.write_all(resp.as_bytes()).await;
+            return;
+          }
+
+          // Handle POST /auth-callback-spotify or GET /auth-callback-spotify?data=...
+          if req_text.contains("/auth-callback-spotify") {
+            let mut payload = String::new();
+            if req_text.starts_with("POST ") {
+              if let Some(pos) = req_text.find("\r\n\r\n") {
+                payload = req_text[pos + 4..].trim().to_string();
+              }
+            } else if req_text.starts_with("GET ") {
+              if let Some(pos) = req_text.find("data=") {
+                let rest = &req_text[pos + 5..];
+                let enc = rest.split_whitespace().next().unwrap_or(rest);
+                let clean = enc.split('&').next().unwrap_or(enc);
+                payload = url_decode(clean);
+              }
+            }
+
+            if !payload.is_empty() {
+              let _ = handle_spotify_auth_callback(&payload).await;
+            }
+
             let resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}";
             let _ = socket.write_all(resp.as_bytes()).await;
             return;
@@ -2449,8 +2855,26 @@ pub fn run() {
               window.__BEATFLOW_AUTH_ACTIVE__ = true;
 
               var attempts = 0;
-              var maxAttempts = 60;
+              var maxAttempts = 50;
               var completed = false;
+              var fetchingMenu = false;
+
+              function cleanText(t) {{
+                if (!t) return "";
+                return t.replace(/^(?:Account photo(?: for| of)?|Photo of|Picture of)\s+/i, '')
+                        .replace(/\s+(?:profile photo|account photo)$/i, '')
+                        .trim();
+              }}
+
+              function send(p) {{
+                fetch("http://127.0.0.1:{}/auth-callback", {{
+                  method: "POST",
+                  headers: {{ "Content-Type": "application/json" }},
+                  body: JSON.stringify(p)
+                }}).catch(function() {{
+                  new Image().src = "http://127.0.0.1:{}/auth-callback?data=" + encodeURIComponent(JSON.stringify(p));
+                }});
+              }}
 
               var timer = setInterval(function() {{
                 attempts++;
@@ -2489,19 +2913,29 @@ pub fn run() {
                     handle = handle || ytcfg.get('USER_HANDLE') || "";
                   }}
 
-                  var avatarImg = document.querySelector('button#avatar-btn img') ||
-                                  document.querySelector('ytmusic-settings-button img') ||
-                                  document.querySelector('ytmusic-app-header img[alt]');
-                  if (avatarImg) {{
-                    avatar = avatar || avatarImg.src || "";
-                    var alt = avatarImg.getAttribute('alt') || "";
-                    if (alt && !alt.toLowerCase().includes('account photo') && !alt.toLowerCase().includes('google account')) {{
-                      name = name || alt.replace(/^Photo of\s+/i, '');
+                  var avatarBtn = document.querySelector('button#avatar-btn, ytmusic-settings-button button, ytmusic-app-header #avatar-btn');
+                  if (avatarBtn) {{
+                    var aria = avatarBtn.getAttribute('aria-label') || avatarBtn.getAttribute('title') || "";
+                    var m = aria.match(/(?:for|of)\s+([^,\n\r]+)/i);
+                    var candidate = m ? m[1].trim() : cleanText(aria);
+                    if (candidate && !candidate.toLowerCase().includes('google account') && candidate.toLowerCase() !== 'account photo') {{
+                      name = name || candidate;
                     }}
                   }}
 
-                  var accountEl = document.querySelector('#account-name') || document.querySelector('.ytmusic-nav-bar #account-name');
-                  if (accountEl && accountEl.textContent) {{
+                  var avatarImg = document.querySelector('button#avatar-btn img, ytmusic-settings-button img, ytmusic-app-header img[alt], yt-img-shadow[id="avatar"] img');
+                  if (avatarImg) {{
+                    avatar = avatar || avatarImg.src || "";
+                    var alt = avatarImg.getAttribute('alt') || "";
+                    var m2 = alt.match(/(?:for|of)\s+([^,\n\r]+)/i);
+                    var candidate2 = m2 ? m2[1].trim() : cleanText(alt);
+                    if (candidate2 && !candidate2.toLowerCase().includes('google account') && candidate2.toLowerCase() !== 'account photo') {{
+                      name = name || candidate2;
+                    }}
+                  }}
+
+                  var accountEl = document.querySelector('#account-name, .ytmusic-nav-bar #account-name, yt-formatted-string.text#account-name');
+                  if (accountEl && accountEl.textContent && accountEl.textContent.trim()) {{
                     name = name || accountEl.textContent.trim();
                   }}
 
@@ -2509,7 +2943,129 @@ pub fn run() {
                     name = email.split('@')[0];
                   }}
 
-                  if (!name && attempts < 15) {{
+                  // If real name detected from DOM/ytcfg, send and complete immediately
+                  if (name && name !== "YouTube Account" && name !== "YouTube Music User") {{
+                    completed = true;
+                    clearInterval(timer);
+                    send({{
+                      name: name,
+                      email: email || null,
+                      avatarUrl: avatar || null,
+                      handle: handle || null,
+                      authUser: authUser,
+                      cookies: cookies
+                    }});
+                    return;
+                  }}
+
+                  // If cookies ready, trigger fast account_menu fetch in page
+                  if (attempts >= 2 && !fetchingMenu) {{
+                    fetchingMenu = true;
+                    fetch("/youtubei/v1/account/account_menu?prettyPrint=false", {{
+                      method: "POST",
+                      headers: {{ "Content-Type": "application/json", "X-Youtube-Client-Name": "67", "X-Youtube-Client-Version": "1.20250219.01.00" }},
+                      body: JSON.stringify({{ context: (ytcfg && ytcfg.get && ytcfg.get("INNERTUBE_CONTEXT")) || {{ client: {{ clientName: "WEB_REMIX", clientVersion: "1.20250219.01.00" }} }} }}),
+                      credentials: "include"
+                    }}).then(function(r) {{ return r.json(); }}).then(function(res) {{
+                      try {{
+                        var h = res.actions[0].openPopupAction.popup.multiPageMenuRenderer.header.activeAccountHeaderRenderer;
+                        var n = (h.accountName && h.accountName.runs && h.accountName.runs[0] && h.accountName.runs[0].text) || (h.accountName && h.accountName.simpleText);
+                        var hndl = (h.channelHandle && h.channelHandle.runs && h.channelHandle.runs[0] && h.channelHandle.runs[0].text) || null;
+                        var av = (h.avatar && h.avatar.thumbnails && h.avatar.thumbnails[h.avatar.thumbnails.length - 1].url) || null;
+                        if (n) {{
+                          completed = true;
+                          clearInterval(timer);
+                          send({{
+                            name: n,
+                            email: email || null,
+                            avatarUrl: av || avatar || null,
+                            handle: hndl || handle || null,
+                            authUser: authUser,
+                            cookies: cookies
+                          }});
+                          return;
+                        }}
+                      }} catch(e) {{}}
+                    }}).catch(function() {{}});
+                  }}
+
+                  // Timeout fallback: send after 8 attempts (1.6s) and let backend resolve
+                  if (attempts >= 8) {{
+                    completed = true;
+                    clearInterval(timer);
+                    send({{
+                      name: name || "YouTube Account",
+                      email: email || null,
+                      avatarUrl: avatar || null,
+                      handle: handle || null,
+                      authUser: authUser,
+                      cookies: cookies
+                    }});
+                  }}
+                }} catch(e) {{
+                  if (attempts >= maxAttempts) clearInterval(timer);
+                }}
+              }}, 200);
+            }})();
+          "#, port, port);
+          let _ = window.eval(&script);
+        }
+      }
+      if window.label() == "spotify-login" {
+        let url = payload.url().as_str();
+        if url.contains("open.spotify.com") {
+          let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
+          let script = format!(r#"
+            (function() {{
+              if (window.__BEATFLOW_SPOTIFY_AUTH_ACTIVE__) return;
+              window.__BEATFLOW_SPOTIFY_AUTH_ACTIVE__ = true;
+
+              var attempts = 0;
+              var maxAttempts = 50;
+              var completed = false;
+
+              var timer = setInterval(function() {{
+                attempts++;
+                if (completed || attempts > maxAttempts) {{
+                  clearInterval(timer);
+                  return;
+                }}
+
+                try {{
+                  var cookies = document.cookie || "";
+                  var spDcMatch = cookies.match(/(?:^|;\s*)sp_dc=([^;]+)/);
+                  var hasSpDc = !!spDcMatch;
+
+                  if (!hasSpDc) {{
+                    return;
+                  }}
+
+                  var spDc = spDcMatch[1];
+                  var name = "";
+                  var avatar = "";
+
+                  var userBtn = document.querySelector('button[data-testid="user-widget-link"], button[aria-label="User"]');
+                  if (userBtn) {{
+                    var span = userBtn.querySelector('span');
+                    if (span && span.textContent) name = span.textContent.trim();
+                    var img = userBtn.querySelector('img');
+                    if (img && img.src) avatar = img.src;
+                  }}
+
+                  if (!name) {{
+                    var stateEl = document.querySelector('script#initial-state');
+                    if (stateEl && stateEl.textContent) {{
+                      try {{
+                        var state = JSON.parse(stateEl.textContent);
+                        if (state.session && state.session.user) {{
+                          name = state.session.user.name || state.session.user.displayName || "";
+                          avatar = avatar || (state.session.user.images && state.session.user.images[0] && state.session.user.images[0].url) || "";
+                        }}
+                      }} catch(e) {{}}
+                    }}
+                  }}
+
+                  if (!name && attempts < 10) {{
                     return;
                   }}
 
@@ -2517,25 +3073,23 @@ pub fn run() {
                   clearInterval(timer);
 
                   var payload = {{
-                    name: name || "YouTube Account",
-                    email: email || null,
+                    sp_dc: spDc,
+                    name: name || "Spotify Account",
                     avatarUrl: avatar || null,
-                    handle: handle || null,
-                    authUser: authUser,
                     cookies: cookies
                   }};
 
-                  fetch("http://127.0.0.1:{}/auth-callback", {{
+                  fetch("http://127.0.0.1:{}/auth-callback-spotify", {{
                     method: "POST",
                     headers: {{ "Content-Type": "application/json" }},
                     body: JSON.stringify(payload)
                   }}).catch(function() {{
-                    new Image().src = "http://127.0.0.1:{}/auth-callback?data=" + encodeURIComponent(JSON.stringify(payload));
+                    new Image().src = "http://127.0.0.1:{}/auth-callback-spotify?data=" + encodeURIComponent(JSON.stringify(payload));
                   }});
                 }} catch(e) {{
                   if (attempts >= maxAttempts) clearInterval(timer);
                 }}
-              }}, 1000);
+              }}, 200);
             }})();
           "#, port, port);
           let _ = window.eval(&script);
