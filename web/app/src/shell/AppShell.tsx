@@ -47,6 +47,7 @@ export function AppShell() {
       const auth = customEvent.detail;
       if (auth) {
         adoptYtAuthState(auth);
+        void queryClient.invalidateQueries({ queryKey: ['music', 'library'] });
       }
     };
     const handleSpotifyDetected = (e: Event) => {
@@ -62,6 +63,17 @@ export function AppShell() {
       window.removeEventListener('beatflow:yt-auth-detected', handleAuthDetected);
       window.removeEventListener('beatflow:spotify-auth-detected', handleSpotifyDetected);
     };
+  }, []);
+
+  // On window focus, refresh library, history, and playlists so mobile playback and library changes sync immediately
+  useEffect(() => {
+    const onFocus = () => {
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'recent'] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'sidebar-playlists'] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'songs'] });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   // Listen for beatflow:// deep links (from desktop bridge, protocol handler, or window events)

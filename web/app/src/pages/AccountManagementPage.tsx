@@ -6,6 +6,7 @@ import { GoogleSignInModal } from '@/components/GoogleSignInModal';
 import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
 import { useExtension } from '@/extension/useExtension';
 import { useRefreshYtAuth, useSelectChannel, useSetConnected, useYtAuth } from '@/extension/useYtAuth';
+import { syncLibraryWithYouTube } from '@/data/music/queries';
 import { SpotifyIntegration } from './IntegrationSettings';
 import { settingsUi } from './settingsStyles';
 
@@ -41,6 +42,17 @@ export default function AccountManagementPage() {
   const extension = useExtension();
   const present = extension.state === 'present';
   const [signInModalOpen, setSignInModalOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      await refresh.mutateAsync();
+      await syncLibraryWithYouTube();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const ytReady = yt.state === 'ready';
   const ytAuth = ytReady ? yt.auth : null;
@@ -130,6 +142,14 @@ export default function AccountManagementPage() {
                       Add Account
                     </button>
                   )}
+                  <button
+                    type="button"
+                    disabled={isSyncing}
+                    className="rounded-[12px] bg-quaternary/50 px-2.5 py-[3px] type-callout-emphasized text-secondary hover:text-primary hover:bg-quaternary transition-colors cursor-pointer"
+                    onClick={handleSync}
+                  >
+                    {isSyncing ? 'Syncing…' : 'Sync Now'}
+                  </button>
                   <button
                     type="button"
                     className="rounded-[12px] bg-quaternary/50 px-2.5 py-[3px] type-callout-emphasized text-secondary hover:text-primary hover:bg-quaternary transition-colors cursor-pointer"

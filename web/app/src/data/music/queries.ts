@@ -14,6 +14,7 @@ import { queryClient } from '@/lib/queryClient';
 import {
   addToPlaylist,
   createPlaylist,
+  deletePlaylist,
   fetchAlbum,
   fetchArtist,
   fetchBrowse,
@@ -27,6 +28,7 @@ import {
   fetchPlaylistOptions,
   fetchSearch,
   fetchSuggestions,
+  removeFromPlaylist,
   setListSaved,
   setTrackLiked,
   type LikeStatus,
@@ -285,6 +287,41 @@ export function useCreatePlaylist() {
       }
     },
   });
+}
+
+export function useDeletePlaylist() {
+  return useMutation({
+    mutationFn: (playlistId: string) => deletePlaylist(playlistId),
+    onSettled: (_data, _error, playlistId) => {
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'playlists'] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'sidebar-playlists'] });
+      void queryClient.removeQueries({ queryKey: ['music', 'playlist', playlistId] });
+      void queryClient.removeQueries({ queryKey: ['music', 'playlist', `VL${playlistId.replace(/^VL/, '')}`] });
+    },
+  });
+}
+
+export function useRemoveFromPlaylist() {
+  return useMutation({
+    mutationFn: ({ playlistId, videoId, setVideoId }: { playlistId: string; videoId: string; setVideoId?: string }) =>
+      removeFromPlaylist(playlistId, videoId, setVideoId),
+    onSettled: (_data, _error, { playlistId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['music', 'playlist', playlistId] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'playlist', `VL${playlistId.replace(/^VL/, '')}`] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'playlists'] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'sidebar-playlists'] });
+    },
+  });
+}
+
+/** Forces an immediate invalidation of all library queries and user collections to sync with mobile / YouTube account. */
+export async function syncLibraryWithYouTube(): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['music', 'library'] }),
+    queryClient.invalidateQueries({ queryKey: ['music', 'home'] }),
+    queryClient.invalidateQueries({ queryKey: ['music', 'playlist', LIKED_MUSIC_PLAYLIST] }),
+    queryClient.invalidateQueries({ queryKey: ['music', 'playlist', `VL${LIKED_MUSIC_PLAYLIST}`] }),
+  ]);
 }
 
 /** Optimistically prepends a track into Recently Played cache so Home and Library update in real time. */

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { Plus } from 'lucide-react';
+import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
+import { GoogleSignInModal } from '@/components/GoogleSignInModal';
 import { PageHeader } from '@/components/PageHeader';
 import { CircleLockup, SquareLockup, VideoLockup } from '@/components/music/Lockups';
 import { NewPlaylistModal } from '@/components/music/NewPlaylistModal';
@@ -37,6 +39,7 @@ export default function LibraryPage() {
   const signedIn = useSignedIn();
   const library = useLibrary(section);
   const [showNewPlaylistModal, setShowNewPlaylistModal] = useState(false);
+  const [showSignInModal, setShowSignInModal] = useState(false);
   const loadMore = useLoadMore(
     library.hasNextPage && !library.isFetchingNextPage && !library.isFetchNextPageError
       ? () => void library.fetchNextPage()
@@ -50,10 +53,28 @@ export default function LibraryPage() {
     return (
       <>
         <PageHeader title={title} back={!isGeneralLibrary} />
-        <EmptyState
-          title="Sign in to see your library"
-          detail="BeatFlow uses the YouTube Music account this browser is signed in to. Sign in on music.youtube.com, then come back."
-        />
+        <div className="flex flex-col items-center">
+          <EmptyState
+            title="Sign in to see your library"
+            detail="BeatFlow syncs your library, liked songs, playlists, and history directly with your YouTube Music account."
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (isDesktopApp()) {
+                desktopBridge()?.call('auth.openLoginWindow', {
+                  url: 'https://accounts.google.com/ServiceLogin?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F',
+                });
+              } else {
+                setShowSignInModal(true);
+              }
+            }}
+            className="mt-4 px-5 py-2.5 rounded-full bg-key text-sm font-semibold text-white hover:brightness-110 active:scale-95 transition-all shadow-md cursor-pointer"
+          >
+            Sign In with Google
+          </button>
+          {showSignInModal && <GoogleSignInModal isOpen={showSignInModal} onClose={() => setShowSignInModal(false)} />}
+        </div>
       </>
     );
   }

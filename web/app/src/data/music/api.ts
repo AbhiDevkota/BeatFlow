@@ -192,7 +192,8 @@ export async function fetchLibrary(section: LibrarySection): Promise<Paged<Brows
   const carousels = memo?.getType(YTNodes.MusicCarouselShelf) ?? [];
   const page = mapBrowse({ sections: [...grids, ...lists, ...carousels] }, title);
   // History is several lists ("Today", "Yesterday"); the rest is one grid or one list.
-  const token = (grids[0]?.continuation ?? (lists.length === 1 ? lists[0]?.continuation : null)) || null;
+  const lastList = lists[lists.length - 1];
+  const token = (grids[0]?.continuation ?? lastList?.continuation) || null;
   return { data: { ...page, title }, next: token ? () => orEnd(() => libraryContinuation(token, title), emptyPage(title)) : null };
 }
 
@@ -208,7 +209,7 @@ async function libraryContinuation(token: string, title: string): Promise<Paged<
     contents?.type === 'GridContinuation'
       ? { type: 'Grid', items: contents.items ?? [] }
       : { type: 'MusicShelf', contents: contents?.contents ?? [] };
-  const next = contents?.continuation || null;
+  const next = contents?.continuation || (response as any).continuation || null;
   return {
     data: mapBrowse({ sections: [section] }, title),
     next: next ? () => orEnd(() => libraryContinuation(next, title), emptyPage(title)) : null,
@@ -328,6 +329,31 @@ export async function createPlaylist(title: string, videoIds: string[] = [], des
   const id = (response.data as { playlistId?: string } | undefined)?.playlistId;
   if (!id) throw new Error('YouTube Music did not make the playlist');
   return id;
+}
+
+export async function deletePlaylist(playlistId: string): Promise<void> {
+  const yt = await getSignedInnertube();
+  await yt.actions.execute('/playlist/delete', {
+    playlistId: playlistId.replace(/^VL/, ''),
+    client: 'YTMUSIC',
+  });
+}
+
+export async function removeFromPlaylist(playlistId: string, videoId: string, setVideoId?: string): Promise<void> {
+  const yt = await getSignedInnertube();
+  const cleanVideoId = videoId.replace(/^addon:[^:]+:/, '');
+  const action: Record<string, string> = {
+    action: 'ACTION_REMOVE_VIDEO',
+    removedVideoId: cleanVideoId,
+  };
+  if (setVideoId) {
+    action.setVideoId = setVideoId;
+  }
+  await yt.actions.execute('/browse/edit_playlist', {
+    playlistId: playlistId.replace(/^VL/, ''),
+    actions: [action],
+    client: 'YTMUSIC',
+  });
 }
 
 // ---- AutoPlay (phase 6) -------------------------------------------------------------

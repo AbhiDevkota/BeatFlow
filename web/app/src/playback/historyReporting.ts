@@ -72,7 +72,12 @@ const baseUrl = (tracking: Raw, key: string) => ((tracking[key] as Raw | undefin
 /** The tracking block for one play; null when YouTube declines to issue one (a verdict, not a failure). */
 async function fetchTracking(videoId: string): Promise<Tracking | null> {
   const yt = await getSignedInnertube();
-  const signatureTimestamp = yt.session.player?.signature_timestamp;
+  let signatureTimestamp = yt.session.player?.signature_timestamp;
+  if (!signatureTimestamp) {
+    const { getInnertube } = await import('./youtube/innertube');
+    const base = await getInnertube().catch(() => null);
+    signatureTimestamp = base?.session.player?.signature_timestamp;
+  }
   if (!signatureTimestamp) throw new Error('no signature timestamp yet');
   const response = await yt.actions.execute('/player', {
     videoId,
@@ -116,6 +121,10 @@ async function statsUrl(base: string, cpn: string, extra: Record<string, string>
       c: 'WEB_REMIX',
       cver: Constants.CLIENTS.YTMUSIC.VERSION,
       cplayer: 'UNIPLAYER',
+      cbr: 'Chrome',
+      cbrver: '133.0.0.0',
+      cos: 'Windows',
+      cosver: '10.0',
       hl: (client.hl ?? 'en').replace('-', '_'),
       cr: client.gl ?? 'US',
     };

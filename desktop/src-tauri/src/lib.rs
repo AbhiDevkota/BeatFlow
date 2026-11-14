@@ -1011,10 +1011,15 @@ fn collect_account_items(val: &Value, out: &mut Vec<Value>) {
 
           let is_selected = item.get("isSelected").and_then(|v| v.as_bool()).unwrap_or(false);
           let page_id = item.get("pageId").and_then(|v| v.as_str());
-          let auth_user = item.get("serviceEndpoint")
-            .and_then(|s| s.pointer("/selectActiveIdentityEndpoint/supportedTokens/0/token"))
-            .and_then(|t| t.as_str())
+          let raw_auth_user = item.get("serviceEndpoint")
+            .and_then(|s| s.pointer("/selectActiveIdentityEndpoint/sessionIndex").or_else(|| s.pointer("/selectActiveIdentityEndpoint/authUser")))
+            .and_then(|s| s.as_str().or_else(|| s.as_i64().map(|_| "0")))
             .unwrap_or("0");
+          let auth_user = if raw_auth_user.chars().all(|c| c.is_ascii_digit()) && !raw_auth_user.is_empty() {
+            raw_auth_user
+          } else {
+            "0"
+          };
 
           let channel_id = if let Some(pid) = page_id {
             format!("{}:{}", auth_user, pid)
@@ -1139,6 +1144,7 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   let mut is_ytmusic = target_url.contains("music.youtube.com")
     || is_like_endpoint
     || target_url.contains("/playlist/create")
+    || target_url.contains("/playlist/delete")
     || target_url.contains("/playlist/get_add_to_playlist")
     || target_url.contains("/browse/edit_playlist");
 
@@ -1171,6 +1177,15 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
                 map.insert("target".to_string(), json!({ "playlistId": clean_id }));
               } else {
                 map.insert("target".to_string(), json!({ "videoId": clean_id }));
+              }
+            } else if let Some(target_obj) = target_val.as_object() {
+              if let Some(pl_val) = target_obj.get("playlistId").and_then(|v| v.as_str()) {
+                let clean_id = pl_val.trim_start_matches("VL");
+                map.insert("target".to_string(), json!({ "playlistId": clean_id }));
+              } else if let Some(vid_val) = target_obj.get("videoId").and_then(|v| v.as_str()) {
+                let clean_id = vid_val.replace("addon:", "");
+                let actual_id = clean_id.split(':').last().unwrap_or(&clean_id);
+                map.insert("target".to_string(), json!({ "videoId": actual_id }));
               }
             }
           }
@@ -1304,6 +1319,11 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
     } else if is_stats {
       header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.youtube.com"));
       header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.youtube.com/"));
+      header_map.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://music.youtube.com"));
+      header_map.insert(HeaderName::from_static("x-youtube-client-name"), HeaderValue::from_static("67"));
+      if !header_map.contains_key("x-youtube-client-version") {
+        header_map.insert(HeaderName::from_static("x-youtube-client-version"), HeaderValue::from_static("1.20250219.01.00"));
+      }
     }
   } else if is_apple {
     header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.apple.com"));

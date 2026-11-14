@@ -82,7 +82,7 @@ function kindOf(itemType: string | undefined, id: string | undefined): ItemKind 
       return 'podcast';
   }
   if (id?.startsWith('MPREb_')) return 'album';
-  if (id?.startsWith('VL') || id?.startsWith('PL')) return 'playlist';
+  if (id === 'LM' || id === 'VLLM' || id?.startsWith('VL') || id?.startsWith('PL') || id?.startsWith('RDCLAK')) return 'playlist';
   if (id?.startsWith('UC')) return 'artist';
   return 'unknown';
 }

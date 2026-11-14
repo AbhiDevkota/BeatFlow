@@ -42,6 +42,10 @@ async function detect(): Promise<DetectedExtension | null> {
   return (await detectExtension({ chromiumExtensionId: config.chromiumExtensionId, timeoutMs: 4000 })) ?? known;
 }
 
+if (isDesktopApp()) {
+  queryClient.setQueryData(extensionQueryKey, DESKTOP_EXTENSION);
+}
+
 /**
  * Whether the companion extension is installed (prompt §4.2: a `ping` on
  * startup). A miss is reported at once, so a visitor without the extension
@@ -50,6 +54,9 @@ async function detect(): Promise<DetectedExtension | null> {
  */
 export function useExtension(): ExtensionStatus {
   if (isDesktopApp()) {
+    if (!queryClient.getQueryData(extensionQueryKey)) {
+      queryClient.setQueryData(extensionQueryKey, DESKTOP_EXTENSION);
+    }
     return { state: 'present', extension: DESKTOP_EXTENSION };
   }
 
