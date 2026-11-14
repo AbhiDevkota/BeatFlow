@@ -27,16 +27,32 @@ export interface DownloadsFolderInfo {
   folderName: string;
 }
 
+export interface ActiveDownload {
+  videoId: string;
+  title: string;
+  artist: string;
+  thumbnailUrl?: string | null;
+  status: 'downloading' | 'completed' | 'error';
+  startedAt: number;
+  error?: string;
+}
+
 export interface DownloadsStoreState {
   downloaded: DownloadedItem[];
+  activeDownloads: Record<string, ActiveDownload>;
   initialized: boolean;
   refresh: () => Promise<void>;
+  addActiveDownload: (download: ActiveDownload) => void;
+  updateActiveDownload: (videoId: string, update: Partial<ActiveDownload>) => void;
+  removeActiveDownload: (videoId: string) => void;
+  isDownloading: (videoId: string) => boolean;
   isDownloaded: (titleOrId: string, artist?: string, videoId?: string) => boolean;
   getLocalTrack: (titleOrId: string, artist?: string, videoId?: string) => DownloadedItem | null;
 }
 
 export const useDownloadsStore = create<DownloadsStoreState>((set, get) => ({
   downloaded: [],
+  activeDownloads: {},
   initialized: false,
   refresh: async () => {
     if (!isDesktopApp()) return;
@@ -44,6 +60,30 @@ export const useDownloadsStore = create<DownloadsStoreState>((set, get) => ({
       const items = await listDownloadedTracks();
       set({ downloaded: items, initialized: true });
     } catch {}
+  },
+  addActiveDownload: (download) =>
+    set((s) => ({
+      activeDownloads: { ...s.activeDownloads, [download.videoId]: download },
+    })),
+  updateActiveDownload: (videoId, update) =>
+    set((s) => {
+      const existing = s.activeDownloads[videoId];
+      if (!existing) return s;
+      return {
+        activeDownloads: {
+          ...s.activeDownloads,
+          [videoId]: { ...existing, ...update },
+        },
+      };
+    }),
+  removeActiveDownload: (videoId) =>
+    set((s) => {
+      const copy = { ...s.activeDownloads };
+      delete copy[videoId];
+      return { activeDownloads: copy };
+    }),
+  isDownloading: (videoId) => {
+    return !!get().activeDownloads[videoId];
   },
   isDownloaded: (titleOrId, artist, videoId) => {
     const list = get().downloaded;
@@ -124,6 +164,10 @@ export async function checkTrackDownloaded(
 
 export async function deleteDownloadedTrack(fileName: string): Promise<boolean> {
   if (!isDesktopApp()) return false;
+  // Optimistically remove from state so the page and menus update in real time
+  useDownloadsStore.setState((s) => ({
+    downloaded: s.downloaded.filter((it) => it.fileName !== fileName),
+  }));
   const bridge = desktopBridge();
   const res = await bridge.call('downloads.deleteTrack', { fileName });
   void useDownloadsStore.getState().refresh();
@@ -141,89 +185,114 @@ export async function downloadTrack(
   const artist = track.artists.map((a) => a.name).join(', ') || 'Unknown Artist';
   const title = track.title || 'Untitled Track';
 
-  let audioUrl = customAudioUrl;
-  let extension = 'm4a';
-
-  if (!audioUrl) {
-    if (track.videoId.startsWith('addon:')) {
-      const { resolveAddonStream, getAddonById } = await import('@/data/addons/addonStore');
-      const addonId = track.videoId.split(':')[1];
-      if (addonId) {
-        const addon = getAddonById(addonId);
-        if (addon && addon.allowDownloads === false) {
-          throw new Error(`Downloads are not permitted by "${addon.name}".`);
-        }
-      }
-      audioUrl = await resolveAddonStream(track.videoId);
-      const cleanUrl = audioUrl.split('?')[0] ?? '';
-      const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
-      if (extMatch && extMatch[1] && extMatch[1].toLowerCase() !== 'mpd') {
-        extension = extMatch[1].toLowerCase();
-      } else if (track.sourceFormat?.codec) {
-        const c = track.sourceFormat.codec.toLowerCase();
-        if (c.includes('flac')) extension = 'm4a';
-        else if (c.includes('mp3')) extension = 'mp3';
-        else if (c.includes('opus')) extension = 'opus';
-        else extension = 'm4a';
-      } else {
-        extension = 'm4a';
-      }
-    } else if (track.videoId.startsWith('http://') || track.videoId.startsWith('https://')) {
-      audioUrl = track.videoId;
-      const cleanUrl = audioUrl.split('?')[0] ?? '';
-      const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
-      if (extMatch && extMatch[1]) {
-        extension = extMatch[1].toLowerCase();
-      }
-    } else {
-      const resolved = await resolveAudioUrl(track.videoId);
-      audioUrl = resolved.url.toString();
-      extension = resolved.itag === 251 ? 'webm' : 'm4a';
-    }
-  }
-
-  // Attempt to fetch lyrics to save along with the song
-  let lyricsText: string | undefined;
-  try {
-    const { lookupLyrics } = await import('@/lyrics/repository');
-    const lyrics = await lookupLyrics({
-      videoId: track.videoId,
-      title: track.title,
-      artist: artist,
-      durationMs: (track.durationSec ?? 0) * 1000,
-      album: track.album?.name ?? null,
-    });
-    if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
-      lyricsText = lyrics.lines
-        .map((line) => {
-          const min = Math.floor(line.timeMs / 60000);
-          const sec = Math.floor((line.timeMs % 60000) / 1000);
-          const ms = Math.floor((line.timeMs % 1000) / 10);
-          const time = `[${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(2, '0')}]`;
-          return `${time}${line.text}`;
-        })
-        .join('\n');
-    }
-  } catch {}
-
-  const bridge = desktopBridge();
-  const res = await bridge.call('downloads.downloadTrack', {
-    audioUrl,
+  useDownloadsStore.getState().addActiveDownload({
+    videoId: track.videoId,
     title,
     artist,
-    videoId: track.videoId,
-    extension,
-    thumbnailUrl: track.thumbnail ?? undefined,
-    lyrics: lyricsText,
+    thumbnailUrl: track.thumbnail ?? null,
+    status: 'downloading',
+    startedAt: Date.now(),
   });
 
-  void useDownloadsStore.getState().refresh();
+  try {
+    let audioUrl = customAudioUrl;
+    let extension = 'm4a';
 
-  return {
-    success: res.success,
-    fileName: res.fileName,
-    localUrl: res.localUrl,
-  };
+    if (!audioUrl) {
+      if (track.videoId.startsWith('addon:')) {
+        const { resolveAddonStream, getAddonById } = await import('@/data/addons/addonStore');
+        const addonId = track.videoId.split(':')[1];
+        if (addonId) {
+          const addon = getAddonById(addonId);
+          if (addon && addon.allowDownloads === false) {
+            throw new Error(`Downloads are not permitted by "${addon.name}".`);
+          }
+        }
+        audioUrl = await resolveAddonStream(track.videoId);
+        const cleanUrl = audioUrl.split('?')[0] ?? '';
+        const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
+        if (extMatch && extMatch[1] && extMatch[1].toLowerCase() !== 'mpd') {
+          extension = extMatch[1].toLowerCase();
+        } else if (track.sourceFormat?.codec) {
+          const c = track.sourceFormat.codec.toLowerCase();
+          if (c.includes('flac')) extension = 'm4a';
+          else if (c.includes('mp3')) extension = 'mp3';
+          else if (c.includes('opus')) extension = 'opus';
+          else extension = 'm4a';
+        } else {
+          extension = 'm4a';
+        }
+      } else if (track.videoId.startsWith('http://') || track.videoId.startsWith('https://')) {
+        audioUrl = track.videoId;
+        const cleanUrl = audioUrl.split('?')[0] ?? '';
+        const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
+        if (extMatch && extMatch[1]) {
+          extension = extMatch[1].toLowerCase();
+        }
+      } else {
+        const resolved = await resolveAudioUrl(track.videoId);
+        audioUrl = resolved.url.toString();
+        extension = resolved.itag === 251 ? 'webm' : 'm4a';
+      }
+    }
+
+    // Attempt to fetch lyrics to save along with the song
+    let lyricsText: string | undefined;
+    try {
+      const { lookupLyrics } = await import('@/lyrics/repository');
+      const lyrics = await lookupLyrics({
+        videoId: track.videoId,
+        title: track.title,
+        artist: artist,
+        durationMs: (track.durationSec ?? 0) * 1000,
+        album: track.album?.name ?? null,
+      });
+      if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
+        lyricsText = lyrics.lines
+          .map((line) => {
+            const min = Math.floor(line.timeMs / 60000);
+            const sec = Math.floor((line.timeMs % 60000) / 1000);
+            const ms = Math.floor((line.timeMs % 1000) / 10);
+            const time = `[${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(2, '0')}]`;
+            return `${time}${line.text}`;
+          })
+          .join('\n');
+      }
+    } catch {}
+
+    const bridge = desktopBridge();
+    const res = await bridge.call('downloads.downloadTrack', {
+      audioUrl,
+      title,
+      artist,
+      videoId: track.videoId,
+      extension,
+      thumbnailUrl: track.thumbnail ?? undefined,
+      lyrics: lyricsText,
+    });
+
+    useDownloadsStore.getState().updateActiveDownload(track.videoId, { status: 'completed' });
+    setTimeout(() => {
+      useDownloadsStore.getState().removeActiveDownload(track.videoId);
+    }, 1500);
+
+    await useDownloadsStore.getState().refresh();
+
+    return {
+      success: res.success,
+      fileName: res.fileName,
+      localUrl: res.localUrl,
+    };
+  } catch (err) {
+    useDownloadsStore.getState().updateActiveDownload(track.videoId, {
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err),
+    });
+    setTimeout(() => {
+      useDownloadsStore.getState().removeActiveDownload(track.videoId);
+    }, 3500);
+    throw err;
+  }
 }
 
 export function toTrackFromDownloaded(item: DownloadedItem): Track {

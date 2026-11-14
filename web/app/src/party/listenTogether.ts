@@ -124,6 +124,48 @@ export function savePartySettings(change: Partial<Settings>): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...partySettings(), ...change }));
 }
 
+export interface ServerHealth {
+  state: 'checking' | 'online' | 'fallback' | 'offline';
+  latencyMs: number | null;
+  serverUrl: string;
+}
+
+/** Probes the specified server address (or idle server if omitted) for latency and availability. */
+export async function probeServer(serverUrl?: string): Promise<{ isOnline: boolean; latencyMs: number }> {
+  const base = sanitizeServerUrl(serverUrl) ?? idleServer();
+  const start = performance.now();
+  try {
+    const res = await fetch(`${base}/healthz`, { method: 'GET', signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const latencyMs = Math.round(performance.now() - start);
+      return { isOnline: true, latencyMs };
+    }
+  } catch {}
+  return { isOnline: false, latencyMs: 0 };
+}
+
+/** Resolves current server connection state, falling back to default if custom is unreachable. */
+export async function resolveServerHealth(customServer?: string): Promise<ServerHealth> {
+  const normCustom = sanitizeServerUrl(customServer ?? partySettings().customServer);
+  if (normCustom && normCustom !== DEFAULT_SERVER) {
+    const customProbe = await probeServer(normCustom);
+    if (customProbe.isOnline) {
+      return { state: 'online', latencyMs: customProbe.latencyMs, serverUrl: normCustom };
+    }
+    const defProbe = await probeServer(DEFAULT_SERVER);
+    if (defProbe.isOnline) {
+      return { state: 'fallback', latencyMs: defProbe.latencyMs, serverUrl: DEFAULT_SERVER };
+    }
+    return { state: 'offline', latencyMs: null, serverUrl: normCustom };
+  }
+  const defProbe = await probeServer(DEFAULT_SERVER);
+  return {
+    state: defProbe.isOnline ? 'online' : 'offline',
+    latencyMs: defProbe.isOnline ? defProbe.latencyMs : null,
+    serverUrl: DEFAULT_SERVER,
+  };
+}
+
 /** The server parties are made on: the custom one if set, else BitChord's. */
 export function idleServer(): string {
   return sanitizeServerUrl(partySettings().customServer) ?? DEFAULT_SERVER;
@@ -219,6 +261,15 @@ export async function createParty(options: { maxMembers?: number; autoplayEnable
     });
     return adoptMembership(base, membership);
   } catch (error) {
+    if (base !== DEFAULT_SERVER) {
+      try {
+        const membership = await request<PartyMembership>(`${DEFAULT_SERVER}/api/parties`, {
+          method: 'POST',
+          body: JSON.stringify({ ...(await identity()), maxMembers: options.maxMembers ?? 5, autoplayEnabled: options.autoplayEnabled }),
+        });
+        return adoptMembership(DEFAULT_SERVER, membership);
+      } catch {}
+    }
     useParty.setState({ error: messageOf(error) });
     throw error;
   }
