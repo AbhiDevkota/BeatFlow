@@ -80,7 +80,7 @@ export default function DownloadsPage() {
             <PageHeader title="Downloads" back={true} />
             {folder && (
               <span
-                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[5px] text-xs font-semibold tracking-wide ${
                   folder.isDev
                     ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
                     : 'bg-primary/15 text-primary border border-primary/30'

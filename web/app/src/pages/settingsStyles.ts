@@ -73,7 +73,7 @@ export const settingsUi = {
   categoryLeft: 'flex items-center gap-[14px] min-w-0',
   categoryTitle: 'type-title-3 font-medium text-primary truncate',
   categorySubtitle: 'type-callout text-secondary truncate max-w-[360px]',
-  categoryBadge: 'rounded-full bg-quaternary px-2 py-0.5 type-caption-2 font-medium text-secondary',
+  categoryBadge: 'rounded-[5px] bg-quaternary px-2 py-0.5 type-caption-2 font-medium text-secondary',
   categoryRight: 'flex items-center gap-1.5 text-tertiary flex-shrink-0 ml-3',
 
   /** Drill-down back navigation */

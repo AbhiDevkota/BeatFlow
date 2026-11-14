@@ -70,7 +70,7 @@ export default function AccountManagementPage() {
         <h2 className={settingsUi.sectionHeader}>YouTube Music</h2>
         <section className={settingsUi.group}>
           <div className="relative flex items-center justify-between px-4 py-3.5 gap-3.5">
-            <SiYoutubemusic size={24} className="text-[#ff0033] flex-shrink-0" />
+            <SiYoutubemusic size={24} className="text-white flex-shrink-0" />
             <div className="flex flex-col gap-0.5 min-w-0 flex-1">
               <span className="font-semibold text-[15px]">YouTube Music</span>
               <span className="type-callout text-secondary truncate">
@@ -109,7 +109,7 @@ export default function AccountManagementPage() {
               {ytSignedIn && (
                 <button
                   type="button"
-                  className="rounded-[12px] bg-quaternary/50 px-2.5 py-[3px] type-callout-emphasized text-red hover:bg-quaternary transition-colors"
+                  className="rounded-[12px] bg-quaternary/50 px-2.5 py-[3px] type-callout-emphasized text-secondary hover:text-primary hover:bg-quaternary transition-colors cursor-pointer"
                   onClick={() => connect.mutate(false)}
                   disabled={connect.isPending}
                 >

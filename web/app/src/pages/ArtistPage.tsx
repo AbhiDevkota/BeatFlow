@@ -170,12 +170,11 @@ export default function ArtistPage() {
           <button
             type="button"
             onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/home'))}
-            className="inline-flex items-center gap-1.5 rounded-full bg-black/45 hover:bg-black/65 text-white/90 hover:text-white backdrop-blur-md border border-white/15 px-3 py-1.5 text-xs font-medium shadow-md active:scale-95 transition-all select-none"
+            className="grid size-8 place-items-center rounded-full bg-black/45 hover:bg-black/65 text-white/90 hover:text-white backdrop-blur-md border border-white/15 shadow-md active:scale-95 transition-all select-none cursor-pointer"
             aria-label="Back"
             title="Back"
           >
-            <ChevronLeft size={16} strokeWidth={2.4} />
-            <span>Back</span>
+            <ChevronLeft size={19} strokeWidth={2.4} />
           </button>
         </div>
         <div className="relative w-full">

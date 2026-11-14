@@ -845,7 +845,7 @@ export default function SettingsPage() {
       <LinkRow
         key="yt-mgmt"
         to="/settings/accounts"
-        icon={<SiYoutubemusic size={22} className="text-[#ff0033] flex-shrink-0" />}
+        icon={<SiYoutubemusic size={22} className="text-white flex-shrink-0" />}
         title="YouTube Music"
         value={youtubeText(yt)}
       />

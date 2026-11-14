@@ -54,12 +54,11 @@ export function DetailHeader({ info, onPlay, onShuffle, canPlay, extra, motion }
         <button
           type="button"
           onClick={handleBack}
-          className="inline-flex items-center gap-1.5 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 px-3 py-1.5 text-secondary hover:text-white transition-all text-xs font-medium select-none"
+          className="grid size-8 place-items-center rounded-full bg-quaternary/60 hover:bg-quaternary text-secondary hover:text-primary active:scale-95 transition-all select-none cursor-pointer"
           aria-label="Back"
           title="Back"
         >
-          <ChevronLeft size={16} strokeWidth={2.4} />
-          <span>Back</span>
+          <ChevronLeft size={19} strokeWidth={2.4} />
         </button>
       </div>
       {/* Artwork beside the headings, description and actions; stacked and centred below 768px. */}

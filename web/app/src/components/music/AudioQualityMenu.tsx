@@ -96,10 +96,8 @@ export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
       return;
     }
     const trackHeight = clientHeight - 8;
-    const minHeight = 24;
-    const maxHeight = 64;
     const ratio = clientHeight / scrollHeight;
-    const computedHeight = Math.max(minHeight, Math.min(maxHeight, Math.round(ratio * trackHeight)));
+    const computedHeight = Math.max(28, Math.min(trackHeight - 8, Math.round(ratio * trackHeight)));
     const maxScroll = scrollHeight - clientHeight;
     const maxThumbTop = trackHeight - computedHeight;
     const scrollRatio = maxScroll > 0 ? scrollTop / maxScroll : 0;
@@ -539,13 +537,14 @@ export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
             </PipelineSection>
           </div>
 
-          {/* BeatFlow / Apple style floating overlay scrollbar pill */}
+          {/* Scrollbar styled matching the volume bar slider track */}
           <div
-            className="absolute right-1 top-2 bottom-2 w-1.5 pointer-events-none transition-opacity duration-300 z-20"
+            className="absolute right-1 top-2 bottom-2 w-1 pointer-events-none transition-opacity duration-300 z-20"
             style={{ opacity: scrollPill.visible ? 1 : 0 }}
           >
+            <div className="absolute inset-0 w-1 rounded-[2px] bg-white/[0.08]" />
             <div
-              className="w-1 rounded-full bg-white/40 transition-[height,transform] duration-75 ease-out ml-auto"
+              className="relative w-1 rounded-[2px] bg-white/50 transition-[height,transform] duration-75 ease-out ml-auto"
               style={{
                 height: `${scrollPill.height}px`,
                 transform: `translateY(${scrollPill.top}px)`,

@@ -41,11 +41,9 @@ export function OverlayScrollbar() {
     const topInset = 36;
     const bottomInset = 20;
     const availableTrack = Math.max(80, clientHeight - topInset - bottomInset);
-    // Compact pill height like Apple / iOS indicator
-    const minHeight = 32;
-    const maxHeight = 52;
-    const pageRatio = scrollHeight > clientHeight ? clientHeight / scrollHeight : 1;
-    const computedHeight = Math.max(minHeight, Math.min(maxHeight, Math.round(pageRatio * 64)));
+    // Proportional scroll bar height matching volume bar track
+    const pageRatio = clientHeight / scrollHeight;
+    const computedHeight = Math.max(36, Math.min(availableTrack - 16, Math.round(pageRatio * availableTrack)));
     const maxScroll = scrollHeight - clientHeight;
     const maxThumbTop = availableTrack - computedHeight;
     const scrollRatio = maxScroll > 0 ? scrollTop / maxScroll : 0;
@@ -170,17 +168,21 @@ export function OverlayScrollbar() {
 
   return (
     <div
-      className={`fixed inset-y-0 right-0 z-(--z-modal) w-4 pointer-events-auto select-none transition-opacity duration-300 ease-out ${
+      className={`fixed inset-y-0 right-0 z-(--z-modal) w-3.5 pointer-events-auto select-none transition-opacity duration-300 ease-out ${
         isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       onClick={onTrackClick}
       aria-hidden="true"
     >
+      {/* Background track line matching the volume bar slider track */}
+      <div className="absolute right-1 top-[36px] bottom-[20px] w-1 rounded-[2px] bg-white/[0.08] pointer-events-none" />
+
+      {/* Thumb slider bar */}
       <div
-        className={`absolute right-1 cursor-pointer rounded-[999px] transition-[width,background-color] duration-120 ease-in ${
+        className={`absolute right-1 cursor-pointer rounded-[2px] transition-[width,background-color] duration-120 ease-in ${
           isHovered || isDragging
-            ? 'w-2 bg-[color-mix(in_srgb,var(--systemPrimary)_80%,transparent)] shadow-[0_1px_4px_rgba(0,0,0,0.3)]'
-            : 'w-1 bg-[color-mix(in_srgb,var(--systemPrimary)_45%,transparent)]'
+            ? 'w-1.5 bg-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.35)]'
+            : 'w-1 bg-white/45'
         }`}
         style={{
           height: `${thumb.height}px`,

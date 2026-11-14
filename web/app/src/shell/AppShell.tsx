@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { resumeSession } from '@/party/listenTogether';
 import { startPartySync } from '@/party/partySync';
 import { useDiscordPresence } from '@/playback/discordPresence';
@@ -7,7 +7,8 @@ import { startLivePresence } from '@/playback/livePresence';
 import { Outlet, useNavigate } from 'react-router';
 import { resolveDeepLink } from '@/lib/deepLink';
 import { PrefetchLink } from '@/components/PrefetchLink';
-import { UseProfileModal, type ProfileData } from '@/components/UseProfileModal';
+import { queryClient } from '@/lib/queryClient';
+import { ytAuthQueryKey } from '@/extension/useYtAuth';
 import { config } from '@/config';
 import { useExtension } from '@/extension/useExtension';
 import { isDesktopApp, isMobileBrowser } from '@/lib/platform';
@@ -33,8 +34,6 @@ const FullScreenPlayer = lazy(() => import('./FullScreenPlayer').then((m) => ({ 
  */
 export function AppShell() {
   const navigate = useNavigate();
-  const [detectedProfile, setDetectedProfile] = useState<ProfileData | null>(null);
-  const [showProfileModal, setShowProfileModal] = useState(false);
 
   useKeyboardShortcuts();
   useDiscordPresence();
@@ -46,8 +45,9 @@ export function AppShell() {
       const customEvent = e as CustomEvent;
       const auth = customEvent.detail;
       if (auth) {
-        setDetectedProfile(auth.active || auth);
-        setShowProfileModal(true);
+        queryClient.setQueryData(ytAuthQueryKey, auth);
+        void queryClient.invalidateQueries({ queryKey: ytAuthQueryKey });
+        void queryClient.invalidateQueries({ queryKey: ['music'] });
       }
     };
     window.addEventListener('beatflow:yt-auth-detected', handleAuthDetected);
@@ -194,11 +194,6 @@ export function AppShell() {
           <FullScreenPlayer />
         </Suspense>
       )}
-      <UseProfileModal
-        isOpen={showProfileModal}
-        onClose={() => setShowProfileModal(false)}
-        profile={detectedProfile}
-      />
     </div>
   );
 }

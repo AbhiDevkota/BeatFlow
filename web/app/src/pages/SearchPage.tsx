@@ -151,7 +151,7 @@ function Results({ query }: { query: string }) {
               <div className="flex items-center gap-2 mx-(--body-gutter) mt-4 mb-2">
                 <MdOutlineExtension size={18} className="text-primary" />
                 <h2 className="type-title-2-emphasized">{addon.name}</h2>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-[5px] bg-primary/10 text-primary border border-primary/20">
                   Source Addon
                 </span>
               </div>

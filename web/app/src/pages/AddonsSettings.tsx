@@ -146,13 +146,13 @@ export function AddonsSettings() {
                   <span className={`font-medium ${addon.enabled ? 'text-primary' : 'text-secondary line-through'}`}>
                     {addon.name}
                   </span>
-                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-quaternary text-secondary font-mono">
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-[4px] bg-quaternary text-secondary font-mono">
                     v{addon.version}
                   </span>
                   {addon.resources.map((res) => (
                     <span
                       key={res}
-                      className="text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-full bg-key/10 text-key border border-key/20"
+                      className="text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-[5px] bg-key/10 text-key border border-key/20"
                     >
                       {res}
                     </span>
@@ -174,7 +174,7 @@ export function AddonsSettings() {
                 <button
                   type="button"
                   onClick={() => handleRemove(addon.id)}
-                  className="p-1.5 rounded-full hover:bg-quaternary text-secondary hover:text-red transition-colors cursor-pointer"
+                  className="p-1.5 rounded-full hover:bg-quaternary text-secondary hover:text-primary transition-colors cursor-pointer"
                   title="Remove Addon"
                   aria-label={`Remove ${addon.name}`}
                 >

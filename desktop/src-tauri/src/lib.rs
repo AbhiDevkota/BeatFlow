@@ -225,9 +225,7 @@ pub fn get_addons_config_path() -> PathBuf {
 pub fn open_in_browser(url: &str) {
   #[cfg(target_os = "windows")]
   {
-    let _ = std::process::Command::new("rundll32")
-      .args(["url.dll,FileProtocolHandler", url])
-      .spawn();
+    let _ = std::process::Command::new("explorer").arg(url).spawn();
   }
   #[cfg(target_os = "macos")]
   {
@@ -1022,7 +1020,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       Ok(json!({ "opened": true }))
     }
     "auth.openLoginWindow" => {
-      let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or("https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F");
+      let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or("https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F");
       if let Ok(parsed_url) = url::Url::parse(url_str) {
         if let Some(existing) = app.get_webview_window("google-login") {
           let _ = existing.show();
@@ -1777,7 +1775,10 @@ pub fn run() {
         if url.contains("music.youtube.com") {
           let script = r#"
             (function() {
-              function check() {
+              var attempts = 0;
+              var maxAttempts = 35;
+              var timer = setInterval(function() {
+                attempts++;
                 try {
                   var ytcfg = window.ytcfg && window.ytcfg.data_;
                   var cookies = document.cookie || "";
@@ -1793,7 +1794,11 @@ pub fn run() {
                     if (!name) name = img.getAttribute('alt') || "";
                   }
 
-                  if (name || cookies.indexOf("SAPISID") !== -1 || (ytcfg && ytcfg.LOGGED_IN)) {
+                  var hasSid = cookies.indexOf("SAPISID") !== -1 || cookies.indexOf("__Secure-3PAPISID") !== -1 || cookies.indexOf("__Secure-1PAPISID") !== -1;
+                  var isLoggedIn = hasSid || (ytcfg && (ytcfg.LOGGED_IN || ytcfg.USER_NAME));
+
+                  if (isLoggedIn) {
+                    clearInterval(timer);
                     var data = {
                       name: name || "YouTube Music User",
                       email: email || null,
@@ -1803,12 +1808,13 @@ pub fn run() {
                       cookies: cookies
                     };
                     window.location.href = "beatflow://auth-callback?data=" + encodeURIComponent(JSON.stringify(data));
+                  } else if (attempts >= maxAttempts) {
+                    clearInterval(timer);
                   }
-                } catch(e) {}
-              }
-              setTimeout(check, 1000);
-              setTimeout(check, 2500);
-              setTimeout(check, 4500);
+                } catch(e) {
+                  if (attempts >= maxAttempts) clearInterval(timer);
+                }
+              }, 800);
             })();
           "#;
           let _ = window.eval(script);

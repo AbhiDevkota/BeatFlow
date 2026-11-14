@@ -84,7 +84,7 @@ interface Integration {
 }
 
 const INTEGRATIONS: Integration[] = [
-  { name: 'YouTube Music', Icon: SiYoutubemusic, color: '#ff0033', capability: 'yt', ready: 'Playback ready · not signed in' },
+  { name: 'YouTube Music', Icon: SiYoutubemusic, color: '#ffffff', capability: 'yt', ready: 'Playback ready · not signed in' },
   { name: 'Spotify', Icon: SiSpotify, color: '#1ed760', capability: 'spotify', ready: 'Not connected' },
   { name: 'Discord', Icon: SiDiscord, color: '#5865f2', capability: 'discord', ready: 'Off' },
 ];
