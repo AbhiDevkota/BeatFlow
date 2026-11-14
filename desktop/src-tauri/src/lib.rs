@@ -653,7 +653,7 @@ fn get_deep_link_value() -> Option<String> {
     .get_or_init(|| std::sync::Mutex::new(None))
     .lock()
     .ok()
-    .and_then(|lock| lock.clone())
+    .and_then(|mut lock| lock.take())
 }
 
 #[cfg(target_os = "windows")]

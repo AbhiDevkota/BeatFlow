@@ -1,4 +1,4 @@
-import { detectExtension, type DetectedExtension } from '@bitchord/shared/bridge';
+import { detectExtension, isDesktopApp, desktopBridge, type DetectedExtension } from '@bitchord/shared/bridge';
 import { useQuery } from '@tanstack/react-query';
 import { config } from '@/config';
 import { queryClient } from '@/lib/queryClient';
@@ -9,6 +9,17 @@ export type ExtensionStatus =
   | { state: 'present'; extension: DetectedExtension };
 
 export const extensionQueryKey = ['extension', 'detect'] as const;
+
+/** Desktop mock extension object representing the native Rust engine */
+const DESKTOP_EXTENSION: DetectedExtension = {
+  bridge: (isDesktopApp() ? desktopBridge() : null) as any,
+  info: {
+    version: '1.9.2',
+    protocol: 1,
+    browser: 'chromium',
+    capabilities: ['yt', 'yt.auth', 'yt.stats', 'addon', 'lyrics', 'spotify', 'discord'],
+  },
+};
 
 /** Re-pings after a miss: an MV3 service worker waking from sleep can miss the first one. */
 const RECHECKS = 4;
@@ -38,6 +49,10 @@ async function detect(): Promise<DetectedExtension | null> {
  * sleeping worker answering late flips the page to its content on its own.
  */
 export function useExtension(): ExtensionStatus {
+  if (isDesktopApp()) {
+    return { state: 'present', extension: DESKTOP_EXTENSION };
+  }
+
   const query = useQuery({
     queryKey: extensionQueryKey,
     queryFn: detect,

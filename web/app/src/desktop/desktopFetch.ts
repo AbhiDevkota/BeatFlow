@@ -28,6 +28,10 @@ function shouldRouteViaDesktopBridge(url: URL): boolean {
     if (url.pathname.startsWith('/api/jnn/')) return false;
     return true;
   }
+  // Listen Together party server and presence
+  if (host.includes('onrender.com') || host.includes('jam-together') || host.includes('bitchord')) {
+    return true;
+  }
   // External addon hosts, streaming CDNs, manifests, and audio segments
   if (
     host.includes('tidal.com') ||

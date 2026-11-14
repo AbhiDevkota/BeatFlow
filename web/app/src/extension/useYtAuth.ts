@@ -77,13 +77,13 @@ export function adoptYtAuthState(state: YtAuthState): void {
  */
 function adopt(state: YtAuthState): void {
   queryClient.setQueryData(ytAuthQueryKey, state);
-  resetInnertubeSession();
   const identity = identityOf(state);
   if (lastIdentity !== null && identity !== lastIdentity) {
+    resetInnertubeSession();
     // Loaded on demand: the resolver pulls in BotGuard, which the shell shouldn't.
     void import('@/playback/youtube/resolver').then((m) => m.onSessionChanged());
+    resetMusic();
   }
-  resetMusic();
   lastIdentity = identity;
 }
 
@@ -114,8 +114,8 @@ export function useYtAuth(): YtAuthStatus {
     queryKey: ytAuthQueryKey,
     queryFn: () => readAuth(false),
     enabled,
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 

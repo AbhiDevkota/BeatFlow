@@ -87,14 +87,18 @@ function StartOrJoin({ signedIn }: { signedIn: boolean }) {
       <p className={lede}>
         Listen to the same music at the same moment with up to five devices. Anyone in the party can play, pause and skip.
       </p>
-      {!signedIn && <SignInFirst />}
+      {!signedIn && (
+        <p className={`${settingsUi.footer} mb-4`}>
+          Jamming as <strong className="text-primary">{settings.nickname.trim() || 'BeatFlow Listener'}</strong>. Sign in to YouTube Music anytime to sync your account profile.
+        </p>
+      )}
       <section className={settingsUi.group}>
         <div className={settingsUi.row}>
           <span className={settingsUi.rowText}>
             <span>Start a Party</span>
             <span className={settingsUi.rowDetail}>Whatever you’re playing comes with you.</span>
           </span>
-          <button className={primary} disabled={!signedIn || create.isPending} onClick={() => create.mutate()}>
+          <button className={primary} disabled={create.isPending} onClick={() => create.mutate()}>
             {create.isPending ? 'Starting…' : 'Start'}
           </button>
         </div>
@@ -173,10 +177,9 @@ function InviteCard({ code, server, signedIn }: { code: string; server: string |
           </div>
         </>
       )}
-      {!signedIn && <SignInFirst />}
       <button
         className="mt-1.5 flex-none rounded-pill bg-key-bg px-7 py-2.5 type-title-3-emphasized text-white disabled:opacity-45"
-        disabled={!signedIn || join.isPending || data?.isFull || preview.isError}
+        disabled={join.isPending || data?.isFull || preview.isError}
         onClick={() => join.mutate()}
       >
         {data?.isFull ? 'This party is full' : join.isPending ? 'Joining…' : 'Tap to Join'}

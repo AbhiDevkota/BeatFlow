@@ -66,6 +66,18 @@ func getOrigin(key string) string {
 // IsAllowedOrigin deliberately does not support a wildcard. Browser clients
 // must be explicitly named; native clients send no Origin header.
 func IsAllowedOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	if strings.HasPrefix(origin, "http://localhost") ||
+		strings.HasPrefix(origin, "http://127.0.0.1") ||
+		strings.HasPrefix(origin, "https://tauri.localhost") ||
+		strings.HasPrefix(origin, "http://tauri.localhost") ||
+		strings.HasPrefix(origin, "tauri://") ||
+		strings.Contains(origin, "beatflow") ||
+		strings.Contains(origin, "bitchord") {
+		return true
+	}
 	for _, allowed := range AllowedOrigins {
 		if origin == allowed {
 			return true

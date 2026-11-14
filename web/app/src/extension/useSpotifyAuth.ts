@@ -60,8 +60,8 @@ export function useSpotifyAuth(): SpotifyAuthStatus {
     queryKey: spotifyAuthQueryKey,
     queryFn: () => readAuth(false),
     enabled,
-    staleTime: 60_000,
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 
