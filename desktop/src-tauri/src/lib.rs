@@ -107,7 +107,14 @@ pub fn load_yt_auth() -> Option<Value> {
   if path.exists() {
     if let Ok(content) = fs::read_to_string(&path) {
       if let Ok(val) = serde_json::from_str::<Value>(&content) {
-        return Some(val);
+        let has_cookies = val
+          .get("cookies")
+          .and_then(|c| c.as_str())
+          .map(|c| c.contains("SAPISID=") || c.contains("__Secure-3PAPISID=") || c.contains("__Secure-1PAPISID="))
+          .unwrap_or(false);
+        if has_cookies {
+          return Some(val);
+        }
       }
     }
   }
@@ -115,6 +122,15 @@ pub fn load_yt_auth() -> Option<Value> {
 }
 
 pub fn save_yt_auth(val: &Value) {
+  let has_cookies = val
+    .get("cookies")
+    .and_then(|c| c.as_str())
+    .map(|c| c.contains("SAPISID=") || c.contains("__Secure-3PAPISID=") || c.contains("__Secure-1PAPISID="))
+    .unwrap_or(false);
+  if !has_cookies {
+    println!("[BeatFlow Auth] ⚠️ Refusing to save yt_auth without valid SAPISID cookie");
+    return;
+  }
   let path = get_yt_auth_path();
   if let Ok(content) = serde_json::to_string_pretty(val) {
     let _ = fs::write(&path, content);
@@ -596,6 +612,20 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
     }
     "yt.setConnected" => {
       let connected = params.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
+      if !connected {
+        let path = get_yt_auth_path();
+        if path.exists() {
+          let _ = fs::remove_file(&path);
+        }
+        return Ok(json!({
+          "browserSignedIn": false,
+          "connected": false,
+          "signedIn": false,
+          "accounts": [],
+          "active": null,
+          "problem": null
+        }));
+      }
       let mut auth = load_yt_auth().unwrap_or_else(|| json!({
         "browserSignedIn": false,
         "connected": false,
@@ -611,6 +641,21 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }
       save_yt_auth(&auth);
       Ok(auth)
+    }
+    "yt.signOut" | "yt.clearAuth" | "auth.clearAuth" => {
+      let path = get_yt_auth_path();
+      if path.exists() {
+        let _ = fs::remove_file(&path);
+      }
+      println!("[BeatFlow Auth] 🗑️ User YouTube auth cleared");
+      Ok(json!({
+        "browserSignedIn": false,
+        "connected": false,
+        "signedIn": false,
+        "accounts": [],
+        "active": null,
+        "problem": null
+      }))
     }
     "yt.selectChannel" => {
       let channel_id = params.get("channelId").and_then(|v| v.as_str()).unwrap_or("");
@@ -654,12 +699,17 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       Ok(auth)
     }
     "yt.saveProfile" | "yt.loginSuccess" => {
-      let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("YouTube Music User");
+      let cookies = params.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
       let email = params.get("email").and_then(|v| v.as_str());
+      let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty() && *s != "YouTube Music User")
+        .or_else(|| email.map(|e| e.split('@').next().unwrap_or(e)))
+        .unwrap_or("YouTube Account");
       let avatar_url = params.get("avatarUrl").and_then(|v| v.as_str());
       let handle = params.get("handle").and_then(|v| v.as_str());
       let auth_user = params.get("authUser").and_then(|v| v.as_str()).unwrap_or("0");
-      let cookies = params.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
 
       let channel_id = format!("{}:own", auth_user);
       let channel = json!({
@@ -1358,13 +1408,216 @@ fn open_deep_link(window: tauri::WebviewWindow, url: String) -> Result<(), Strin
   window.eval(&script).map_err(|e| e.to_string())
 }
 
+static AUTH_SERVER_PORT: OnceLock<u16> = OnceLock::new();
+
+async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
+  let data: Value = serde_json::from_str(payload_str).map_err(|e| e.to_string())?;
+  let cookies = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
+  let has_sapisid = cookies.contains("SAPISID=")
+    || cookies.contains("__Secure-3PAPISID=")
+    || cookies.contains("__Secure-1PAPISID=");
+
+  if !has_sapisid {
+    println!("[BeatFlow Auth] ⚠️ Rejected auth payload: missing valid SAPISID cookie");
+    return Err("Missing SAPISID".into());
+  }
+
+  let email = data.get("email").and_then(|v| v.as_str());
+  let name = data
+    .get("name")
+    .and_then(|v| v.as_str())
+    .filter(|s| !s.is_empty() && *s != "YouTube Music User")
+    .or_else(|| email.map(|e| e.split('@').next().unwrap_or(e)))
+    .unwrap_or("YouTube Account");
+
+  let avatar_url = data.get("avatarUrl").and_then(|v| v.as_str());
+  let handle = data.get("handle").and_then(|v| v.as_str());
+  let auth_user = data.get("authUser").and_then(|v| v.as_str()).unwrap_or("0");
+
+  let channel_id = format!("{}:own", auth_user);
+  let channel = json!({
+    "id": channel_id,
+    "name": name,
+    "handle": handle,
+    "avatarUrl": avatar_url,
+    "brand": false,
+    "authUser": auth_user
+  });
+  let account = json!({
+    "authUser": auth_user,
+    "name": name,
+    "email": email,
+    "avatarUrl": avatar_url,
+    "channels": [channel.clone()]
+  });
+
+  let auth = json!({
+    "browserSignedIn": true,
+    "connected": true,
+    "signedIn": true,
+    "problem": null,
+    "cookies": cookies,
+    "accounts": [account],
+    "active": channel
+  });
+
+  save_yt_auth(&auth);
+  println!("[BeatFlow Auth] ✅ YouTube session saved for \"{}\" ({:?})", name, email);
+
+  if let Some(app_handle) = APP_HANDLE.get() {
+    if let Some(main_win) = app_handle.get_webview_window("main") {
+      let auth_str = serde_json::to_string(&auth).unwrap_or_default();
+      let script = format!(
+        "window.dispatchEvent(new CustomEvent('beatflow:yt-auth-detected', {{ detail: {} }}));",
+        auth_str
+      );
+      let _ = main_win.eval(&script);
+    }
+    if let Some(login_win) = app_handle.get_webview_window("google-login") {
+      let _ = login_win.close();
+    }
+  }
+
+  Ok(auth)
+}
+
+fn start_local_ipc_server(app_handle: tauri::AppHandle) {
+  let std_listener = match std::net::TcpListener::bind("127.0.0.1:51189") {
+    Ok(l) => l,
+    Err(_) => match std::net::TcpListener::bind("127.0.0.1:0") {
+      Ok(l) => l,
+      Err(e) => {
+        eprintln!("[BeatFlow IPC] Failed to bind local server: {}", e);
+        return;
+      }
+    },
+  };
+
+  let local_addr = match std_listener.local_addr() {
+    Ok(a) => a,
+    Err(e) => {
+      eprintln!("[BeatFlow IPC] Failed to get local_addr: {}", e);
+      return;
+    }
+  };
+  let port = local_addr.port();
+  AUTH_SERVER_PORT.set(port).ok();
+  println!("[BeatFlow IPC] Local loopback server listening on http://127.0.0.1:{}", port);
+
+  let _ = std_listener.set_nonblocking(true);
+  tauri::async_runtime::spawn(async move {
+    let listener = match tokio::net::TcpListener::from_std(std_listener) {
+      Ok(l) => l,
+      Err(e) => {
+        eprintln!("[BeatFlow IPC] tokio TcpListener error: {}", e);
+        return;
+      }
+    };
+
+    loop {
+      if let Ok((mut socket, _)) = listener.accept().await {
+        let app = app_handle.clone();
+        tokio::spawn(async move {
+          use tokio::io::{AsyncReadExt, AsyncWriteExt};
+          let mut buf = vec![0u8; 65536];
+          let n = match socket.read(&mut buf).await {
+            Ok(n) if n > 0 => n,
+            _ => return,
+          };
+          let req_text = String::from_utf8_lossy(&buf[..n]);
+
+          // Handle CORS OPTIONS
+          if req_text.starts_with("OPTIONS ") {
+            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\n\r\n";
+            let _ = socket.write_all(resp.as_bytes()).await;
+            return;
+          }
+
+          // Handle POST /forward-arg (single instance forwarding)
+          if req_text.contains("/forward-arg") {
+            let body = if let Some(pos) = req_text.find("\r\n\r\n") {
+              req_text[pos + 4..].trim().to_string()
+            } else {
+              String::new()
+            };
+            if let Some(main_win) = app.get_webview_window("main") {
+              let _ = main_win.unminimize();
+              let _ = main_win.show();
+              let _ = main_win.set_focus();
+              if !body.is_empty() && body.starts_with("beatflow://") {
+                if let Ok(json) = serde_json::to_string(&body) {
+                  let script = format!(
+                    "window.__BEATFLOW_INITIAL_DEEPLINK__ = {json}; window.dispatchEvent(new CustomEvent('beatflow:deeplink', {{ detail: {json} }}));"
+                  );
+                  let _ = main_win.eval(&script);
+                }
+              }
+            }
+            let resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}";
+            let _ = socket.write_all(resp.as_bytes()).await;
+            return;
+          }
+
+          // Handle POST /auth-callback or GET /auth-callback?data=...
+          if req_text.contains("/auth-callback") {
+            let mut payload = String::new();
+            if req_text.starts_with("POST ") {
+              if let Some(pos) = req_text.find("\r\n\r\n") {
+                payload = req_text[pos + 4..].trim().to_string();
+              }
+            } else if req_text.starts_with("GET ") {
+              if let Some(pos) = req_text.find("data=") {
+                let rest = &req_text[pos + 5..];
+                let enc = rest.split_whitespace().next().unwrap_or(rest);
+                let clean = enc.split('&').next().unwrap_or(enc);
+                payload = url_decode(clean);
+              }
+            }
+
+            if !payload.is_empty() {
+              let _ = handle_auth_callback(&payload).await;
+            }
+
+            let resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}";
+            let _ = socket.write_all(resp.as_bytes()).await;
+            return;
+          }
+
+          let resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+          let _ = socket.write_all(resp.as_bytes()).await;
+        });
+      }
+    }
+  });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  let mut initial_arg = String::new();
   for arg in std::env::args().skip(1) {
     if arg.starts_with("beatflow://") {
-      set_deep_link(arg);
+      initial_arg = arg;
       break;
     }
+  }
+
+  // Single-instance check: if primary instance is running on 51189, forward argument and exit immediately!
+  if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:51189") {
+    use std::io::Write;
+    let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(800)));
+    let body = initial_arg.as_bytes();
+    let req = format!(
+      "POST /forward-arg HTTP/1.1\r\nHost: 127.0.0.1:51189\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+      body.len(),
+      initial_arg
+    );
+    let _ = stream.write_all(req.as_bytes());
+    println!("[BeatFlow IPC] Another instance is already running. Forwarded argument to main instance and exiting.");
+    std::process::exit(0);
+  }
+
+  if !initial_arg.is_empty() && !initial_arg.contains("auth-callback") {
+    set_deep_link(initial_arg);
   }
 
   tauri::Builder::default()
@@ -1393,57 +1646,7 @@ pub fn run() {
             let encoded_data = &uri[q_idx + 5..];
             let clean_encoded = encoded_data.split('&').next().unwrap_or(encoded_data);
             let decoded_json = url_decode(clean_encoded);
-            if let Ok(data) = serde_json::from_str::<Value>(&decoded_json) {
-              let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("YouTube Music User");
-              let email = data.get("email").and_then(|v| v.as_str());
-              let avatar_url = data.get("avatarUrl").and_then(|v| v.as_str());
-              let handle = data.get("handle").and_then(|v| v.as_str());
-              let auth_user = data.get("authUser").and_then(|v| v.as_str()).unwrap_or("0");
-              let cookies = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
-
-              let channel_id = format!("{}:own", auth_user);
-              let channel = json!({
-                "id": channel_id,
-                "name": name,
-                "handle": handle,
-                "avatarUrl": avatar_url,
-                "brand": false,
-                "authUser": auth_user
-              });
-              let account = json!({
-                "authUser": auth_user,
-                "name": name,
-                "email": email,
-                "avatarUrl": avatar_url,
-                "channels": [channel.clone()]
-              });
-
-              let auth = json!({
-                "browserSignedIn": true,
-                "connected": true,
-                "signedIn": true,
-                "problem": null,
-                "cookies": cookies,
-                "accounts": [account],
-                "active": channel
-              });
-              save_yt_auth(&auth);
-
-              // Notify the main window and close login window
-              if let Some(app_handle) = APP_HANDLE.get() {
-                if let Some(main_win) = app_handle.get_webview_window("main") {
-                  let auth_str = serde_json::to_string(&auth).unwrap_or_default();
-                  let script = format!(
-                    "window.dispatchEvent(new CustomEvent('beatflow:yt-auth-detected', {{ detail: {} }}));",
-                    auth_str
-                  );
-                  let _ = main_win.eval(&script);
-                }
-                if let Some(login_win) = app_handle.get_webview_window("google-login") {
-                  let _ = login_win.close();
-                }
-              }
-            }
+            let _ = handle_auth_callback(&decoded_json).await;
           }
           let resp = tauri::http::Response::builder()
             .status(200)
@@ -1773,51 +1976,103 @@ pub fn run() {
       if window.label() == "google-login" {
         let url = payload.url().as_str();
         if url.contains("music.youtube.com") {
-          let script = r#"
-            (function() {
+          let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
+          let script = format!(r#"
+            (function() {{
+              if (window.__BEATFLOW_AUTH_ACTIVE__) return;
+              window.__BEATFLOW_AUTH_ACTIVE__ = true;
+
               var attempts = 0;
-              var maxAttempts = 35;
-              var timer = setInterval(function() {
+              var maxAttempts = 60;
+              var completed = false;
+
+              var timer = setInterval(function() {{
                 attempts++;
-                try {
-                  var ytcfg = window.ytcfg && window.ytcfg.data_;
+                if (completed || attempts > maxAttempts) {{
+                  clearInterval(timer);
+                  return;
+                }}
+
+                try {{
                   var cookies = document.cookie || "";
-                  var name = (ytcfg && ytcfg.USER_NAME) || "";
-                  var email = (ytcfg && ytcfg.USER_EMAIL) || "";
-                  var avatar = (ytcfg && ytcfg.USER_AVATAR_URL) || "";
-                  var handle = (ytcfg && ytcfg.USER_HANDLE) || "";
-                  var authUser = (ytcfg && ytcfg.SESSION_INDEX) ? String(ytcfg.SESSION_INDEX) : "0";
+                  var hasSapisid = /(?:^|;\s*)(?:__Secure-[13]P)?SAPISID=([^;]+)/.test(cookies);
 
-                  var img = document.querySelector('ytmusic-settings-button img') || document.querySelector('button#avatar-btn img');
-                  if (img) {
-                    if (!avatar) avatar = img.src || "";
-                    if (!name) name = img.getAttribute('alt') || "";
-                  }
+                  var ytcfg = window.ytcfg;
+                  var d = (ytcfg && ytcfg.data_) || {{}};
+                  var loggedIn = false;
+                  if (ytcfg && ytcfg.get) {{
+                    loggedIn = !!ytcfg.get('LOGGED_IN');
+                  }} else if (d.LOGGED_IN) {{
+                    loggedIn = !!d.LOGGED_IN;
+                  }}
 
-                  var hasSid = cookies.indexOf("SAPISID") !== -1 || cookies.indexOf("__Secure-3PAPISID") !== -1 || cookies.indexOf("__Secure-1PAPISID") !== -1;
-                  var isLoggedIn = hasSid || (ytcfg && (ytcfg.LOGGED_IN || ytcfg.USER_NAME));
+                  if (!hasSapisid && !loggedIn) {{
+                    return;
+                  }}
 
-                  if (isLoggedIn) {
-                    clearInterval(timer);
-                    var data = {
-                      name: name || "YouTube Music User",
-                      email: email || null,
-                      avatarUrl: avatar || null,
-                      handle: handle || null,
-                      authUser: authUser,
-                      cookies: cookies
-                    };
-                    window.location.href = "beatflow://auth-callback?data=" + encodeURIComponent(JSON.stringify(data));
-                  } else if (attempts >= maxAttempts) {
-                    clearInterval(timer);
-                  }
-                } catch(e) {
+                  var name = d.USER_NAME || "";
+                  var email = d.USER_EMAIL || "";
+                  var avatar = d.USER_AVATAR_URL || "";
+                  var handle = d.USER_HANDLE || "";
+                  var authUser = (d.SESSION_INDEX !== undefined) ? String(d.SESSION_INDEX) : "0";
+
+                  if (ytcfg && ytcfg.get) {{
+                    name = name || ytcfg.get('USER_NAME') || "";
+                    email = email || ytcfg.get('USER_EMAIL') || "";
+                    avatar = avatar || ytcfg.get('USER_AVATAR_URL') || "";
+                    handle = handle || ytcfg.get('USER_HANDLE') || "";
+                  }}
+
+                  var avatarImg = document.querySelector('button#avatar-btn img') ||
+                                  document.querySelector('ytmusic-settings-button img') ||
+                                  document.querySelector('ytmusic-app-header img[alt]');
+                  if (avatarImg) {{
+                    avatar = avatar || avatarImg.src || "";
+                    var alt = avatarImg.getAttribute('alt') || "";
+                    if (alt && !alt.toLowerCase().includes('account photo') && !alt.toLowerCase().includes('google account')) {{
+                      name = name || alt.replace(/^Photo of\s+/i, '');
+                    }}
+                  }}
+
+                  var accountEl = document.querySelector('#account-name') || document.querySelector('.ytmusic-nav-bar #account-name');
+                  if (accountEl && accountEl.textContent) {{
+                    name = name || accountEl.textContent.trim();
+                  }}
+
+                  if (!name && email) {{
+                    name = email.split('@')[0];
+                  }}
+
+                  if (!name && attempts < 15) {{
+                    return;
+                  }}
+
+                  completed = true;
+                  clearInterval(timer);
+
+                  var payload = {{
+                    name: name || "YouTube Account",
+                    email: email || null,
+                    avatarUrl: avatar || null,
+                    handle: handle || null,
+                    authUser: authUser,
+                    cookies: cookies
+                  }};
+
+                  fetch("http://127.0.0.1:{}/auth-callback", {{
+                    method: "POST",
+                    headers: {{ "Content-Type": "application/json" }},
+                    body: JSON.stringify(payload)
+                  }}).catch(function() {{
+                    new Image().src = "http://127.0.0.1:{}/auth-callback?data=" + encodeURIComponent(JSON.stringify(payload));
+                  }});
+                }} catch(e) {{
                   if (attempts >= maxAttempts) clearInterval(timer);
-                }
-              }, 800);
-            })();
-          "#;
-          let _ = window.eval(script);
+                }}
+              }}, 1000);
+            }})();
+          "#, port, port);
+          let _ = window.eval(&script);
         }
       }
       if let Some(url) = get_deep_link_value() {
@@ -1831,6 +2086,7 @@ pub fn run() {
     })
     .setup(|app| {
       APP_HANDLE.set(app.handle().clone()).ok();
+      start_local_ipc_server(app.handle().clone());
       register_custom_protocol();
       if cfg!(debug_assertions) {
         app.handle().plugin(
