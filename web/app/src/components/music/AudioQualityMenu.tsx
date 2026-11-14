@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Headphones, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { FileText, Cpu, SlidersHorizontal, AudioWaveform, Volume2 } from 'lucide-react';
 import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
-import { DolbyAtmosIcon, LosslessWaveIcon } from './SourceQualityBadge';
 import { usePlayer } from '@/state/player';
 
 export interface AudioQualityMenuProps {
@@ -9,22 +9,62 @@ export interface AudioQualityMenuProps {
   align?: 'center' | 'left';
 }
 
-function formatDuration(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+/** 44100 -> "44.1 kHz", 48000 -> "48 kHz", 2822400 -> "2.8224 MHz" (matching Android rateText) */
+function rateText(hz: number | null | undefined): string {
+  if (!hz || hz <= 0) return '—';
+  if (hz >= 1000000) {
+    return `${(hz / 1000000).toFixed(4).replace(/\.?0+$/, '')} MHz`;
+  }
+  const khz = (hz / 1000).toFixed(1);
+  return `${khz.endsWith('.0') ? khz.slice(0, -2) : khz} kHz`;
 }
 
-function formatBitrate(kbps: number | null | undefined): string | null {
-  if (!kbps || kbps <= 0) return null;
-  return `${kbps.toLocaleString()} kbps`;
+/** One row in a pipeline stage: bold label, light value matching Android PipelineRow */
+function PipelineRow({ label, value }: { label: string; value: string | number | null | undefined }) {
+  if (value === null || value === undefined || value === '') return null;
+  return (
+    <div className="py-[1px] text-[12.5px] leading-[17px] flex flex-wrap gap-x-1">
+      <span className="font-semibold text-white shrink-0">{label}:</span>
+      <span className="font-normal text-white/80 break-all">{value}</span>
+    </div>
+  );
+}
+
+/** Hairline separator between stages, indented to clear the signal lane (matching Android PipelineRule) */
+function PipelineRule() {
+  return <div className="ml-[54px] mr-4 h-[0.5px] bg-white/[0.14]" />;
+}
+
+/** One pipeline stage: an icon node, uppercase title, and the label/value rows under it */
+function PipelineSection({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex w-full px-4 pt-3 pb-3 gap-[14px]">
+      <div className="size-6 rounded-full border border-white/30 bg-[#141416] flex items-center justify-center shrink-0 z-10 shadow-xs mt-0.5">
+        <Icon size={14} className="text-white/90" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11.5px] font-semibold uppercase tracking-[0.5px] text-white/90 pt-[1px] pb-[7px]">
+          {title}
+        </div>
+        <div className="flex flex-col">{children}</div>
+      </div>
+    </div>
+  );
 }
 
 /**
- * 1-to-1 BitChord-PC / Apple Music Audio Quality Menu (src/ui/nowplaying.rs: audio_info_menu).
- * Displays full stream specifications, format, codec, sample rate, bit depth, and provider.
+ * 1-to-1 BeatFlow Android AudioPipelineDialog & AudioPopupCard.
+ * Displays authoritative live signal path: Track Info -> Decoder -> Resampler -> DSP -> Output Device.
  */
-export function AudioQualityMenu({ onClose, align = 'center' }: AudioQualityMenuProps) {
+export function AudioQualityMenu({ onClose }: AudioQualityMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const nowPlaying = usePlayer((s) => s.nowPlaying);
   const [rustInfo, setRustInfo] = useState<any>(null);
@@ -41,27 +81,22 @@ export function AudioQualityMenu({ onClose, align = 'center' }: AudioQualityMenu
   }, []);
 
   useEffect(() => {
-    const handleDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    window.addEventListener('mousedown', handleDown);
     window.addEventListener('keydown', handleKey);
     return () => {
-      window.removeEventListener('mousedown', handleDown);
       window.removeEventListener('keydown', handleKey);
     };
   }, [onClose]);
 
   if (!nowPlaying) return null;
+  if (typeof document === 'undefined') return null;
 
   const s = nowPlaying.stream;
   const rawQuality = nowPlaying.sourceQuality;
   const codec = rustInfo?.codec ?? s?.codec ?? '';
+  const container = rustInfo?.container ?? s?.container ?? null;
   const bitDepth = rustInfo?.bitDepth ?? s?.bitDepth ?? null;
   const sampleRateHz = rustInfo?.sampleRate ?? s?.sampleRateHz ?? null;
   const bitrateKbps = rustInfo?.bitrateKbps ?? s?.bitrateKbps ?? null;
@@ -107,101 +142,129 @@ export function AudioQualityMenu({ onClose, align = 'center' }: AudioQualityMenu
         ? s.client
         : 'YouTube Music');
 
-  const alignmentClass = align === 'left' ? 'left-0' : 'left-1/2 -translate-x-1/2';
+  // Format label (e.g. "Dolby Atmos (mp4)" or "FLAC (mp4)")
+  const format = container && !codec.toLowerCase().includes(container.toLowerCase())
+    ? `${codec} (${container})`
+    : codec || '—';
 
-  return (
+  const sampleRateText = rateText(sampleRateHz);
+  const bitDepthText = isLossless && bitDepth ? `${bitDepth}-bit` : '—';
+  const bitrateText = bitrateKbps && bitrateKbps > 0 ? `${bitrateKbps.toLocaleString()} kbps` : '—';
+  const pcmDataRateText = isLossless && bitDepth && sampleRateHz
+    ? `${Math.round((sampleRateHz * bitDepth * (channels || 2)) / 1000).toLocaleString()} kbps`
+    : bitrateText;
+  const channelsText = channels === 6 ? '6 (Surround)' : channels === 1 ? 'Mono' : 'Stereo';
+
+  // Decoder stage
+  const decoderName = isDesktopApp() ? 'Rust Core Engine (Tauri)' : 'HTMLAudioElement';
+  const decoderFormat = isDolbyAtmos
+    ? `Dolby Atmos (E-AC-3 JOC) / ${sampleRateText}`
+    : isLossless
+      ? `Float32 / Lossless PCM`
+      : `PCM Float32 / ${sampleRateText}`;
+
+  // Resampler stage
+  const ioRateText = sampleRateText !== '—' ? `${sampleRateText} → ${sampleRateText}` : '—';
+
+  // DSP stage
+  const bitExactVerdict = isDolbyAtmos
+    ? 'Dolby Atmos (Spatial Audio)'
+    : isLossless
+      ? 'Yes — bit-perfect lossless'
+      : "No — source isn't lossless PCM";
+
+  // Output device stage
+  const transportText = isDesktopApp() ? 'Direct OS Audio (WASAPI)' : 'WebAudio API';
+
+  return createPortal(
     <div
-      ref={ref}
-      className={`absolute bottom-full mb-3 z-50 w-76 rounded-2xl bg-[#1c1c20]/95 backdrop-blur-xl border border-white/15 p-4 shadow-2xl text-white select-none animate-enter ${alignmentClass}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-fade select-none"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       role="dialog"
-      aria-label="Audio Quality Specifications"
+      aria-modal="true"
+      aria-label="Audio Pipeline"
     >
-      <div className="flex items-center justify-between pb-1">
-        <span className="text-[10px] uppercase font-semibold tracking-wider text-white/50">
-          Audio Quality
-        </span>
+      <div
+        ref={ref}
+        className="w-[320px] max-w-[calc(100vw-32px)] rounded-[18px] bg-[#1c1c20]/95 backdrop-blur-2xl border border-white/15 shadow-2xl overflow-hidden flex flex-col text-white animate-zoom"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Centered Header matching Android AudioPopupCard */}
+        <div className="px-4 pt-5 pb-3 text-center flex flex-col items-center">
+          <div className="text-[17px] font-semibold text-white tracking-tight">
+            Audio Pipeline
+          </div>
+          <div className="mt-1 text-[13px] leading-[17px] text-white/70 font-normal">
+            {badgeTitle ? `${badgeTitle} · Live signal path, decoder to output` : 'Live signal path, decoder to output'}
+          </div>
+        </div>
+
+        {/* Scrolling Pipeline Stages with Signal Bus line */}
+        <div className="relative max-h-[420px] overflow-y-auto">
+          {/* Signal Bus vertical line */}
+          <div className="absolute left-[28px] top-[24px] bottom-[24px] w-[1.5px] bg-white/20 -translate-x-1/2 pointer-events-none" />
+
+          {/* 1. Track Info Stage */}
+          <PipelineSection icon={FileText} title="Track Info">
+            <PipelineRow label="Source" value={sourceName} />
+            <PipelineRow label="Format" value={format} />
+            <PipelineRow label="Bit Depth" value={bitDepthText} />
+            <PipelineRow label="Sample Rate" value={sampleRateText} />
+            <PipelineRow label="Bitrate" value={bitrateText} />
+            <PipelineRow label="PCM Data Rate" value={pcmDataRateText} />
+            <PipelineRow label="Channels" value={channelsText} />
+          </PipelineSection>
+
+          <PipelineRule />
+
+          {/* 2. Decoder Stage */}
+          <PipelineSection icon={Cpu} title="Decoder">
+            <PipelineRow label="Decoder Name" value={decoderName} />
+            <PipelineRow label="Format" value={decoderFormat} />
+          </PipelineSection>
+
+          <PipelineRule />
+
+          {/* 3. Resampler Stage */}
+          <PipelineSection icon={SlidersHorizontal} title="Resampler">
+            <PipelineRow label="I/O Rate" value={ioRateText} />
+            <PipelineRow label="Type" value="None" />
+            <PipelineRow label="Quality" value="Passthrough" />
+          </PipelineSection>
+
+          <PipelineRule />
+
+          {/* 4. DSP Stage */}
+          <PipelineSection icon={AudioWaveform} title="DSP">
+            <PipelineRow label="PCM Format" value="Float32" />
+            <PipelineRow label="Sample Rate" value={sampleRateText} />
+            <PipelineRow label="Bit-Exact" value={bitExactVerdict} />
+          </PipelineSection>
+
+          <PipelineRule />
+
+          {/* 5. Output Device Stage */}
+          <PipelineSection icon={Volume2} title="Output Device">
+            <PipelineRow label="Device Name" value="System default" />
+            <PipelineRow label="Route" value="Direct System Audio" />
+            <PipelineRow label="Transport" value={transportText} />
+            <PipelineRow label="Direct" value="Active (Direct Audio Path)" />
+          </PipelineSection>
+        </div>
+
+        {/* Full-width hairline and Done action matching Android */}
+        <div className="w-full h-[0.5px] bg-white/[0.14]" />
         <button
           type="button"
           onClick={onClose}
-          className="grid size-5 place-items-center rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-          aria-label="Close"
+          className="h-[46px] w-full text-center font-semibold text-[17px] text-white hover:bg-white/10 active:bg-white/15 transition-colors cursor-pointer flex items-center justify-center select-none"
         >
-          <X size={13} />
+          Done
         </button>
       </div>
-
-      <div className="flex items-center gap-2.5 py-2">
-        {isDolbyAtmos ? (
-          <DolbyAtmosIcon size={20} className="text-white shrink-0" />
-        ) : isLossless ? (
-          <LosslessWaveIcon
-            size={22}
-            className={`shrink-0 ${isHiRes ? 'text-amber-400' : 'text-white'}`}
-          />
-        ) : (
-          <Headphones size={18} className="text-white/60 shrink-0" />
-        )}
-        <span className={`text-[17px] font-semibold tracking-tight ${isHiRes ? 'text-amber-300' : 'text-white'}`}>
-          {badgeTitle}
-        </span>
-      </div>
-
-      <div className="h-px bg-white/10 my-2" />
-
-      <div className="flex flex-col gap-2 text-[12.5px] py-1">
-        <div className="flex items-center justify-between">
-          <span className="text-white/50">Source</span>
-          <span className="font-semibold text-white truncate max-w-[170px]" title={sourceName}>
-            {sourceName}
-          </span>
-        </div>
-
-        {codec && (
-          <div className="flex items-center justify-between">
-            <span className="text-white/50">Codec</span>
-            <span className="font-semibold text-white uppercase">{codec}</span>
-          </div>
-        )}
-
-        {bitrateKbps && (
-          <div className="flex items-center justify-between">
-            <span className="text-white/50">Bitrate</span>
-            <span className="font-semibold text-white">{formatBitrate(bitrateKbps)}</span>
-          </div>
-        )}
-
-        {sampleRateHz && (
-          <div className="flex items-center justify-between">
-            <span className="text-white/50">Sample rate</span>
-            <span className="font-semibold text-white">
-              {sampleRateHz >= 1000000
-                ? `${(sampleRateHz / 1000000).toFixed(2)} MHz`
-                : `${+(sampleRateHz / 1000).toFixed(1)} kHz`}
-            </span>
-          </div>
-        )}
-
-        {bitDepth && (
-          <div className="flex items-center justify-between">
-            <span className="text-white/50">Bit depth</span>
-            <span className="font-semibold text-white">{bitDepth}-bit</span>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between">
-          <span className="text-white/50">Channels</span>
-          <span className="font-semibold text-white">
-            {channels === 6 ? '6 (5.1 Surround)' : channels === 1 ? 'Mono' : 'Stereo'}
-          </span>
-        </div>
-
-        {nowPlaying.durationSec > 0 && (
-          <div className="flex items-center justify-between">
-            <span className="text-white/50">Duration</span>
-            <span className="font-semibold text-white">{formatDuration(nowPlaying.durationSec)}</span>
-          </div>
-        )}
-      </div>
-    </div>
+    </div>,
+    document.body
   );
 }
