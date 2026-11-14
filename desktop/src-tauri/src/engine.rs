@@ -66,11 +66,23 @@ impl BeatflowEngine {
     pub async fn set_prefer_atmos(&self, on: bool) {
         let mut slot = self.prefer_atmos.write().await;
         *slot = on;
+        if !on {
+            let mut up = self.upgraded_streams.write().await;
+            up.retain(|_, s| !s.atmos);
+            let mut active = self.active_stream.write().await;
+            if active.as_ref().is_some_and(|s| s.atmos) {
+                *active = None;
+            }
+        }
     }
 
     pub async fn set_auto_upgrade(&self, on: bool) {
         let mut slot = self.auto_upgrade.write().await;
         *slot = on;
+        if !on {
+            let mut active = self.active_stream.write().await;
+            *active = None;
+        }
     }
 
     pub async fn get_stream_info(&self) -> Option<StreamInfo> {
@@ -86,16 +98,22 @@ impl BeatflowEngine {
 
         println!("[BeatFlow Engine] 🔗 Resolving addon stream for URI: {}", addon_uri);
 
-        // If this track was already upgraded and cached, return it directly
+        let prefer_atmos = *self.prefer_atmos.read().await;
+
+        // If this track was already upgraded and cached, return it directly unless Atmos preference changed
         {
             let up = self.upgraded_streams.read().await;
             if let Some(cached) = up.get(&track_id).or_else(|| up.get(addon_uri)) {
-                println!("[BeatFlow Engine] ⚡ Using cached stream for {}", addon_uri);
-                println!("[BeatFlow Engine]    Stream URL: {}", cached.url);
-                println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", cached.codec, cached.container);
-                let mut active = self.active_stream.write().await;
-                *active = Some(cached.clone());
-                return Ok(cached.clone());
+                if !prefer_atmos && cached.atmos {
+                    println!("[BeatFlow Engine] 🔄 Cached stream is Dolby Atmos but prefer_atmos is FALSE. Resolving stereo stream.");
+                } else {
+                    println!("[BeatFlow Engine] ⚡ Using cached stream for {}", addon_uri);
+                    println!("[BeatFlow Engine]    Stream URL: {}", cached.url);
+                    println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", cached.codec, cached.container);
+                    let mut active = self.active_stream.write().await;
+                    *active = Some(cached.clone());
+                    return Ok(cached.clone());
+                }
             }
         }
 

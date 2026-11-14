@@ -29,6 +29,7 @@ export function setPreferDolbyAtmos(prefer: boolean): void {
       void desktopBridge().call('engine.setPreferAtmos', { preferAtmos: prefer }).catch(() => {});
     } catch {}
   }
+  window.dispatchEvent(new CustomEvent('beatflow:prefer-atmos-changed', { detail: { prefer } }));
 }
 
 export function getAutoUpgradeQuality(): boolean {
@@ -44,6 +45,7 @@ export function setAutoUpgradeQuality(auto: boolean): void {
       void desktopBridge().call('engine.setAutoUpgrade', { autoUpgrade: auto }).catch(() => {});
     } catch {}
   }
+  window.dispatchEvent(new CustomEvent('beatflow:auto-upgrade-changed', { detail: { auto } }));
 }
 
 export function getInstalledAddons(): InstalledAddon[] {
@@ -80,6 +82,8 @@ export async function syncAddonsWithFolderConfig(): Promise<InstalledAddon[]> {
   if (!isDesktopApp()) return getInstalledAddons();
   try {
     const bridge = desktopBridge();
+    void bridge.call('engine.setPreferAtmos', { preferAtmos: getPreferDolbyAtmos() }).catch(() => {});
+    void bridge.call('engine.setAutoUpgrade', { autoUpgrade: getAutoUpgradeQuality() }).catch(() => {});
     const folderConfig = await bridge.call('addons.loadConfig', {});
     if (Array.isArray(folderConfig) && folderConfig.length > 0) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(folderConfig));
@@ -275,7 +279,11 @@ export async function resolveAddonStreamInfo(
   if (isDesktopApp()) {
     try {
       const bridge = desktopBridge();
-      const res = (await bridge.call('engine.loadTrack', { videoId: addonUri })) as any;
+      const res = (await bridge.call('engine.loadTrack', {
+        videoId: addonUri,
+        preferAtmos: options?.atmos ?? getPreferDolbyAtmos(),
+        autoUpgrade: getAutoUpgradeQuality(),
+      })) as any;
       if (res && res.stream) {
         const s = res.stream;
         const isDolbyAtmos = Boolean(s.atmos);

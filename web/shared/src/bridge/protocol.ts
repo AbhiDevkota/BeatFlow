@@ -317,6 +317,8 @@ export interface BridgeMethods {
       durationSec?: number | null;
       thumbnail?: string | null;
       album?: string | null;
+      preferAtmos?: boolean;
+      autoUpgrade?: boolean;
     };
     result: {
       stream?: any;
@@ -332,6 +334,8 @@ export interface BridgeMethods {
       durationSec?: number | null;
       thumbnail?: string | null;
       album?: string | null;
+      preferAtmos?: boolean;
+      autoUpgrade?: boolean;
     };
     result: {
       upgraded: boolean;

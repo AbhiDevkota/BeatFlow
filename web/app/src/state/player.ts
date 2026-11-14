@@ -802,7 +802,11 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 }));
 
 useContentSettings.subscribe((current, prev) => {
-  if (current.preferMusicOnly && !prev.preferMusicOnly) {
+  const preferAudioToggled =
+    (current.preferMusicOnly && !prev.preferMusicOnly) ||
+    (current.preferAudioCuts && !prev.preferAudioCuts);
+
+  if (preferAudioToggled) {
     const { queue, index, status } = usePlayer.getState();
     const entry = queue[index];
     if (entry && isVideoTrack(entry.track) && !partyHooks?.inParty()) {
@@ -823,6 +827,49 @@ useContentSettings.subscribe((current, prev) => {
     void convertUpcomingTracks();
   }
 });
+
+// React to Dolby Atmos and Auto-Upgrade quality preference changes in real-time
+if (typeof window !== 'undefined') {
+  window.addEventListener('beatflow:prefer-atmos-changed', ((e: CustomEvent<{ prefer: boolean }>) => {
+    const prefer = e.detail?.prefer;
+    const { queue, index, upgradingQuality } = usePlayer.getState();
+    const entry = queue[index];
+    if (!entry || upgradingQuality || partyHooks?.inParty()) return;
+    const currentTrack = entry.track;
+
+    const isCurrentlyAtmos =
+      currentTrack.sourceQuality === 'DOLBY_ATMOS' ||
+      currentTrack.sourceFormat?.isDolbyAtmos === true;
+
+    if (!prefer && isCurrentlyAtmos) {
+      trackLog.i('[Player] Prefer Atmos disabled while playing Atmos stream; switching to stereo lossless/original');
+      void usePlayer.getState().upgradeQuality().then((success) => {
+        if (!success) {
+          void usePlayer.getState().revertToOriginal();
+        }
+      });
+    } else if (prefer && !isCurrentlyAtmos && !revertedTracks.has(currentTrack.videoId)) {
+      trackLog.i('[Player] Prefer Atmos enabled; re-evaluating quality for Atmos upgrade');
+      void usePlayer.getState().upgradeQuality();
+    }
+  }) as EventListener);
+
+  window.addEventListener('beatflow:auto-upgrade-changed', ((e: CustomEvent<{ auto: boolean }>) => {
+    const auto = e.detail?.auto;
+    const { queue, index, upgradingQuality, isUpgraded } = usePlayer.getState();
+    const entry = queue[index];
+    if (!entry || upgradingQuality || partyHooks?.inParty()) return;
+    const currentTrack = entry.track;
+
+    if (!auto && isUpgraded(currentTrack.videoId)) {
+      trackLog.i('[Player] Auto-upgrade disabled; reverting playing track to original YouTube source');
+      void usePlayer.getState().revertToOriginal();
+    } else if (auto && !isUpgraded(currentTrack.videoId) && !revertedTracks.has(currentTrack.videoId)) {
+      trackLog.i('[Player] Auto-upgrade enabled; requesting high-quality addon upgrade');
+      void usePlayer.getState().upgradeQuality();
+    }
+  }) as EventListener);
+}
 
 // For browser-driven tests, next to __bcAudio.
 if (import.meta.env.DEV) {
@@ -861,7 +908,8 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   const token = ++loadToken;
 
   let currentTrack = entry.track;
-  const preferAudio = useContentSettings.getState().preferMusicOnly && !partyHooks?.inParty();
+  const contentSettings = useContentSettings.getState();
+  const preferAudio = (contentSettings.preferMusicOnly || contentSettings.preferAudioCuts) && !partyHooks?.inParty();
   if (preferAudio && isVideoTrack(currentTrack)) {
     try {
       const audio = await resolveAudioTrack(currentTrack);
@@ -876,6 +924,46 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
       }
     } catch {
       // Continue with currentTrack on resolution error
+    }
+  }
+
+  // Direct Source Streaming:
+  // If enabled and addons are available, resolve the high-quality stream directly from the addon
+  // BEFORE starting YouTube playback, so playback begins on the high-quality stream immediately from 0.0s.
+  if (
+    isDesktopApp() &&
+    contentSettings.directSource &&
+    !currentTrack.videoId.startsWith('addon:') &&
+    !currentTrack.videoId.startsWith('beatflow://') &&
+    !revertedTracks.has(currentTrack.videoId) &&
+    !partyHooks?.inParty()
+  ) {
+    try {
+      const { getAutoUpgradeQuality, getInstalledAddons } = await import('@/data/addons/addonStore');
+      if (getAutoUpgradeQuality() && getInstalledAddons().some((a) => a.enabled)) {
+        trackLog.i(`[Direct Source] Resolving high-quality addon stream for "${currentTrack.title}"`, currentTrack.videoId);
+        const { findBestQualityUpgrade } = await import('@/data/addons/qualityUpgrade');
+        const upgrade = await findBestQualityUpgrade(currentTrack);
+        if (upgrade && token === loadToken) {
+          const directTrack: Track = {
+            ...upgrade.track,
+            title: currentTrack.title || upgrade.track.title,
+            artists: currentTrack.artists.length ? currentTrack.artists : upgrade.track.artists,
+            thumbnail: currentTrack.thumbnail || upgrade.track.thumbnail,
+            album: currentTrack.album || upgrade.track.album,
+          };
+          originalTracks.set(directTrack.videoId, currentTrack);
+          currentTrack = directTrack;
+          const currentQueue = [...usePlayer.getState().queue];
+          if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+            currentQueue[at] = { ...currentQueue[at]!, track: directTrack };
+            usePlayer.setState({ queue: currentQueue });
+          }
+          trackLog.i(`[Direct Source] Direct stream ready: ${directTrack.videoId} (${directTrack.sourceQuality})`, directTrack.videoId);
+        }
+      }
+    } catch (err) {
+      console.warn('[Direct Source] Addon resolution failed, falling back to YouTube:', err);
     }
   }
 
@@ -906,6 +994,7 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
 
     if (
       isDesktopApp() &&
+      !contentSettings.directSource &&
       !currentTrack.videoId.startsWith('addon:') &&
       !currentTrack.videoId.startsWith('beatflow://') &&
       !revertedTracks.has(currentTrack.videoId)

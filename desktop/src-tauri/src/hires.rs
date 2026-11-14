@@ -138,6 +138,8 @@ impl AddonClient {
         params.push(("quality".to_owned(), manifest.quality.clone()));
         if atmos {
             params.push(("atmos".to_owned(), "auto".to_owned()));
+        } else {
+            params.push(("atmos".to_owned(), "off".to_owned()));
         }
         params.push(("q".to_owned(), query.to_owned()));
         let url = endpoint(&self.base, &["search"], &params)?;
@@ -166,6 +168,8 @@ impl AddonClient {
         params.push(("quality".to_owned(), manifest.quality.clone()));
         if atmos {
             params.push(("atmos".to_owned(), "auto".to_owned()));
+        } else {
+            params.push(("atmos".to_owned(), "off".to_owned()));
         }
         let url = endpoint(&self.base, &["stream", &candidate.id], &params)?;
         let json = match get_json(http, &url).await {
@@ -626,7 +630,11 @@ fn score(candidate: &Candidate, title: &str, artist: &str, duration: Option<u32>
         (Some(wanted), Some(got)) => (20 - wanted.abs_diff(got) as i32).max(0),
         _ => 0,
     };
-    let atmos_score = if prefer_atmos && candidate.atmos { 15 } else { 0 };
+    let atmos_score = if candidate.atmos {
+        if prefer_atmos { 30 } else { -100 }
+    } else {
+        if !prefer_atmos { 25 } else { 0 }
+    };
     Some(100 + artist_score + duration_score + atmos_score)
 }
 
@@ -714,6 +722,9 @@ pub async fn find_best_upgrade(
                     println!("[BeatFlow Engine] 🏆 Ranked {} matching candidate(s) from \"{}\"", ranked.len(), addon_label);
 
                     for (idx, candidate) in ranked.into_iter().take(STREAM_TRIES).enumerate() {
+                        if !stream_atmos && candidate.atmos {
+                            continue;
+                        }
                         if !tried.insert(candidate.id.clone()) {
                             continue;
                         }
@@ -725,6 +736,10 @@ pub async fn find_best_upgrade(
 
                         match client.stream(http, &manifest, &candidate, stream_atmos).await {
                             Ok(Some(stream)) => {
+                                if !stream_atmos && stream.atmos {
+                                    println!("[BeatFlow Engine] ⚠️ Stream resolved as Atmos despite prefer_atmos=false, skipping candidate \"{}\"", candidate.id);
+                                    continue;
+                                }
                                 println!("[BeatFlow Engine] 🟢 Stream resolved successfully!");
                                 println!("[BeatFlow Engine]    Stream URL: {}", stream.url);
                                 println!("[BeatFlow Engine]    Codec: {} | Container: {:?}", stream.codec, stream.container);

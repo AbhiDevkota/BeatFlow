@@ -1,6 +1,12 @@
 import { desktopBridge, isDesktopApp } from '@bitchord/shared/bridge';
 import type { Track } from '@/data/music/types';
-import { getInstalledAddons, getPreferDolbyAtmos, searchAddon, type InstalledAddon } from './addonStore';
+import {
+  getAutoUpgradeQuality,
+  getInstalledAddons,
+  getPreferDolbyAtmos,
+  searchAddon,
+  type InstalledAddon,
+} from './addonStore';
 import { parseSourceQuality, type SourceQuality } from './sourceQuality';
 
 export interface QualityUpgradeResult {
@@ -68,6 +74,11 @@ function calculateSimilarity(a: string, b: string): number {
  * using BitChord-PC's ranking and query strategy (src/hires.rs).
  */
 export async function findBestQualityUpgrade(track: Track): Promise<QualityUpgradeResult | null> {
+  const autoUpgrade = getAutoUpgradeQuality();
+  if (!autoUpgrade) return null;
+
+  const preferAtmos = getPreferDolbyAtmos();
+
   // On desktop, the Rust engine drives concurrent addon search, candidate scoring & Atmos resolution
   if (isDesktopApp()) {
     try {
@@ -79,10 +90,15 @@ export async function findBestQualityUpgrade(track: Track): Promise<QualityUpgra
         durationSec: track.durationSec ?? null,
         thumbnail: track.thumbnail ?? null,
         album: track.album?.name ?? null,
+        preferAtmos,
+        autoUpgrade,
       })) as any;
 
       if (res && res.upgraded && res.stream) {
         const stream = res.stream;
+        if (!preferAtmos && stream.atmos) {
+          return null;
+        }
         const isDolbyAtmos = Boolean(stream.atmos);
         const isLossless = Boolean(stream.lossless);
         const isHiRes = Boolean(stream.hires);
@@ -132,7 +148,6 @@ export async function findBestQualityUpgrade(track: Track): Promise<QualityUpgra
   const enabledAddons = getInstalledAddons().filter((a) => a.enabled);
   if (!enabledAddons.length) return null;
 
-  const preferAtmos = getPreferDolbyAtmos();
   const artistName = track.artists[0]?.name ?? '';
   const cleanTitle = cleanSearchableTitle(track.title);
   const primaryArtist = getPrimaryArtist(artistName);
@@ -177,7 +192,10 @@ export async function findBestQualityUpgrade(track: Track): Promise<QualityUpgra
       // Determine quality tier
       const rawQuality = candidate.sourceQuality || candidate.sourceFormat?.codec || 'LOSSLESS';
       const parsedQuality = parseSourceQuality(rawQuality) ?? 'LOSSLESS';
-      const qualityRank = preferAtmos && parsedQuality === 'DOLBY_ATMOS' ? 5 : (QUALITY_RANKS[parsedQuality] ?? 1);
+      if (!preferAtmos && parsedQuality === 'DOLBY_ATMOS') {
+        continue;
+      }
+      const qualityRank = parsedQuality === 'DOLBY_ATMOS' ? (preferAtmos ? 5 : 0) : (QUALITY_RANKS[parsedQuality] ?? 1);
 
       // Total score like BitChord: base title score + artist score + duration score + quality score
       const score = Math.round(titleSim * 100) + (artistMatches ? 30 : 0) + durationScore + (qualityRank * 15);

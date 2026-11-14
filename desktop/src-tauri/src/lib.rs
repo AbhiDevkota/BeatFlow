@@ -696,6 +696,13 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let thumbnail = params.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
       let album = params.get("album").and_then(|v| v.as_str()).map(|s| s.to_string());
 
+      if let Some(on) = params.get("preferAtmos").and_then(|v| v.as_bool()) {
+        engine().set_prefer_atmos(on).await;
+      }
+      if let Some(on) = params.get("autoUpgrade").and_then(|v| v.as_bool()) {
+        engine().set_auto_upgrade(on).await;
+      }
+
       println!("[BeatFlow Engine] >>> engine.loadTrack: videoId=\"{}\", title=\"{}\"", video_id, title);
 
       let track = TrackPayload {
@@ -743,6 +750,13 @@ async fn bridge_call(method: String, params: Value) -> Result<Value, String> {
       let duration_sec = params.get("durationSec").and_then(|v| v.as_u64()).map(|d| d as u32);
       let thumbnail = params.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
       let album = params.get("album").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+      if let Some(on) = params.get("preferAtmos").and_then(|v| v.as_bool()) {
+        engine().set_prefer_atmos(on).await;
+      }
+      if let Some(on) = params.get("autoUpgrade").and_then(|v| v.as_bool()) {
+        engine().set_auto_upgrade(on).await;
+      }
 
       println!("[BeatFlow Engine] >>> engine.upgradeQuality requested: \"{}\" - \"{}\" (videoId: {})", title, artist, video_id);
 

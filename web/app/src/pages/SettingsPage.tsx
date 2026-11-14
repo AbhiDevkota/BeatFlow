@@ -63,6 +63,12 @@ import {
   Toggle,
 } from './IntegrationSettings';
 import { AddonsSettings } from './AddonsSettings';
+import {
+  getAutoUpgradeQuality,
+  getPreferDolbyAtmos,
+  setAutoUpgradeQuality,
+  setPreferDolbyAtmos,
+} from '@/data/addons/addonStore';
 import { settingsUi } from './settingsStyles';
 
 const LyricsSettings = lazy(() => import('@/shell/LyricsSettings').then((m) => ({ default: m.LyricsSettings })));
@@ -223,6 +229,31 @@ export default function SettingsPage() {
   const [lyricsModal, setLyricsModal] = useState(false);
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryKey | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Addon & Quality preferences
+  const [preferAtmos, setPreferAtmos] = useState<boolean>(() => getPreferDolbyAtmos());
+  const [autoUpgrade, setAutoUpgrade] = useState<boolean>(() => getAutoUpgradeQuality());
+
+  useEffect(() => {
+    const handleAtmos = (e: Event) => {
+      const custom = e as CustomEvent<{ prefer: boolean }>;
+      if (typeof custom.detail?.prefer === 'boolean') {
+        setPreferAtmos(custom.detail.prefer);
+      }
+    };
+    const handleAuto = (e: Event) => {
+      const custom = e as CustomEvent<{ auto: boolean }>;
+      if (typeof custom.detail?.auto === 'boolean') {
+        setAutoUpgrade(custom.detail.auto);
+      }
+    };
+    window.addEventListener('beatflow:prefer-atmos-changed', handleAtmos);
+    window.addEventListener('beatflow:auto-upgrade-changed', handleAuto);
+    return () => {
+      window.removeEventListener('beatflow:prefer-atmos-changed', handleAtmos);
+      window.removeEventListener('beatflow:auto-upgrade-changed', handleAuto);
+    };
+  }, []);
 
   // Storage estimation
   const [storageEstimate, setStorageEstimate] = useState<string | null>(null);
@@ -588,9 +619,29 @@ export default function SettingsPage() {
           />
         </label>
         <Toggle
+          icon={<Sparkles size={22} />}
+          label="Prefer Dolby Atmos"
+          detail="Ask hi-res sources for a Dolby Atmos copy when available. Falls back to stereo lossless when unsupported."
+          checked={preferAtmos}
+          onChange={(checked) => {
+            setPreferAtmos(checked);
+            setPreferDolbyAtmos(checked);
+          }}
+        />
+        <Toggle
+          icon={<Zap size={22} />}
+          label="Automatic Hi-Res Upgrade"
+          detail="Automatically upgrade songs to Lossless, Hi-Res, or Dolby Atmos from enabled addons during playback."
+          checked={autoUpgrade}
+          onChange={(checked) => {
+            setAutoUpgrade(checked);
+            setAutoUpgradeQuality(checked);
+          }}
+        />
+        <Toggle
           icon={<Zap size={22} />}
           label="Direct Source Streaming"
-          detail="Stream audio directly from verified edge CDN sources where available."
+          detail="Stream audio directly from verified edge CDN sources where available without starting on YouTube."
           checked={directSource}
           onChange={setDirectSource}
         />
@@ -1113,6 +1164,34 @@ export default function SettingsPage() {
       </label>
     ), 'audio-quality');
 
+    check('Prefer Dolby Atmos', ['dolby', 'atmos', 'surround', 'spatial', 'audio quality', 'lossless'], (
+      <Toggle
+        key="preferAtmos"
+        icon={<Sparkles size={20} />}
+        label="Prefer Dolby Atmos"
+        detail="Ask hi-res sources for a Dolby Atmos copy when available. Falls back to stereo lossless when unsupported."
+        checked={preferAtmos}
+        onChange={(checked) => {
+          setPreferAtmos(checked);
+          setPreferDolbyAtmos(checked);
+        }}
+      />
+    ), 'audio-quality');
+
+    check('Automatic Hi-Res Upgrade', ['auto upgrade', 'hi-res', 'lossless', 'flac', 'upgrade', 'quality'], (
+      <Toggle
+        key="autoUpgrade"
+        icon={<Zap size={20} />}
+        label="Automatic Hi-Res Upgrade"
+        detail="Automatically upgrade songs to Lossless, Hi-Res, or Dolby Atmos from enabled addons during playback."
+        checked={autoUpgrade}
+        onChange={(checked) => {
+          setAutoUpgrade(checked);
+          setAutoUpgradeQuality(checked);
+        }}
+      />
+    ), 'audio-quality');
+
     check('Direct Source Streaming', ['direct source', 'cdn', 'lossless', 'stream'], (
       <Toggle
         key="direct"
@@ -1261,6 +1340,8 @@ export default function SettingsPage() {
     storageEstimate,
     clearing,
     cleared,
+    preferAtmos,
+    autoUpgrade,
   ]);
 
   return (

@@ -30,6 +30,24 @@ export function AddonsSettings() {
     void syncAddonsWithFolderConfig().then((synced) => {
       setAddons(synced);
     });
+    const handleAtmos = (e: Event) => {
+      const custom = e as CustomEvent<{ prefer: boolean }>;
+      if (typeof custom.detail?.prefer === 'boolean') {
+        setPreferAtmos(custom.detail.prefer);
+      }
+    };
+    const handleAuto = (e: Event) => {
+      const custom = e as CustomEvent<{ auto: boolean }>;
+      if (typeof custom.detail?.auto === 'boolean') {
+        setAutoUpgrade(custom.detail.auto);
+      }
+    };
+    window.addEventListener('beatflow:prefer-atmos-changed', handleAtmos);
+    window.addEventListener('beatflow:auto-upgrade-changed', handleAuto);
+    return () => {
+      window.removeEventListener('beatflow:prefer-atmos-changed', handleAtmos);
+      window.removeEventListener('beatflow:auto-upgrade-changed', handleAuto);
+    };
   }, []);
 
   const refreshList = () => {

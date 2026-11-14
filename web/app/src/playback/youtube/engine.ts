@@ -6,6 +6,7 @@ import { timed, trackLog } from '../trackLog';
 import { botguard } from './botguard';
 import { ytAuthSnapshot } from '@/extension/useYtAuth';
 import { getInnertube, getSignedInnertube } from './innertube';
+import { useContentSettings } from '@/lib/contentSettings';
 import {
   CLIENT_ATTEMPTS,
   usesWebPo,
@@ -639,7 +640,7 @@ export class YouTubeEngine {
     });
   }
 
-  /** Picks Opus 251 (else AAC 140): the preferred codec's highest bitrate, avoiding DRC renditions. */
+  /** Picks preferred codec & bitrate ceiling respecting streamingQuality, avoiding DRC renditions. */
   private selectAudio(player: shaka.Player): { label: string; stats: Omit<StreamStats, 'mode'> } {
     const tracks = player.getVariantTracks().filter((t) => !/drc/i.test(t.originalAudioId ?? ''));
     const statsOf = (t: shaka.extern.Track) => ({
@@ -649,10 +650,24 @@ export class YouTubeEngine {
       sampleRateHz: t.audioSamplingRate,
       channels: t.channelsCount,
     });
+    const streamingQuality = useContentSettings.getState().streamingQuality;
     for (const codec of this.preferredCodecs) {
-      const best = tracks
-        .filter((t) => t.audioCodec?.startsWith(codec))
-        .sort((a, b) => (b.audioBandwidth ?? b.bandwidth) - (a.audioBandwidth ?? a.bandwidth))[0];
+      const candidates = tracks.filter((t) => t.audioCodec?.startsWith(codec));
+      if (!candidates.length) continue;
+
+      if (streamingQuality === 'saver') {
+        candidates.sort((a, b) => (a.audioBandwidth ?? a.bandwidth) - (b.audioBandwidth ?? b.bandwidth));
+      } else if (streamingQuality === 'normal') {
+        candidates.sort((a, b) => {
+          const aDiff = Math.abs((a.audioBandwidth ?? a.bandwidth) / 1000 - 128);
+          const bDiff = Math.abs((b.audioBandwidth ?? b.bandwidth) / 1000 - 128);
+          return aDiff - bDiff;
+        });
+      } else {
+        candidates.sort((a, b) => (b.audioBandwidth ?? b.bandwidth) - (a.audioBandwidth ?? a.bandwidth));
+      }
+
+      const best = candidates[0];
       if (best) {
         if (!best.active) player.selectVariantTrack(best, true);
         const itag = (best.originalAudioId ?? '').split('-')[0];
