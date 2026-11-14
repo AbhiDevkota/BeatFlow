@@ -340,10 +340,37 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
   // Animation & gesture refs
   const sheetRef = useRef<HTMLDivElement>(null);
+  const cardBgRef = useRef<HTMLDivElement>(null);
   const artworkMorphRef = useRef<HTMLDivElement>(null);
-  const controlsRef = useRef<HTMLDivElement>(null);
+  const infoMorphRef = useRef<HTMLDivElement>(null);
+  const titleActionsRef = useRef<HTMLDivElement>(null);
+  const scrubberMorphRef = useRef<HTMLDivElement>(null);
+  const transportMorphRef = useRef<HTMLDivElement>(null);
+  const extraControlsRef = useRef<HTMLDivElement>(null);
   const sideColumnRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+
+  const savedCoords = useRef<{
+    miniPill: DOMRect | null;
+    miniArt: DOMRect | null;
+    miniInfo: DOMRect | null;
+    miniTrans: DOMRect | null;
+    miniScrub: DOMRect | null;
+    fullArt: DOMRect | null;
+    fullInfo: DOMRect | null;
+    fullTrans: DOMRect | null;
+    fullScrub: DOMRect | null;
+  }>({
+    miniPill: null,
+    miniArt: null,
+    miniInfo: null,
+    miniTrans: null,
+    miniScrub: null,
+    fullArt: null,
+    fullInfo: null,
+    fullTrans: null,
+    fullScrub: null,
+  });
 
   const phaseRef = useRef<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
   const [, setPhase] = useState<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
@@ -388,71 +415,212 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     };
   }, []);
 
-  // Hardware-accelerated Bottom Sheet Spring Expansion on Mount
+  const getMiniCoords = () => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const pillEl = document.getElementById('miniplayer-pill');
+    const artEl = document.getElementById('miniplayer-artwork');
+    const infoEl = document.getElementById('miniplayer-info');
+    const transEl = document.getElementById('miniplayer-transport');
+    const scrubEl = document.getElementById('miniplayer-scrubber');
+
+    const pillRect = pillEl?.getBoundingClientRect();
+    const validPill = pillRect && pillRect.width > 0 && pillRect.height > 0;
+
+    const pill = validPill
+      ? pillRect
+      : new DOMRect(
+          Math.max(16, (vw - Math.min(668, vw - 32)) / 2),
+          vh - 76,
+          Math.min(668, vw - 32),
+          56,
+        );
+
+    const art = artEl && artEl.getBoundingClientRect().width > 0
+      ? artEl.getBoundingClientRect()
+      : new DOMRect(pill.left + 16, pill.top + 11, 34, 34);
+
+    const info = infoEl && infoEl.getBoundingClientRect().width > 0
+      ? infoEl.getBoundingClientRect()
+      : new DOMRect(pill.left + 60, pill.top + 11, Math.min(220, pill.width - 120), 34);
+
+    const trans = transEl && transEl.getBoundingClientRect().width > 0
+      ? transEl.getBoundingClientRect()
+      : new DOMRect(pill.left + 16, pill.top + 8, 160, 40);
+
+    const scrub = scrubEl && scrubEl.getBoundingClientRect().width > 0
+      ? scrubEl.getBoundingClientRect()
+      : new DOMRect(pill.left + 60, pill.bottom - 8, Math.min(220, pill.width - 120), 4);
+
+    return { pill, art, info, trans, scrub };
+  };
+
+  // Hardware-accelerated Apple Matched-Geometry FLIP Expansion on Mount
   useLayoutEffect(() => {
-    const sheetEl = sheetRef.current;
+    const cardBgEl = cardBgRef.current;
     const artEl = artworkMorphRef.current;
-    const controlsEl = controlsRef.current;
-    const sideEl = sideColumnRef.current;
+    const infoEl = infoMorphRef.current;
+    const transEl = transportMorphRef.current;
+    const scrubEl = scrubberMorphRef.current;
+    const extraEl = extraControlsRef.current;
+    const actionsEl = titleActionsRef.current;
     const headerEl = headerRef.current;
+    const sideEl = sideColumnRef.current;
 
-    if (!sheetEl) return;
+    if (!cardBgEl) return;
 
-    // 1. Position sheet at bottom of screen before paint
-    sheetEl.style.transition = 'none';
-    sheetEl.style.transform = 'translate3d(0, 100%, 0)';
+    const { pill: miniPill, art: miniArt, info: miniInfo, trans: miniTrans, scrub: miniScrub } = getMiniCoords();
 
-    if (artEl) {
+    // Measure full-screen elements
+    const fullArt = artEl?.getBoundingClientRect() ?? null;
+    const fullInfo = infoEl?.getBoundingClientRect() ?? null;
+    const fullTrans = transEl?.getBoundingClientRect() ?? null;
+    const fullScrub = scrubEl?.getBoundingClientRect() ?? null;
+
+    savedCoords.current = {
+      miniPill,
+      miniArt,
+      miniInfo,
+      miniTrans,
+      miniScrub,
+      fullArt,
+      fullInfo,
+      fullTrans,
+      fullScrub,
+    };
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // 1. Initial Inverted FLIP state
+    const top = Math.max(0, miniPill.top);
+    const right = Math.max(0, vw - miniPill.right);
+    const bottom = Math.max(0, vh - miniPill.bottom);
+    const left = Math.max(0, miniPill.left);
+
+    cardBgEl.style.transition = 'none';
+    cardBgEl.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px round 28px)`;
+
+    if (artEl && fullArt && fullArt.width > 0) {
+      const dx = miniArt.left - fullArt.left;
+      const dy = miniArt.top - fullArt.top;
+      const scale = miniArt.width / fullArt.width;
       artEl.style.transition = 'none';
-      artEl.style.transform = 'translate3d(0, 36px, 0) scale(0.92)';
-      artEl.style.opacity = '0.6';
+      artEl.style.transformOrigin = '0 0';
+      artEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
+      artEl.style.borderRadius = '6px';
     }
-    if (controlsEl) {
-      controlsEl.style.transition = 'none';
-      controlsEl.style.opacity = '0';
-      controlsEl.style.transform = 'translate3d(0, 28px, 0)';
+
+    if (infoEl && fullInfo && fullInfo.width > 0) {
+      const dx = miniInfo.left - fullInfo.left;
+      const dy = miniInfo.top - fullInfo.top;
+      const scale = Math.min(1, Math.max(0.55, miniInfo.height / fullInfo.height));
+      infoEl.style.transition = 'none';
+      infoEl.style.transformOrigin = '0 0';
+      infoEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
+      infoEl.style.opacity = '0.9';
     }
-    if (sideEl) {
-      sideEl.style.transition = 'none';
-      sideEl.style.opacity = '0';
-      sideEl.style.transform = 'translate3d(24px, 0, 0)';
+
+    if (transEl && fullTrans && fullTrans.width > 0) {
+      const dx = (miniTrans.left + miniTrans.width / 2) - (fullTrans.left + fullTrans.width / 2);
+      const dy = (miniTrans.top + miniTrans.height / 2) - (fullTrans.top + fullTrans.height / 2);
+      const scale = Math.min(1, Math.max(0.7, miniTrans.height / fullTrans.height));
+      transEl.style.transition = 'none';
+      transEl.style.transformOrigin = 'center center';
+      transEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
     }
+
+    if (scrubEl && fullScrub && fullScrub.width > 0) {
+      const dx = miniScrub.left - fullScrub.left;
+      const dy = miniScrub.top - fullScrub.top;
+      const scaleX = miniScrub.width / fullScrub.width;
+      scrubEl.style.transition = 'none';
+      scrubEl.style.transformOrigin = '0 0';
+      scrubEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, 0.5)`;
+      scrubEl.style.opacity = '0.7';
+    }
+
+    if (extraEl) {
+      extraEl.style.transition = 'none';
+      extraEl.style.opacity = '0';
+      extraEl.style.transform = 'translate3d(0, 16px, 0)';
+    }
+
+    if (actionsEl) {
+      actionsEl.style.transition = 'none';
+      actionsEl.style.opacity = '0';
+      actionsEl.style.transform = 'translate3d(0, 10px, 0)';
+    }
+
     if (headerEl) {
       headerEl.style.transition = 'none';
       headerEl.style.opacity = '0';
     }
 
-    // Force reflow
-    void sheetEl.offsetHeight;
+    if (sideEl) {
+      sideEl.style.transition = 'none';
+      sideEl.style.opacity = '0';
+      sideEl.style.transform = 'translate3d(24px, 0, 0)';
+    }
 
-    // 2. Smoothly glide up with Apple's fluid spring curve
+    // Force reflow
+    void cardBgEl.offsetHeight;
+
+    // 2. Animate to full-screen identity with Apple's fluid spring curve
     const easeApple = 'cubic-bezier(0.25, 1, 0.35, 1)';
     const rafId = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         phaseRef.current = 'expanding';
         setPhase('expanding');
 
-        sheetEl.style.transition = `transform 420ms ${easeApple}`;
-        sheetEl.style.transform = 'translate3d(0, 0, 0)';
+        cardBgEl.style.transition = `clip-path 440ms ${easeApple}`;
+        cardBgEl.style.clipPath = 'inset(0px 0px 0px 0px round 0px)';
 
         if (artEl) {
-          artEl.style.transition = `transform 440ms ${easeApple}, opacity 360ms ease-out`;
+          artEl.style.transition = `transform 440ms ${easeApple}, border-radius 440ms ease-out`;
           artEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
-          artEl.style.opacity = '1';
+          artEl.style.borderRadius = '22px';
         }
-        if (controlsEl) {
-          controlsEl.style.transition = `opacity 340ms ease-out 80ms, transform 420ms ${easeApple} 80ms`;
-          controlsEl.style.opacity = '1';
-          controlsEl.style.transform = 'translate3d(0, 0, 0)';
+
+        if (infoEl) {
+          infoEl.style.transition = `transform 440ms ${easeApple}, opacity 360ms ease-out`;
+          infoEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+          infoEl.style.opacity = '1';
         }
+
+        if (transEl) {
+          transEl.style.transition = `transform 440ms ${easeApple}`;
+          transEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        }
+
+        if (scrubEl) {
+          scrubEl.style.transition = `transform 440ms ${easeApple}, opacity 360ms ease-out`;
+          scrubEl.style.transform = 'translate3d(0, 0, 0) scale(1, 1)';
+          scrubEl.style.opacity = '1';
+        }
+
+        if (extraEl) {
+          extraEl.style.transition = `opacity 300ms ease-out 100ms, transform 420ms ${easeApple} 100ms`;
+          extraEl.style.opacity = '1';
+          extraEl.style.transform = 'translate3d(0, 0, 0)';
+        }
+
+        if (actionsEl) {
+          actionsEl.style.transition = `opacity 300ms ease-out 100ms, transform 400ms ${easeApple} 100ms`;
+          actionsEl.style.opacity = '1';
+          actionsEl.style.transform = 'translate3d(0, 0, 0)';
+        }
+
+        if (headerEl) {
+          headerEl.style.transition = 'opacity 280ms ease-out 120ms';
+          headerEl.style.opacity = '1';
+        }
+
         if (sideEl) {
-          sideEl.style.transition = `opacity 340ms ease-out 100ms, transform 420ms ${easeApple} 100ms`;
+          sideEl.style.transition = `opacity 340ms ease-out 120ms, transform 420ms ${easeApple} 120ms`;
           sideEl.style.opacity = '1';
           sideEl.style.transform = 'translate3d(0, 0, 0)';
-        }
-        if (headerEl) {
-          headerEl.style.transition = 'opacity 300ms ease-out 100ms';
-          headerEl.style.opacity = '1';
         }
       });
     });
@@ -460,23 +628,45 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const timer = setTimeout(() => {
       phaseRef.current = 'expanded';
       setPhase('expanded');
-      sheetEl.style.transition = '';
-      sheetEl.style.transform = '';
+      cardBgEl.style.transition = '';
+      cardBgEl.style.clipPath = '';
       if (artEl) {
         artEl.style.transition = '';
         artEl.style.transform = '';
-        artEl.style.opacity = '';
+        artEl.style.borderRadius = '';
       }
-      if (controlsEl) {
-        controlsEl.style.transition = '';
-        controlsEl.style.transform = '';
+      if (infoEl) {
+        infoEl.style.transition = '';
+        infoEl.style.transform = '';
+        infoEl.style.opacity = '';
       }
-      if (sideEl) {
-        sideEl.style.transition = '';
-        sideEl.style.transform = '';
+      if (transEl) {
+        transEl.style.transition = '';
+        transEl.style.transform = '';
+      }
+      if (scrubEl) {
+        scrubEl.style.transition = '';
+        scrubEl.style.transform = '';
+        scrubEl.style.opacity = '';
+      }
+      if (extraEl) {
+        extraEl.style.transition = '';
+        extraEl.style.opacity = '';
+        extraEl.style.transform = '';
+      }
+      if (actionsEl) {
+        actionsEl.style.transition = '';
+        actionsEl.style.opacity = '';
+        actionsEl.style.transform = '';
       }
       if (headerEl) {
         headerEl.style.transition = '';
+        headerEl.style.opacity = '';
+      }
+      if (sideEl) {
+        sideEl.style.transition = '';
+        sideEl.style.opacity = '';
+        sideEl.style.transform = '';
       }
     }, 480);
 
@@ -486,24 +676,103 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     };
   }, []);
 
-  // Collapse / Minimize Animation
+  // Collapse / Minimize Animation with Symmetrical FLIP
   const startCollapse = useCallback(() => {
     if (phaseRef.current === 'collapsing' || phaseRef.current === 'collapsed') return;
     phaseRef.current = 'collapsing';
     setPhase('collapsing');
 
     const sheetEl = sheetRef.current;
-    const controlsEl = controlsRef.current;
-    const sideEl = sideColumnRef.current;
-    const headerEl = headerRef.current;
+    const cardBgEl = cardBgRef.current;
     const artEl = artworkMorphRef.current;
+    const infoEl = infoMorphRef.current;
+    const transEl = transportMorphRef.current;
+    const scrubEl = scrubberMorphRef.current;
+    const extraEl = extraControlsRef.current;
+    const actionsEl = titleActionsRef.current;
+    const headerEl = headerRef.current;
+    const sideEl = sideColumnRef.current;
+
+    const { pill: miniPill, art: miniArt, info: miniInfo, trans: miniTrans, scrub: miniScrub } = getMiniCoords();
 
     const collapseEase = 'cubic-bezier(0.32, 0.72, 0, 1)';
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
 
-    if (controlsEl) {
-      controlsEl.style.transition = 'opacity 160ms ease-out, transform 200ms ease-out';
-      controlsEl.style.opacity = '0';
-      controlsEl.style.transform = 'translate3d(0, 20px, 0)';
+    // Card background clips down into miniplayer pill
+    if (cardBgEl) {
+      const top = Math.max(0, miniPill.top);
+      const right = Math.max(0, vw - miniPill.right);
+      const bottom = Math.max(0, vh - miniPill.bottom);
+      const left = Math.max(0, miniPill.left);
+      cardBgEl.style.transition = `clip-path 380ms ${collapseEase}`;
+      cardBgEl.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px round 28px)`;
+    }
+
+    if (sheetEl) {
+      sheetEl.style.transition = `transform 380ms ${collapseEase}`;
+      sheetEl.style.transform = 'translate3d(0, 0, 0)';
+    }
+
+    // Artwork flies back down into miniplayer artwork
+    if (artEl && savedCoords.current.fullArt && savedCoords.current.fullArt.width > 0) {
+      const fullArt = savedCoords.current.fullArt;
+      const dx = miniArt.left - fullArt.left;
+      const dy = miniArt.top - fullArt.top;
+      const scale = miniArt.width / fullArt.width;
+      artEl.style.transformOrigin = '0 0';
+      artEl.style.transition = `transform 380ms ${collapseEase}, border-radius 360ms ease-out, opacity 340ms ease-out`;
+      artEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
+      artEl.style.borderRadius = '6px';
+    }
+
+    // Info flies back down into miniplayer LCD
+    if (infoEl && savedCoords.current.fullInfo && savedCoords.current.fullInfo.width > 0) {
+      const fullInfo = savedCoords.current.fullInfo;
+      const dx = miniInfo.left - fullInfo.left;
+      const dy = miniInfo.top - fullInfo.top;
+      const scale = Math.min(1, Math.max(0.55, miniInfo.height / fullInfo.height));
+      infoEl.style.transformOrigin = '0 0';
+      infoEl.style.transition = `transform 360ms ${collapseEase}, opacity 320ms ease-out`;
+      infoEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
+    }
+
+    // Transport flies back down into miniplayer transport
+    if (transEl && savedCoords.current.fullTrans && savedCoords.current.fullTrans.width > 0) {
+      const fullTrans = savedCoords.current.fullTrans;
+      const dx = (miniTrans.left + miniTrans.width / 2) - (fullTrans.left + fullTrans.width / 2);
+      const dy = (miniTrans.top + miniTrans.height / 2) - (fullTrans.top + fullTrans.height / 2);
+      const scale = Math.min(1, Math.max(0.7, miniTrans.height / fullTrans.height));
+      transEl.style.transformOrigin = 'center center';
+      transEl.style.transition = `transform 360ms ${collapseEase}, opacity 300ms ease-out`;
+      transEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
+    }
+
+    // Scrubber flies back down into miniplayer scrubber
+    if (scrubEl && savedCoords.current.fullScrub && savedCoords.current.fullScrub.width > 0) {
+      const fullScrub = savedCoords.current.fullScrub;
+      const dx = miniScrub.left - fullScrub.left;
+      const dy = miniScrub.top - fullScrub.top;
+      const scaleX = miniScrub.width / fullScrub.width;
+      scrubEl.style.transformOrigin = '0 0';
+      scrubEl.style.transition = `transform 360ms ${collapseEase}, opacity 280ms ease-out`;
+      scrubEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, 0.5)`;
+    }
+
+    if (extraEl) {
+      extraEl.style.transition = 'opacity 180ms ease-out, transform 200ms ease-out';
+      extraEl.style.opacity = '0';
+      extraEl.style.transform = 'translate3d(0, 16px, 0)';
+    }
+
+    if (actionsEl) {
+      actionsEl.style.transition = 'opacity 160ms ease-out';
+      actionsEl.style.opacity = '0';
+    }
+
+    if (headerEl) {
+      headerEl.style.transition = 'opacity 160ms ease-out';
+      headerEl.style.opacity = '0';
     }
 
     if (sideEl) {
@@ -511,32 +780,19 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       sideEl.style.opacity = '0';
     }
 
-    if (headerEl) {
-      headerEl.style.transition = 'opacity 140ms ease-out';
-      headerEl.style.opacity = '0';
-    }
-
-    if (artEl) {
-      artEl.style.transition = `transform 320ms ${collapseEase}, opacity 240ms ease-out`;
-      artEl.style.transform = 'translate3d(0, 30px, 0) scale(0.92)';
-      artEl.style.opacity = '0.6';
-    }
-
-    // Sheet slides down smoothly out of view
-    if (sheetEl) {
-      sheetEl.style.transition = `transform 340ms ${collapseEase}`;
-      sheetEl.style.transform = 'translate3d(0, 100%, 0)';
-    }
-
-    // Synchronously return PlayerBar immediately
-    setFullScreen(false);
+    // Seamless handoff: return PlayerBar visibility as collapse finishes landing
+    const handoffTimer = setTimeout(() => {
+      setFullScreen(false);
+    }, 260);
 
     if (collapseTimer.current) clearTimeout(collapseTimer.current);
     collapseTimer.current = setTimeout(() => {
+      clearTimeout(handoffTimer);
+      setFullScreen(false);
       phaseRef.current = 'collapsed';
       setPhase('collapsed');
       onDismissedRef.current?.();
-    }, 340);
+    }, 380);
   }, [setFullScreen]);
 
   // Synchronize when open prop changes
@@ -686,150 +942,152 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       onKeyDown={wake}
       style={theater && playing && idle ? { cursor: 'none' } : undefined}
     >
-      <MeshBackdrop artworkUrl={nowPlaying.artworkUrl} playing={playing} />
-      {theater && (
-        <div className="absolute inset-0 animate-fade-in bg-black">
-          <VideoSurface fit="contain" className="size-full" />
-        </div>
-      )}
+      {/* Background card with matched-geometry clip path */}
+      <div
+        ref={cardBgRef}
+        className="pointer-events-none absolute inset-0 will-change-[clip-path] drop-shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
+      >
+        <MeshBackdrop artworkUrl={nowPlaying.artworkUrl} playing={playing} />
+        {theater && (
+          <div className="absolute inset-0 animate-fade-in bg-black">
+            <VideoSurface fit="contain" className="size-full" />
+          </div>
+        )}
 
-      {/* Subtle glass inner highlight */}
-      <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_0_rgba(0,0,0,0.3)]" />
-
-      {/* Top grabber indicator matching Apple sheet gesture */}
-      <div className="pointer-events-none absolute inset-x-0 top-3 z-1 flex justify-center opacity-70">
-        <div className="h-1.5 w-10 rounded-full bg-white/35 backdrop-blur-md shadow-xs" />
+        {/* Subtle glass inner highlight */}
+        <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_0_rgba(0,0,0,0.3)]" />
       </div>
 
-      <div ref={headerRef} className="contents will-change-transform">
+      {/* Top Header Row (minimize chevron, gesture grabber, video quality & full screen) */}
+      <div
+        ref={headerRef}
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4 will-change-transform [&_button]:pointer-events-auto"
+      >
         <button
           ref={close}
-          className={`${corner} top-4 left-5 size-9 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white/90 hover:text-white flex items-center justify-center transition-all backdrop-blur-md shadow-sm`}
+          className={`${corner} size-9 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white/90 hover:text-white flex items-center justify-center transition-all backdrop-blur-md shadow-sm`}
           aria-label="Minimize"
           onClick={startCollapse}
         >
           <ChevronDown size={22} strokeWidth={2.5} />
         </button>
-        {/* The music video's quality, just inside the full-screen button. */}
-        {video && (
-          <VideoQuality
-            className={`absolute top-[18px] z-1${hidden}${
-              document.fullscreenEnabled
-                ? isDesktopApp()
-                  ? ' right-46'
-                  : ' right-15'
-                : isDesktopApp()
-                  ? ' right-36'
-                  : ' right-5'
-            }`}
-          />
-        )}
-        {video && document.fullscreenEnabled && (
-          <button
-            className={`${corner} top-4 ${isDesktopApp() ? 'right-36' : 'right-5'}`}
-            aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
-            onClick={toggleBrowserFullScreen}
-          >
-            {browserFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
-          </button>
-        )}
+
+        {/* Top grabber indicator matching Apple sheet gesture */}
+        <div className="pointer-events-none flex justify-center opacity-70">
+          <div className="h-1.5 w-10 rounded-full bg-white/35 backdrop-blur-md shadow-xs" />
+        </div>
+
+        <div className="flex items-center gap-2">
+          {video && <VideoQuality className={`relative z-1${hidden}`} />}
+          {video && document.fullscreenEnabled && (
+            <button
+              className={corner}
+              aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
+              onClick={toggleBrowserFullScreen}
+            >
+              {browserFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
+            </button>
+          )}
+        </div>
       </div>
 
-        {/* Apple's grid areas "controls lyrics": the artwork column, then the lyrics. */}
-        <div
+      {/* Apple's grid areas "controls lyrics": the artwork column, then the lyrics. */}
+      <div
+        className={
+          theater
+            ? `absolute inset-x-0 bottom-0 flex justify-center bg-[linear-gradient(to_top,rgb(0_0_0/0.72),rgb(0_0_0/0.35)_55%,transparent)] px-6 pt-32 pb-16 transition-opacity duration-300${hidden}`
+            : `grid h-full items-center justify-center gap-x-[clamp(48px,7vw,144px)] px-[clamp(24px,9vw,144px)] py-16 max-md:px-6 max-md:pb-18 ${
+                column
+                  ? 'grid-cols-[var(--art)_minmax(0,38vw)] max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-[minmax(0,1fr)_auto] max-md:items-stretch max-md:gap-y-4'
+                  : 'grid-cols-[var(--art)]'
+              }`
+        }
+        data-lyrics={column || undefined}
+      >
+        <section
           className={
-            theater
-              ? `absolute inset-x-0 bottom-0 flex justify-center bg-[linear-gradient(to_top,rgb(0_0_0/0.72),rgb(0_0_0/0.35)_55%,transparent)] px-6 pt-32 pb-16 transition-opacity duration-300${hidden}`
-              : `grid h-full items-center justify-center gap-x-[clamp(48px,7vw,144px)] px-[clamp(24px,9vw,144px)] py-16 max-md:px-6 max-md:pb-18 ${
-                  column
-                    ? 'grid-cols-[var(--art)_minmax(0,38vw)] max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-[minmax(0,1fr)_auto] max-md:items-stretch max-md:gap-y-4'
-                    : 'grid-cols-[var(--art)]'
-                }`
+            theater ? 'flex w-[min(720px,100%)] min-w-0 flex-col' : `flex w-(--art) min-w-0 flex-col${column ? ' max-md:order-2 max-md:w-full' : ''}`
           }
-          data-lyrics={column || undefined}
+          aria-label="Player"
         >
-          <section
-            className={
-              theater ? 'flex w-[min(720px,100%)] min-w-0 flex-col' : `flex w-(--art) min-w-0 flex-col${column ? ' max-md:order-2 max-md:w-full' : ''}`
-            }
-            aria-label="Player"
-          >
-            {/* FLIP artwork wrapper: morphs between miniplayer coordinates/size and full screen */}
-            <div ref={artworkMorphRef} className="relative flex items-center justify-center will-change-transform">
-              {/* Apple-style album artwork with rich 3D shadow and paused scale spring */}
-              <div
-                className={`relative w-(--art) rounded-[18px] md:rounded-[22px] shadow-[0_28px_70px_-12px_rgba(0,0,0,0.7),0_12px_28px_-8px_rgba(0,0,0,0.45)] transition-[transform] duration-500 ease-[cubic-bezier(0.34,1.3,0.64,1)] motion-reduce:transition-none${
-                  video && !squareVideoThumbnails ? ' aspect-video overflow-hidden bg-black' : ' aspect-square'
-                }${playing ? ' scale-100' : ' scale-[0.88]'}${column ? ' max-md:hidden' : ''}${theater ? ' hidden' : ''}`}
-              >
-                {nowPlaying.artworkUrl && (
-                  <>
-                    <img
-                      key={`glow-${nowPlaying.artworkUrl}`}
-                      // The radiosity glow: a small copy, blurred and saturated, behind the artwork.
-                      className={`${artworkLayer} -z-1 translate-y-3 scale-95 blur-[42px] saturate-200 data-loaded:opacity-60`}
-                      src={sizedArtwork(nowPlaying.artworkUrl, 60)}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      decoding="async"
-                      onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
-                    />
-                    <img
-                      key={nowPlaying.artworkUrl}
-                      className={`${artworkLayer} bg-[#ffffff12] shadow-[0_4px_10px_#0000001a] data-loaded:opacity-100`}
-                      src={sizedArtwork(nowPlaying.artworkUrl, 600)}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      decoding="async"
-                      onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
-                    />
-                  </>
-                )}
-                {/* Subtle glass inner stroke */}
-                <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0.5px_0_0.5px_rgba(255,255,255,0.22),inset_0_0_0_1px_rgba(0,0,0,0.15)]" />
-
-                {/* Apple's motion artwork, over the cover once it's playing. */}
-                {motion && (
-                  <MotionArtwork
-                    key={motion.url}
-                    motion={motion}
-                    className="absolute inset-0 size-full rounded-[inherit] object-cover opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
-                    playing={playing}
+          {/* FLIP artwork wrapper: morphs between miniplayer coordinates/size and full screen */}
+          <div ref={artworkMorphRef} className="relative flex items-center justify-center will-change-transform">
+            {/* Apple-style album artwork with rich 3D shadow and paused scale spring */}
+            <div
+              className={`relative w-(--art) rounded-[18px] md:rounded-[22px] shadow-[0_28px_70px_-12px_rgba(0,0,0,0.7),0_12px_28px_-8px_rgba(0,0,0,0.45)] transition-[transform] duration-500 ease-[cubic-bezier(0.34,1.3,0.64,1)] motion-reduce:transition-none${
+                video && !squareVideoThumbnails ? ' aspect-video overflow-hidden bg-black' : ' aspect-square'
+              }${playing ? ' scale-100' : ' scale-[0.88]'}${column ? ' max-md:hidden' : ''}${theater ? ' hidden' : ''}`}
+            >
+              {nowPlaying.artworkUrl && (
+                <>
+                  <img
+                    key={`glow-${nowPlaying.artworkUrl}`}
+                    // The radiosity glow: a small copy, blurred and saturated, behind the artwork.
+                    className={`${artworkLayer} -z-1 translate-y-3 scale-95 blur-[42px] saturate-200 data-loaded:opacity-60`}
+                    src={sizedArtwork(nowPlaying.artworkUrl, 60)}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    decoding="async"
+                    onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
                   />
-                )}
-                {video && !theater && <VideoSurface className="absolute inset-0" />}
-              </div>
-            </div>
+                  <img
+                    key={nowPlaying.artworkUrl}
+                    className={`${artworkLayer} bg-[#ffffff12] shadow-[0_4px_10px_#0000001a] data-loaded:opacity-100`}
+                    src={sizedArtwork(nowPlaying.artworkUrl, 600)}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    decoding="async"
+                    onLoad={(e) => e.currentTarget.setAttribute('data-loaded', '')}
+                  />
+                </>
+              )}
+              {/* Subtle glass inner stroke */}
+              <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0.5px_0_0.5px_rgba(255,255,255,0.22),inset_0_0_0_1px_rgba(0,0,0,0.15)]" />
 
-            <div ref={controlsRef} className="flex flex-col will-change-transform">
-              <div className={`flex items-center gap-4${theater ? '' : ' mt-[clamp(20px,3.2vh,32px)]'}${column ? ' max-md:mt-0' : ''}`}>
-                {/* Apple Music large bold title and artist */}
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <div className="flex min-w-0 items-center gap-2">
+              {/* Apple's motion artwork, over the cover once it's playing. */}
+              {motion && (
+                <MotionArtwork
+                  key={motion.url}
+                  motion={motion}
+                  className="absolute inset-0 size-full rounded-[inherit] object-cover opacity-0 transition-opacity duration-600 ease-in data-ready:opacity-100"
+                  playing={playing}
+                />
+              )}
+              {video && !theater && <VideoSurface className="absolute inset-0" />}
+            </div>
+          </div>
+
+          <div className="flex flex-col">
+            <div className={`flex items-center gap-4${theater ? '' : ' mt-[clamp(20px,3.2vh,32px)]'}${column ? ' max-md:mt-0' : ''}`}>
+              {/* Apple Music large bold title and artist */}
+              <div ref={infoMorphRef} className="flex min-w-0 flex-1 flex-col gap-1 will-change-transform">
+                <div className="flex min-w-0 items-center gap-2">
+                  <PageLink
+                    className={`min-w-0 max-w-full self-start truncate type-[700_22px/28px] md:type-[700_26px/32px] tracking-tight text-white drop-shadow-sm ${pageLink}`}
+                    href={albumHref(album?.id ?? null)}
+                    resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
+                  >
+                    {title}
+                  </PageLink>
+                  {track?.explicit && <ExplicitBadge size={15} />}
+                </div>
+                <span className="truncate type-[500_15px/20px] md:type-[500_17px/22px] text-white/70 tracking-normal">
+                  {artist && <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} className={pageLink} />}
+                  {artist && album?.name && ' — '}
+                  {album?.name && (
                     <PageLink
-                      className={`min-w-0 max-w-full self-start truncate type-[700_22px/28px] md:type-[700_26px/32px] tracking-tight text-white drop-shadow-sm ${pageLink}`}
-                      href={albumHref(album?.id ?? null)}
+                      className={pageLink}
+                      href={albumHref(album.id ?? null)}
                       resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
                     >
-                      {title}
+                      {album.name}
                     </PageLink>
-                    {track?.explicit && <ExplicitBadge size={15} />}
-                  </div>
-                  <span className="truncate type-[500_15px/20px] md:type-[500_17px/22px] text-white/70 tracking-normal">
-                    {artist && <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} className={pageLink} />}
-                    {artist && album?.name && ' — '}
-                    {album?.name && (
-                      <PageLink
-                        className={pageLink}
-                        href={albumHref(album.id ?? null)}
-                        resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
-                      >
-                        {album.name}
-                      </PageLink>
-                    )}
-                  </span>
-                  <NerdStats />
-                </div>
+                  )}
+                </span>
+                <NerdStats />
+              </div>
+
+              <div ref={titleActionsRef} className="flex items-center gap-2 will-change-transform">
                 <FavoriteButton
                   videoId={nowPlaying.videoId}
                   className="grid size-9 flex-none place-items-center rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white transition-all shadow-sm"
@@ -843,9 +1101,17 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
                   />
                 )}
               </div>
+            </div>
 
+            <div ref={scrubberMorphRef} className="will-change-transform">
               <Scrubber />
+            </div>
+
+            <div ref={transportMorphRef} className="will-change-transform">
               <Transport />
+            </div>
+
+            <div ref={extraControlsRef} className="flex flex-col will-change-transform">
               <PlayerVolumeBar />
               <PlayerActionRow
                 showLyrics={showLyrics}
@@ -854,27 +1120,28 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
                 onToggleQueue={() => togglePanel('queue')}
               />
             </div>
-          </section>
+          </div>
+        </section>
 
-          {column && (
-            <div ref={sideColumnRef} className="flex min-h-0 self-stretch will-change-transform">
-              {showLyrics && (
-                <section className="flex size-full min-h-0 animate-fade-in" aria-label="Lyrics">
-                  <LyricsPanel variant="full" />
-                </section>
-              )}
-              {showQueue && (
-                // Up Next in the right-hand column: the side panel's list, laid out as a column.
-                <section
-                  className="flex size-full min-h-0 animate-fade-in flex-col [mask-image:linear-gradient(180deg,#000_calc(100%-80px),transparent)]"
-                  aria-label="Up Next"
-                >
-                  <UpNext />
-                </section>
-              )}
-            </div>
-          )}
-        </div>
+        {column && (
+          <div ref={sideColumnRef} className="flex min-h-0 self-stretch will-change-transform">
+            {showLyrics && (
+              <section className="flex size-full min-h-0 animate-fade-in" aria-label="Lyrics">
+                <LyricsPanel variant="full" />
+              </section>
+            )}
+            {showQueue && (
+              // Up Next in the right-hand column: the side panel's list, laid out as a column.
+              <section
+                className="flex size-full min-h-0 animate-fade-in flex-col [mask-image:linear-gradient(180deg,#000_calc(100%-80px),transparent)]"
+                aria-label="Up Next"
+              >
+                <UpNext />
+              </section>
+            )}
+          </div>
+        )}
       </div>
+    </div>
   );
 }

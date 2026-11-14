@@ -66,7 +66,7 @@ export function PlayerBar() {
         role="region"
         aria-label="Player"
       >
-        <div className="flex items-center justify-between pr-2">
+        <div id="miniplayer-transport" className="flex items-center justify-between pr-2">
           <button className={toggle} aria-label="Shuffle" aria-pressed={shuffle} onClick={toggleShuffle}>
             <ShuffleIcon size={28} />
           </button>

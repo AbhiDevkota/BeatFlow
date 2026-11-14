@@ -152,7 +152,10 @@ export function Lcd() {
         </span>
       </button>
       {/* Over the seek line, the names soften into the background so the times can sit over them. */}
-      <div className="flex min-w-0 flex-col transition-[filter,opacity] group-has-[[data-scrubber]:hover]/lcd:opacity-30 group-has-[[data-scrubber]:hover]/lcd:blur-[3px] group-has-[[data-dragging]]/lcd:opacity-30 group-has-[[data-dragging]]/lcd:blur-[3px]">
+      <div
+        id="miniplayer-info"
+        className="flex min-w-0 flex-col transition-[filter,opacity] group-has-[[data-scrubber]:hover]/lcd:opacity-30 group-has-[[data-scrubber]:hover]/lcd:blur-[3px] group-has-[[data-dragging]]/lcd:opacity-30 group-has-[[data-dragging]]/lcd:blur-[3px]"
+      >
         {title ? (
           // The song's name opens its album; an explicit song carries the E after it.
           <div className="flex min-w-0 items-center gap-1.5">
@@ -198,6 +201,7 @@ function Progress() {
   return (
     // The hit area: taller than the 2px line it carries.
     <div
+      id="miniplayer-scrubber"
       className="group/scrub absolute inset-x-0 bottom-0 h-3.5 cursor-pointer touch-none"
       data-scrubber
       data-dragging={dragging || undefined}
