@@ -302,6 +302,7 @@ export async function downloadTrack(
     // video id); otherwise run the normal provider chain. Bounded so a slow
     // lyric server can't hold a finished download up.
     let lyricsText: string | undefined;
+    let lyricsTtml: string | undefined;
     try {
       const { lookupLyrics } = await import('@/lyrics/repository');
       const canonicalId = getCanonicalVideoId(track.videoId) ?? track.videoId;
@@ -330,6 +331,7 @@ export async function downloadTrack(
             return `${time}${line.text}`;
           })
           .join('\n');
+        if (lyrics.ttml) lyricsTtml = lyrics.ttml;
       }
     } catch {}
 
@@ -342,6 +344,7 @@ export async function downloadTrack(
       extension,
       thumbnailUrl: resolvedThumbnailUrl ?? undefined,
       lyrics: lyricsText,
+      lyricsTtml: lyricsTtml,
       album: resolvedAlbum ?? undefined,
       durationSec: resolvedDurationSec,
       source: resolvedSource,

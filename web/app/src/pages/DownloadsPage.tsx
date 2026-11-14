@@ -24,6 +24,7 @@ import { detailButton } from '@/components/music/DetailHeader';
 import { stateStyles } from '@/components/music/States';
 import { TrackList, type DownloadRowMeta } from '@/components/music/TrackList';
 import { playList, shuffleList } from '@/components/music/play';
+import { formatDuration } from '@/components/music/links';
 import {
   toTrackFromDownloaded,
   useDownloadsStore,
@@ -293,7 +294,6 @@ export default function DownloadsPage() {
   const isDesktop = isDesktopApp();
   const navigate = useNavigate();
   const downloaded = useDownloadsStore((s) => s.downloaded);
-  const activeDownloads = useDownloadsStore((s) => s.activeDownloads);
   const initialized = useDownloadsStore((s) => s.initialized);
   const error = useDownloadsStore((s) => s.error);
   const refresh = useDownloadsStore((s) => s.refresh);
@@ -358,11 +358,7 @@ export default function DownloadsPage() {
 
   const filteredTracks = useMemo<Track[]>(() => filtered.map(toTrackFromDownloaded), [filtered]);
   const totalBytes = useMemo(() => downloaded.reduce((sum, item) => sum + item.size, 0), [downloaded]);
-  const covers = useMemo(
-    () => downloaded.flatMap((item) => (item.thumbnail ? [item.thumbnail] : [])).slice(0, 4),
-    [downloaded],
-  );
-  const activeList = Object.values(activeDownloads);
+  const totalDurationSec = useMemo(() => downloaded.reduce((sum, item) => sum + (item.durationSec || 0), 0), [downloaded]);
   const filtersActive = query.trim().length > 0;
   const clearFilters = () => {
     setQuery('');
@@ -403,7 +399,7 @@ export default function DownloadsPage() {
 
   const metaLine =
     tracks.length > 0
-      ? `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} · ${formatBytes(totalBytes)}`
+      ? `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} · ${formatDuration(totalDurationSec)}`
       : 'Songs you save for offline listening will live here.';
 
   return (
@@ -420,9 +416,8 @@ export default function DownloadsPage() {
         </button>
       </div>
 
-      <section className="mx-(--body-gutter) mt-5 grid grid-cols-[auto_minmax(0,1fr)] items-end gap-x-8 gap-y-5 max-md:grid-cols-1 max-md:justify-items-center max-md:text-center">
-        <HeroMosaic covers={covers} />
-        <div className="flex min-w-0 flex-col pb-1 max-md:items-center">
+      <section className="mx-(--body-gutter) mt-5 flex flex-col items-center gap-5 text-center max-md:items-center">
+        <div className="flex min-w-0 flex-col items-center">
           <h1 className="type-header-emphasized">Downloads</h1>
           <p className="mt-1 type-callout-emphasized text-secondary">{metaLine}</p>
           {tracks.length > 0 && (
@@ -450,7 +445,6 @@ export default function DownloadsPage() {
         </div>
       </section>
 
-      {activeList.length > 0 && <ActiveDownloadsPanel downloads={activeList} />}
       {error && <RefreshError message={error} />}
 
       {tracks.length > 0 && (

@@ -295,6 +295,7 @@ export interface BridgeMethods {
       extension?: string;
       thumbnailUrl?: string;
       lyrics?: string;
+      lyricsTtml?: string;
       album?: string;
       durationSec?: number;
       source?: string;

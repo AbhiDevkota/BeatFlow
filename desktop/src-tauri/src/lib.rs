@@ -885,15 +885,21 @@ struct DownloadMeta {
   source: Option<String>,
 }
 
-fn download_meta_path(songs_dir: &Path, stem: &str) -> PathBuf {
-  songs_dir.join(format!("{}.beatflow.json", stem))
+fn download_meta_path(base_dir: &Path, stem: &str) -> PathBuf {
+  base_dir.join(format!("{}.beatflow.json", stem))
 }
 
 fn read_download_meta(songs_dir: &Path, stem: &str) -> DownloadMeta {
-  fs::read_to_string(download_meta_path(songs_dir, stem))
-    .ok()
-    .and_then(|raw| serde_json::from_str(&raw).ok())
-    .unwrap_or_default()
+  // Prefer the metadata kept beside (but not inside) the songs folder; fall
+  // back to the legacy sidecar that used to live next to the audio.
+  for base in [get_music_dir(), songs_dir.to_path_buf()] {
+    if let Ok(raw) = fs::read_to_string(download_meta_path(&base, stem)) {
+      if let Ok(meta) = serde_json::from_str(&raw) {
+        return meta;
+      }
+    }
+  }
+  DownloadMeta::default()
 }
 
 
@@ -2053,7 +2059,8 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
               let thumbnail = thumbnail_path_for(&thumbs_dir, stem)
                 .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("beatflow://thumbnail/{}", f)));
 
-              let has_lyrics = lyrics_dir.join(format!("{}.lrc", stem)).exists();
+              let has_lyrics = lyrics_dir.join(format!("{}.lrc", stem)).exists()
+                || lyrics_dir.join(format!("{}.ttml", stem)).exists();
               let meta = read_download_meta(&songs_dir, stem);
 
               items.push(json!({
@@ -2092,6 +2099,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       let ext_param = params.get("extension").and_then(|v| v.as_str()).unwrap_or("m4a");
       let thumbnail_url = params.get("thumbnailUrl").and_then(|v| v.as_str());
       let lyrics_text = params.get("lyrics").and_then(|v| v.as_str());
+      let lyrics_ttml = params.get("lyricsTtml").and_then(|v| v.as_str());
       let album = params.get("album").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
       let duration_sec = params.get("durationSec").and_then(|v| v.as_u64()).map(|d| d as u32);
       let source = params.get("source").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
@@ -2186,7 +2194,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       };
       if meta.album.is_some() || meta.duration_sec.is_some() || meta.source.is_some() {
         if let Ok(raw) = serde_json::to_string_pretty(&meta) {
-          let _ = fs::write(download_meta_path(&songs_dir, &file_stem), raw);
+          let _ = fs::write(download_meta_path(&get_music_dir(), &file_stem), raw);
         }
       }
 
@@ -2194,6 +2202,12 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       if let Some(l_text) = lyrics_text && !l_text.is_empty() {
         let lyrics_path = get_lyrics_dir().join(format!("{}.lrc", file_stem));
         let _ = fs::write(&lyrics_path, l_text);
+      }
+      // Save TTML lyrics when the chosen provider sent them, so offline playback
+      // can render word-synced lyrics without the network.
+      if let Some(t_text) = lyrics_ttml && !t_text.is_empty() {
+        let ttml_path = get_lyrics_dir().join(format!("{}.ttml", file_stem));
+        let _ = fs::write(&ttml_path, t_text);
       }
 
       // If an old .mpd file exists with the same stem, delete it
@@ -2235,6 +2249,8 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
           let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.{}", stem, ext)));
         }
         let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.lrc", stem)));
+        let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.ttml", stem)));
+        let _ = fs::remove_file(download_meta_path(&get_music_dir(), stem));
         let _ = fs::remove_file(download_meta_path(&get_songs_dir(), stem));
       }
       Ok(json!({ "deleted": deleted, "fileName": file_name }))
