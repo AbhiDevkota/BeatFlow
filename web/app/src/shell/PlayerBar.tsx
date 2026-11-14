@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { meshPalette } from '@/lib/meshPalette';
 import { BeatLoader } from '@/components/music/BeatLoader';
 import {
   BackwardIcon,
@@ -32,7 +33,12 @@ export function PlayerBar() {
   const sidePanel = useUi((s) => s.sidePanel);
   const toggleSidePanel = useUi((s) => s.toggleSidePanel);
   const fullScreen = useUi((s) => s.fullScreen);
+  const artworkUrl = usePlayer((s) => s.nowPlaying?.artworkUrl);
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
+
+  useEffect(() => {
+    if (artworkUrl) void meshPalette(artworkUrl);
+  }, [artworkUrl]);
   const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying));
   // The queue's entry for what's playing: the track menu needs the full track.
   const track = usePlayer((s) => {

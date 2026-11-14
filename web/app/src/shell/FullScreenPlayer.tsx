@@ -339,7 +339,6 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const enteredBrowserFullScreen = useRef(false);
 
   // Animation & gesture refs
-  const containerRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const artworkMorphRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -348,8 +347,6 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
   const phaseRef = useRef<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
   const [, setPhase] = useState<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
-  const savedPillCoords = useRef({ top: 0, right: 0, bottom: 0, left: 0, radius: 28 });
-  const savedArtCoords = useRef({ dx: 0, dy: 0, scale: 0.1 });
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDismissedRef = useRef(onDismissed);
 
@@ -391,114 +388,71 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     };
   }, []);
 
-  // FLIP Card Morph Expand Animation on Mount
+  // Hardware-accelerated Bottom Sheet Spring Expansion on Mount
   useLayoutEffect(() => {
-    const pillEl = document.getElementById('miniplayer-pill');
-    const miniArtEl = document.getElementById('miniplayer-artwork');
     const sheetEl = sheetRef.current;
     const artEl = artworkMorphRef.current;
     const controlsEl = controlsRef.current;
     const sideEl = sideColumnRef.current;
     const headerEl = headerRef.current;
 
-    if (!sheetEl || !artEl) return;
+    if (!sheetEl) return;
 
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-
-    let top = vh - 80;
-    let left = 24;
-    let bottom = 20;
-    let right = 24;
-    let radius = 28;
-
-    if (pillEl) {
-      const pr = pillEl.getBoundingClientRect();
-      if (pr.width > 0 && pr.height > 0) {
-        top = Math.round(pr.top);
-        left = Math.round(pr.left);
-        bottom = Math.round(vh - pr.bottom);
-        right = Math.round(vw - pr.right);
-        radius = Math.round(pr.height / 2);
-      }
-    }
-
-    savedPillCoords.current = { top, right, bottom, left, radius };
-
-    let artDx = 0;
-    let artDy = vh * 0.35;
-    let artScale = 0.1;
-
-    if (miniArtEl) {
-      const mr = miniArtEl.getBoundingClientRect();
-      const ar = artEl.getBoundingClientRect();
-      if (ar.width > 0 && mr.width > 0) {
-        artScale = mr.width / ar.width;
-        artDx = (mr.left + mr.width / 2) - (ar.left + ar.width / 2);
-        artDy = (mr.top + mr.height / 2) - (ar.top + ar.height / 2);
-      }
-    }
-
-    savedArtCoords.current = { dx: artDx, dy: artDy, scale: artScale };
-
-    // 1. Immediately clip the sheet to the miniplayer pill's exact bounds before paint
+    // 1. Position sheet at bottom of screen before paint
     sheetEl.style.transition = 'none';
-    sheetEl.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px round ${radius}px)`;
+    sheetEl.style.transform = 'translate3d(0, 100%, 0)';
 
-    // 2. Position artwork at miniplayer artwork coordinates & scale before paint
-    artEl.style.transition = 'none';
-    artEl.style.transformOrigin = 'center center';
-    artEl.style.transform = `translate3d(${artDx}px, ${artDy}px, 0) scale(${artScale})`;
-    artEl.style.borderRadius = `${Math.round(6 / Math.max(artScale, 0.01))}px`;
-
-    // 3. Stagger controls out of view
+    if (artEl) {
+      artEl.style.transition = 'none';
+      artEl.style.transform = 'translate3d(0, 36px, 0) scale(0.92)';
+      artEl.style.opacity = '0.6';
+    }
     if (controlsEl) {
       controlsEl.style.transition = 'none';
       controlsEl.style.opacity = '0';
-      controlsEl.style.transform = 'translate3d(0, 36px, 0)';
+      controlsEl.style.transform = 'translate3d(0, 28px, 0)';
     }
     if (sideEl) {
       sideEl.style.transition = 'none';
       sideEl.style.opacity = '0';
-      sideEl.style.transform = 'translate3d(30px, 0, 0)';
+      sideEl.style.transform = 'translate3d(24px, 0, 0)';
     }
     if (headerEl) {
       headerEl.style.transition = 'none';
       headerEl.style.opacity = '0';
-      headerEl.style.transform = 'translate3d(0, -14px, 0)';
     }
 
     // Force reflow
     void sheetEl.offsetHeight;
 
-    // 4. Smoothly blossom out into full-screen sheet with Apple's signature spring curve
-    const easeApple = 'cubic-bezier(0.22, 1, 0.36, 1)';
+    // 2. Smoothly glide up with Apple's fluid spring curve
+    const easeApple = 'cubic-bezier(0.25, 1, 0.35, 1)';
     const rafId = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         phaseRef.current = 'expanding';
         setPhase('expanding');
 
-        sheetEl.style.transition = `clip-path 500ms ${easeApple}`;
-        sheetEl.style.clipPath = 'inset(0px 0px 0px 0px round 0px)';
+        sheetEl.style.transition = `transform 420ms ${easeApple}`;
+        sheetEl.style.transform = 'translate3d(0, 0, 0)';
 
-        artEl.style.transition = `transform 500ms ${easeApple}, border-radius 500ms ${easeApple}`;
-        artEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
-        artEl.style.borderRadius = '18px';
-
+        if (artEl) {
+          artEl.style.transition = `transform 440ms ${easeApple}, opacity 360ms ease-out`;
+          artEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+          artEl.style.opacity = '1';
+        }
         if (controlsEl) {
-          controlsEl.style.transition = `opacity 380ms ${easeApple} 100ms, transform 460ms ${easeApple} 100ms`;
+          controlsEl.style.transition = `opacity 340ms ease-out 80ms, transform 420ms ${easeApple} 80ms`;
           controlsEl.style.opacity = '1';
           controlsEl.style.transform = 'translate3d(0, 0, 0)';
         }
         if (sideEl) {
-          sideEl.style.transition = `opacity 380ms ${easeApple} 120ms, transform 460ms ${easeApple} 120ms`;
+          sideEl.style.transition = `opacity 340ms ease-out 100ms, transform 420ms ${easeApple} 100ms`;
           sideEl.style.opacity = '1';
           sideEl.style.transform = 'translate3d(0, 0, 0)';
         }
         if (headerEl) {
-          headerEl.style.transition = `opacity 340ms ${easeApple} 120ms, transform 400ms ${easeApple} 120ms`;
+          headerEl.style.transition = 'opacity 300ms ease-out 100ms';
           headerEl.style.opacity = '1';
-          headerEl.style.transform = 'translate3d(0, 0, 0)';
         }
       });
     });
@@ -507,9 +461,12 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       phaseRef.current = 'expanded';
       setPhase('expanded');
       sheetEl.style.transition = '';
-      sheetEl.style.clipPath = '';
-      artEl.style.transition = '';
-      artEl.style.transform = '';
+      sheetEl.style.transform = '';
+      if (artEl) {
+        artEl.style.transition = '';
+        artEl.style.transform = '';
+        artEl.style.opacity = '';
+      }
       if (controlsEl) {
         controlsEl.style.transition = '';
         controlsEl.style.transform = '';
@@ -520,9 +477,8 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       }
       if (headerEl) {
         headerEl.style.transition = '';
-        headerEl.style.transform = '';
       }
-    }, 520);
+    }, 480);
 
     return () => {
       cancelAnimationFrame(rafId);
@@ -530,80 +486,49 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     };
   }, []);
 
-  // Collapse / Minimize Animation back into Miniplayer Pill
+  // Collapse / Minimize Animation
   const startCollapse = useCallback(() => {
     if (phaseRef.current === 'collapsing' || phaseRef.current === 'collapsed') return;
     phaseRef.current = 'collapsing';
     setPhase('collapsing');
 
-    const pillEl = document.getElementById('miniplayer-pill');
-    const miniArtEl = document.getElementById('miniplayer-artwork');
     const sheetEl = sheetRef.current;
-    const artEl = artworkMorphRef.current;
     const controlsEl = controlsRef.current;
     const sideEl = sideColumnRef.current;
     const headerEl = headerRef.current;
-
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-
-    let { top, right, bottom, left, radius } = savedPillCoords.current;
-    if (pillEl) {
-      const pr = pillEl.getBoundingClientRect();
-      if (pr.width > 0 && pr.height > 0) {
-        top = Math.round(pr.top);
-        left = Math.round(pr.left);
-        bottom = Math.round(vh - pr.bottom);
-        right = Math.round(vw - pr.right);
-        radius = Math.round(pr.height / 2);
-      }
-    }
-
-    let { dx: artDx, dy: artDy, scale: artScale } = savedArtCoords.current;
-    if (miniArtEl && artEl) {
-      const mr = miniArtEl.getBoundingClientRect();
-      const ar = artEl.getBoundingClientRect();
-      if (ar.width > 0 && mr.width > 0) {
-        artScale = mr.width / ar.width;
-        artDx = (mr.left + mr.width / 2) - (ar.left + ar.width / 2);
-        artDy = (mr.top + mr.height / 2) - (ar.top + ar.height / 2);
-      }
-    }
+    const artEl = artworkMorphRef.current;
 
     const collapseEase = 'cubic-bezier(0.32, 0.72, 0, 1)';
 
     if (controlsEl) {
-      controlsEl.style.transition = `opacity 180ms ease-out, transform 240ms ${collapseEase}`;
+      controlsEl.style.transition = 'opacity 160ms ease-out, transform 200ms ease-out';
       controlsEl.style.opacity = '0';
-      controlsEl.style.transform = 'translate3d(0, 24px, 0)';
+      controlsEl.style.transform = 'translate3d(0, 20px, 0)';
     }
 
     if (sideEl) {
-      sideEl.style.transition = `opacity 180ms ease-out, transform 240ms ${collapseEase}`;
+      sideEl.style.transition = 'opacity 160ms ease-out';
       sideEl.style.opacity = '0';
-      sideEl.style.transform = 'translate3d(24px, 0, 0)';
     }
 
     if (headerEl) {
-      headerEl.style.transition = 'opacity 150ms ease-out, transform 180ms ease-out';
+      headerEl.style.transition = 'opacity 140ms ease-out';
       headerEl.style.opacity = '0';
-      headerEl.style.transform = 'translate3d(0, -12px, 0)';
     }
 
     if (artEl) {
-      artEl.style.transition = `transform 400ms ${collapseEase}, border-radius 400ms ${collapseEase}`;
-      artEl.style.transformOrigin = 'center center';
-      artEl.style.transform = `translate3d(${artDx}px, ${artDy}px, 0) scale(${artScale})`;
-      artEl.style.borderRadius = `${Math.round(6 / Math.max(artScale, 0.01))}px`;
+      artEl.style.transition = `transform 320ms ${collapseEase}, opacity 240ms ease-out`;
+      artEl.style.transform = 'translate3d(0, 30px, 0) scale(0.92)';
+      artEl.style.opacity = '0.6';
     }
 
+    // Sheet slides down smoothly out of view
     if (sheetEl) {
-      sheetEl.style.transition = `clip-path 400ms ${collapseEase}, transform 400ms ${collapseEase}, border-radius 400ms ${collapseEase}`;
-      sheetEl.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px round ${radius}px)`;
-      sheetEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+      sheetEl.style.transition = `transform 340ms ${collapseEase}`;
+      sheetEl.style.transform = 'translate3d(0, 100%, 0)';
     }
 
-    // Synchronously signal fullScreen to false so PlayerBar begins returning smoothly
+    // Synchronously return PlayerBar immediately
     setFullScreen(false);
 
     if (collapseTimer.current) clearTimeout(collapseTimer.current);
@@ -611,7 +536,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       phaseRef.current = 'collapsed';
       setPhase('collapsed');
       onDismissedRef.current?.();
-    }, 400);
+    }, 340);
   }, [setFullScreen]);
 
   // Synchronize when open prop changes
@@ -688,12 +613,8 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
     if (drag.isDragging && sheetRef.current) {
       const pullY = Math.max(0, dy);
-      const scale = Math.max(0.85, 1 - (pullY / window.innerHeight) * 0.2);
-      const radius = Math.min(36, 12 + (pullY / 150) * 24);
-
       sheetRef.current.style.transition = 'none';
-      sheetRef.current.style.transform = `translate3d(0, ${pullY}px, 0) scale(${scale})`;
-      sheetRef.current.style.borderRadius = `${radius}px`;
+      sheetRef.current.style.transform = `translate3d(0, ${pullY}px, 0)`;
     }
   };
 
@@ -715,13 +636,12 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     }
 
     if (wasDragging) {
-      if (dy > 120) {
+      if (dy > 100) {
         startCollapse();
       } else if (sheetRef.current) {
-        const easeApple = 'cubic-bezier(0.22, 1, 0.36, 1)';
-        sheetRef.current.style.transition = `transform 340ms ${easeApple}, border-radius 340ms ${easeApple}`;
-        sheetRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)';
-        sheetRef.current.style.borderRadius = '0px';
+        const easeApple = 'cubic-bezier(0.25, 1, 0.35, 1)';
+        sheetRef.current.style.transition = `transform 300ms ${easeApple}`;
+        sheetRef.current.style.transform = 'translate3d(0, 0, 0)';
       }
     }
   };
@@ -751,9 +671,9 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
   return (
     <div
-      ref={containerRef}
-      // Over everything but menus and dialogs, which portal above it. Outer drop-shadow frames the expanding card.
-      className="fixed inset-0 z-[calc(var(--z-contextual-menus)-2)] isolate overflow-hidden text-primary [--art:min(35vw,calc(100dvh-310px),520px)] motion-reduce:transition-none max-md:[--art:min(86vw,calc(100dvh-340px),420px)] [filter:drop-shadow(0_25px_60px_rgba(0,0,0,0.65))]"
+      ref={sheetRef}
+      // Over everything but menus and dialogs, which portal above it. Pure GPU compositor layer for 120 FPS.
+      className="fixed inset-0 z-[calc(var(--z-contextual-menus)-2)] isolate overflow-hidden text-primary will-change-transform [--art:min(35vw,calc(100dvh-310px),520px)] motion-reduce:transition-none max-md:[--art:min(86vw,calc(100dvh-340px),420px)] shadow-[0_-12px_44px_rgba(0,0,0,0.45)]"
       role="dialog"
       aria-modal="true"
       aria-label="Now Playing"
@@ -764,61 +684,56 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       onKeyDown={wake}
+      style={theater && playing && idle ? { cursor: 'none' } : undefined}
     >
-      {/* Morphing Card Sheet: clipped to the exact miniplayer bounds then expands outward */}
-      <div
-        ref={sheetRef}
-        className="absolute inset-0 size-full overflow-hidden will-change-[clip-path,transform]"
-        style={theater && playing && idle ? { cursor: 'none' } : undefined}
-      >
-        <MeshBackdrop artworkUrl={nowPlaying.artworkUrl} playing={playing} />
-        {theater && (
-          <div className="absolute inset-0 animate-fade-in bg-black">
-            <VideoSurface fit="contain" className="size-full" />
-          </div>
+      <MeshBackdrop artworkUrl={nowPlaying.artworkUrl} playing={playing} />
+      {theater && (
+        <div className="absolute inset-0 animate-fade-in bg-black">
+          <VideoSurface fit="contain" className="size-full" />
+        </div>
+      )}
+
+      {/* Subtle glass inner highlight */}
+      <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_0_rgba(0,0,0,0.3)]" />
+
+      {/* Top grabber indicator matching Apple sheet gesture */}
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-1 flex justify-center opacity-70">
+        <div className="h-1.5 w-10 rounded-full bg-white/35 backdrop-blur-md shadow-xs" />
+      </div>
+
+      <div ref={headerRef} className="contents will-change-transform">
+        <button
+          ref={close}
+          className={`${corner} top-4 left-5 size-9 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white/90 hover:text-white flex items-center justify-center transition-all backdrop-blur-md shadow-sm`}
+          aria-label="Minimize"
+          onClick={startCollapse}
+        >
+          <ChevronDown size={22} strokeWidth={2.5} />
+        </button>
+        {/* The music video's quality, just inside the full-screen button. */}
+        {video && (
+          <VideoQuality
+            className={`absolute top-[18px] z-1${hidden}${
+              document.fullscreenEnabled
+                ? isDesktopApp()
+                  ? ' right-46'
+                  : ' right-15'
+                : isDesktopApp()
+                  ? ' right-36'
+                  : ' right-5'
+            }`}
+          />
         )}
-
-        {/* Subtle glass inner highlight */}
-        <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.22),inset_0_-0.5px_0_0_rgba(0,0,0,0.3)]" />
-
-        {/* Top grabber indicator matching Apple sheet gesture */}
-        <div className="pointer-events-none absolute inset-x-0 top-3 z-1 flex justify-center opacity-70">
-          <div className="h-1.5 w-10 rounded-full bg-white/35 backdrop-blur-md shadow-xs" />
-        </div>
-
-        <div ref={headerRef} className="contents will-change-transform">
+        {video && document.fullscreenEnabled && (
           <button
-            ref={close}
-            className={`${corner} top-4 left-5 size-9 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white/90 hover:text-white flex items-center justify-center transition-all backdrop-blur-md shadow-sm`}
-            aria-label="Minimize"
-            onClick={startCollapse}
+            className={`${corner} top-4 ${isDesktopApp() ? 'right-36' : 'right-5'}`}
+            aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
+            onClick={toggleBrowserFullScreen}
           >
-            <ChevronDown size={22} strokeWidth={2.5} />
+            {browserFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
           </button>
-          {/* The music video's quality, just inside the full-screen button. */}
-          {video && (
-            <VideoQuality
-              className={`absolute top-[18px] z-1${hidden}${
-                document.fullscreenEnabled
-                  ? isDesktopApp()
-                    ? ' right-46'
-                    : ' right-15'
-                  : isDesktopApp()
-                    ? ' right-36'
-                    : ' right-5'
-              }`}
-            />
-          )}
-          {video && document.fullscreenEnabled && (
-            <button
-              className={`${corner} top-4 ${isDesktopApp() ? 'right-36' : 'right-5'}`}
-              aria-label={browserFullScreen ? 'Exit full screen' : 'Enter full screen'}
-              onClick={toggleBrowserFullScreen}
-            >
-              {browserFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
-            </button>
-          )}
-        </div>
+        )}
+      </div>
 
         {/* Apple's grid areas "controls lyrics": the artwork column, then the lyrics. */}
         <div
@@ -961,6 +876,5 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           )}
         </div>
       </div>
-    </div>
   );
 }

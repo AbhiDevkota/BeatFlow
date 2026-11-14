@@ -59,6 +59,10 @@ async function measure(url: string): Promise<Rgb[]> {
   return cells;
 }
 
+export function getMeshPaletteSync(url: string): Rgb[] | undefined {
+  return cache.get(url);
+}
+
 export function meshPalette(url: string): Promise<Rgb[]> {
   const known = cache.get(url);
   if (known) return Promise.resolve(known);

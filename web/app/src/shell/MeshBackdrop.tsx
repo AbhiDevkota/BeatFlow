@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { GRID, meshPalette, type Rgb } from '@/lib/meshPalette';
+import { getMeshPaletteSync, GRID, meshPalette, type Rgb } from '@/lib/meshPalette';
 import { sizedArtwork } from '@/lib/artwork';
 
 /*
@@ -210,7 +210,15 @@ export function MeshBackdrop({ artworkUrl, playing }: { artworkUrl: string | nul
   const [generation, setGeneration] = useState(0);
   const [fallback, setFallback] = useState(false);
   // Kept outside React: the frame loop reads and writes these.
-  const state = useRef({ from: FALLBACK, to: FALLBACK, fadeStart: -Infinity, seconds: 0, wake: () => {} });
+  const cached = artworkUrl ? getMeshPaletteSync(artworkUrl) : null;
+  const initialCells = cached ?? FALLBACK;
+  const state = useRef({
+    from: initialCells,
+    to: initialCells,
+    fadeStart: cached ? -Infinity : -Infinity,
+    seconds: 0,
+    wake: () => {},
+  });
 
   // Crossfade between track artworks matching Android's FullArtworkBlurBackdrop
   const [currentUrl, setCurrentUrl] = useState(artworkUrl);
@@ -302,38 +310,18 @@ export function MeshBackdrop({ artworkUrl, playing }: { artworkUrl: string | nul
 
   return (
     <div className={backdrop} aria-hidden="true" data-fallback={fallback || undefined}>
-      {/* 1. Android-style Full Artwork Blur Layer (edge-to-edge frosted glass) */}
-      {prevUrl && (
-        <img
-          key={`blur-prev-${prevUrl}`}
-          src={sizedArtwork(prevUrl, 600)}
-          alt=""
-          referrerPolicy="no-referrer"
-          decoding="async"
-          className="absolute -inset-12 size-[calc(100%+96px)] object-cover filter blur-[76px] saturate-[1.85] brightness-[0.62] opacity-0 transition-opacity duration-1000 ease-out pointer-events-none select-none"
-        />
-      )}
-      {currentUrl && (
-        <img
-          key={`blur-curr-${currentUrl}`}
-          src={sizedArtwork(currentUrl, 600)}
-          alt=""
-          referrerPolicy="no-referrer"
-          decoding="async"
-          className="absolute -inset-12 size-[calc(100%+96px)] object-cover filter blur-[76px] saturate-[1.85] brightness-[0.62] opacity-85 transition-opacity duration-1000 ease-in pointer-events-none select-none"
-        />
-      )}
-
-      {/* 2. WebGL / Canvas Mesh Gradient (Fluid ambient color blooms layered on top) */}
+      {/* WebGL / Canvas Mesh Gradient (Fluid, hardware-accelerated ambient color blooms) */}
       <canvas
         key={`${generation}-${fallback}`}
         ref={canvas}
-        className="absolute inset-0 size-full mix-blend-screen opacity-70"
+        className="absolute inset-0 size-full"
       />
 
-      {/* 3. Frosted Glass Vignette & Depth Overlay for laptop/screen precision */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.12)_0%,rgba(0,0,0,0.58)_100%)] pointer-events-none" />
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/45 via-black/15 to-transparent pointer-events-none" />
+      {/* Apple Music deep dark vignette overlays for crystal-clear contrast */}
+      <div className="absolute inset-0 bg-black/30 pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.6)_100%)] pointer-events-none" />
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/50 via-black/20 to-transparent pointer-events-none" />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/65 via-black/25 to-transparent pointer-events-none" />
     </div>
   );
 }
