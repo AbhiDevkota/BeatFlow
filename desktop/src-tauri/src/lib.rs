@@ -1136,15 +1136,47 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   let mut target_body = params.body;
 
   let is_like_endpoint = target_url.contains("/youtubei/v1/like/");
-  if is_like_endpoint {
-    if target_url.starts_with("https://www.youtube.com") {
-      target_url = target_url.replacen("https://www.youtube.com", "https://music.youtube.com", 1);
-    }
-    if let Some(ref b) = target_body {
-      if let Ok(mut val) = serde_json::from_str::<Value>(b) {
-        if let Some(map) = val.as_object_mut() {
-          map.remove("client");
-          map.remove("isAudioOnly");
+  let mut is_ytmusic = target_url.contains("music.youtube.com")
+    || is_like_endpoint
+    || target_url.contains("/playlist/create")
+    || target_url.contains("/playlist/get_add_to_playlist")
+    || target_url.contains("/browse/edit_playlist");
+
+  if let Some(ref b) = target_body {
+    if let Ok(mut val) = serde_json::from_str::<Value>(b) {
+      if let Some(map) = val.as_object_mut() {
+        if let Some(client_val) = map.get("client") {
+          if client_val.as_str() == Some("YTMUSIC") || client_val.as_str() == Some("WEB_REMIX") {
+            is_ytmusic = true;
+          }
+        }
+        if let Some(context) = map.get("context").and_then(|c| c.as_object()) {
+          if let Some(client) = context.get("client").and_then(|cl| cl.as_object()) {
+            if let Some(name) = client.get("clientName").and_then(|n| n.as_str()) {
+              if name == "WEB_REMIX" || name == "YTMUSIC" {
+                is_ytmusic = true;
+              }
+            }
+          }
+        }
+
+        map.remove("client");
+        map.remove("isAudioOnly");
+
+        if is_like_endpoint {
+          if let Some(target_val) = map.get("target") {
+            if let Some(id_str) = target_val.as_str() {
+              let clean_id = id_str.trim_start_matches("VL");
+              if clean_id.starts_with("PL") || clean_id.starts_with("RDCLAK") || clean_id.len() > 11 {
+                map.insert("target".to_string(), json!({ "playlistId": clean_id }));
+              } else {
+                map.insert("target".to_string(), json!({ "videoId": clean_id }));
+              }
+            }
+          }
+        }
+
+        if is_ytmusic {
           if let Some(context) = map.get_mut("context").and_then(|c| c.as_object_mut()) {
             if let Some(client) = context.get_mut("client").and_then(|cl| cl.as_object_mut()) {
               client.insert("clientName".to_string(), json!("WEB_REMIX"));
@@ -1154,9 +1186,13 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
             }
           }
         }
-        target_body = Some(val.to_string());
       }
+      target_body = Some(val.to_string());
     }
+  }
+
+  if is_ytmusic && target_url.starts_with("https://www.youtube.com") {
+    target_url = target_url.replacen("https://www.youtube.com", "https://music.youtube.com", 1);
   }
 
   let mut req = client().request(method, &target_url);
@@ -1241,14 +1277,14 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
     || target_url.contains("/s/player/")
     || target_url.contains("iframe_api");
 
-  let yt_origin = if is_stats || target_url.contains("music.youtube.com") || is_like_endpoint {
+  let yt_origin = if is_stats || target_url.contains("music.youtube.com") || is_ytmusic {
     "https://music.youtube.com"
   } else {
     "https://www.youtube.com"
   };
 
   if is_yt && !is_no_origin_endpoint {
-    if is_like_endpoint || target_url.contains("music.youtube.com/youtubei/") {
+    if is_ytmusic || target_url.contains("music.youtube.com/youtubei/") {
       header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://music.youtube.com"));
       header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://music.youtube.com/"));
       header_map.insert(HeaderName::from_static("x-origin"), HeaderValue::from_static("https://music.youtube.com"));

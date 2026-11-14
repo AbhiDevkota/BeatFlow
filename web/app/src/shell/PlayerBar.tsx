@@ -14,7 +14,7 @@ import {
 } from '@/components/icons/Transport';
 import { FavoriteButton } from '@/components/music/FavoriteButton';
 import { TrackMenu } from '@/components/music/TrackMenu';
-import { usePlayer } from '@/state/player';
+import { getCanonicalVideoId, usePlayer } from '@/state/player';
 import { useUi } from '@/state/ui';
 import { Lcd } from './Lcd';
 import { fadeForVolume, VolumeControl } from './VolumeControl';
@@ -32,7 +32,7 @@ export function PlayerBar() {
   const sidePanel = useUi((s) => s.sidePanel);
   const toggleSidePanel = useUi((s) => s.toggleSidePanel);
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
-  const videoId = usePlayer((s) => s.nowPlaying?.videoId ?? null);
+  const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying));
   // The queue's entry for what's playing: the track menu needs the full track.
   const track = usePlayer((s) => {
     const entry = s.queue[s.index]?.track;

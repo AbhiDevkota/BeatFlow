@@ -1,5 +1,6 @@
 import { StarFilledIcon, StarIcon } from '@/components/icons/Transport';
 import { useLikeStatus, useSetLiked, useSignedIn } from '@/data/music/queries';
+import { getCanonicalVideoId } from '@/state/player';
 
 interface FavoriteButtonProps {
   videoId: string | null;
@@ -14,9 +15,10 @@ interface FavoriteButtonProps {
  */
 export function FavoriteButton({ videoId, className, size = 18 }: FavoriteButtonProps) {
   const signedIn = useSignedIn();
-  const status = useLikeStatus(videoId);
+  const canonicalId = getCanonicalVideoId(videoId) ?? videoId;
+  const status = useLikeStatus(canonicalId);
   const setLiked = useSetLiked();
-  if (!signedIn || !videoId) return null;
+  if (!signedIn || !canonicalId) return null;
   const liked = status.data === 'LIKE';
   return (
     <button
@@ -26,7 +28,7 @@ export function FavoriteButton({ videoId, className, size = 18 }: FavoriteButton
       disabled={status.isPending}
       onClick={(event) => {
         event.stopPropagation();
-        setLiked.mutate({ videoId, liked: !liked });
+        setLiked.mutate({ videoId: canonicalId, liked: !liked });
       }}
     >
       {liked ? <StarFilledIcon size={size} /> : <StarIcon size={size} />}

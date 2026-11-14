@@ -1606,6 +1606,26 @@ function applyTrack(track: LoadedTrack, from?: Track) {
   usePlayer.setState({ nowPlaying, error: null });
   updateMediaSession(nowPlaying);
   followVideo();
+
+  if (from) {
+    import('@/data/music/queries').then((m) => m.recordRecentTrack(from)).catch(() => {});
+  } else if (canonicalVideoId) {
+    import('@/data/music/queries')
+      .then((m) =>
+        m.recordRecentTrack({
+          videoId: canonicalVideoId,
+          title: track.title,
+          artists: [{ name: track.author.replace(/ - Topic$/, ''), id: null }],
+          album: null,
+          durationSec: track.durationSec || 0,
+          explicit: false,
+          thumbnail: track.thumbnails[0]?.url ?? null,
+          index: null,
+          plays: null,
+        }),
+      )
+      .catch(() => {});
+  }
 }
 
 /** A music video's picture follows the deck in front (playback/youtube/videoDeck.ts, loaded with the engine). */

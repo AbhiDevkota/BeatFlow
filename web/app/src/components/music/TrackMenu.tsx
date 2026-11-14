@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, Download, ListEnd, ListPlus, ListStart, Loader2, MoreHorizontal, Music, RotateCcw, Sparkles, Star, Video } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Download, ListEnd, ListPlus, ListStart, Loader2, MoreHorizontal, Music, Plus, RotateCcw, Sparkles, Star, Video } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { isDesktopApp } from '@bitchord/shared/bridge';
 import { deleteDownloadedTrack, downloadTrack, useDownloadsStore } from '@/data/downloads/desktopDownloads';
@@ -12,18 +12,42 @@ import {
   useSignedIn,
 } from '@/data/music/queries';
 import type { Track } from '@/data/music/types';
-import { usePlayer } from '@/state/player';
+import { getCanonicalVideoId, usePlayer } from '@/state/player';
+import { NewPlaylistModal } from './NewPlaylistModal';
 
-function PlaylistChoices({ videoId, onDone, onBack }: { videoId: string; onDone: () => void; onBack: () => void }) {
-  const options = usePlaylistOptions(videoId, true);
+function PlaylistChoices({
+  videoId,
+  onDone,
+  onBack,
+  onNewPlaylist,
+}: {
+  videoId: string;
+  onDone: () => void;
+  onBack: () => void;
+  onNewPlaylist: () => void;
+}) {
+  const canonicalId = getCanonicalVideoId(videoId) ?? videoId;
+  const options = usePlaylistOptions(canonicalId, true);
   const add = useAddToPlaylist();
   return (
     <>
-      <MenuItem icon={<ChevronLeft size={14} />} onSelect={onBack}>
-        Back
+      <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-semibold text-secondary">
+        <button
+          type="button"
+          onClick={onBack}
+          className="grid size-6 place-items-center rounded-full hover:bg-quaternary text-secondary hover:text-primary transition-colors cursor-pointer"
+          aria-label="Back"
+          title="Back"
+        >
+          <ChevronLeft size={15} />
+        </button>
+        <span>Add to Playlist</span>
+      </div>
+      <MenuSeparator />
+      <MenuItem icon={<Plus size={15} />} onSelect={onNewPlaylist}>
+        New Playlist
       </MenuItem>
       <MenuSeparator />
-      <MenuHeader>Add to Playlist</MenuHeader>
       {options.isPending && (
         <MenuItem disabled onSelect={() => {}}>
           Loading…
@@ -43,7 +67,7 @@ function PlaylistChoices({ videoId, onDone, onBack }: { videoId: string; onDone:
         <MenuItem
           key={option.playlistId}
           onSelect={() => {
-            add.mutate({ playlistId: option.playlistId, videoId });
+            add.mutate({ playlistId: option.playlistId, videoId: canonicalId });
             onDone();
           }}
         >
@@ -56,7 +80,8 @@ function PlaylistChoices({ videoId, onDone, onBack }: { videoId: string; onDone:
 
 /** Favorite and Add to Playlist: the account's actions, signed in only. */
 function AccountItems({ track, onClose, onPlaylists }: { track: Track; onClose: () => void; onPlaylists: () => void }) {
-  const status = useLikeStatus(track.videoId);
+  const canonicalId = getCanonicalVideoId(track) ?? track.videoId;
+  const status = useLikeStatus(canonicalId);
   const setLiked = useSetLiked();
   const liked = status.data === 'LIKE';
   return (
@@ -66,7 +91,7 @@ function AccountItems({ track, onClose, onPlaylists }: { track: Track; onClose: 
         icon={<Star size={15} fill={liked ? 'currentColor' : 'none'} />}
         disabled={status.isPending}
         onSelect={() => {
-          setLiked.mutate({ videoId: track.videoId, liked: !liked });
+          setLiked.mutate({ videoId: canonicalId, liked: !liked });
           onClose();
         }}
       >
@@ -129,11 +154,29 @@ function DesktopDownloadItem({ track, onClose }: { track: Track; onClose: () => 
   );
 }
 
-function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void }) {
+function TrackMenuItems({
+  track,
+  onClose,
+  onOpenNewPlaylist,
+}: {
+  track: Track;
+  onClose: () => void;
+  onOpenNewPlaylist: () => void;
+}) {
   const [view, setView] = useState<'main' | 'playlists'>('main');
   const signedIn = useSignedIn();
   if (view === 'playlists') {
-    return <PlaylistChoices videoId={track.videoId} onDone={onClose} onBack={() => setView('main')} />;
+    return (
+      <PlaylistChoices
+        videoId={track.videoId}
+        onDone={onClose}
+        onBack={() => setView('main')}
+        onNewPlaylist={() => {
+          onClose();
+          onOpenNewPlaylist();
+        }}
+      />
+    );
   }
   const { playNext, addToQueue, swapVersion, upgradeQuality, revertToOriginal, isUpgraded } = usePlayer.getState();
   const isCurrentPlaying = usePlayer((s) => s.nowPlaying?.videoId === track.videoId);
@@ -212,6 +255,8 @@ export function TrackMenu({
   onOpenChange?: (open: boolean) => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [showNewPlaylistModal, setShowNewPlaylistModal] = useState(false);
+  const canonicalId = getCanonicalVideoId(track) ?? track.videoId;
   const close = useCallback(() => setAnchor(null), []);
   useEffect(() => {
     onOpenChange?.(anchor !== null);
@@ -234,9 +279,18 @@ export function TrackMenu({
       </button>
       {anchor && (
         <Menu anchor={anchor} placement={placement} onClose={close} label={track.title}>
-          <TrackMenuItems track={track} onClose={close} />
+          <TrackMenuItems
+            track={track}
+            onClose={close}
+            onOpenNewPlaylist={() => setShowNewPlaylistModal(true)}
+          />
         </Menu>
       )}
+      <NewPlaylistModal
+        isOpen={showNewPlaylistModal}
+        onClose={() => setShowNewPlaylistModal(false)}
+        initialVideoIds={[canonicalId]}
+      />
     </>
   );
 }

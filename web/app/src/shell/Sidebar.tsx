@@ -1,4 +1,5 @@
-import { ArrowUpRight, ListMusic, Settings, Users } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowUpRight, ListMusic, Plus, Settings, Users } from 'lucide-react';
 import { MdOutlineExtension } from 'react-icons/md';
 import { PrefetchLink, PrefetchNavLink } from '@/components/PrefetchLink';
 import { LogoMark } from '@/components/icons/LogoMark';
@@ -17,6 +18,7 @@ import {
   type NavIconProps,
 } from '@/components/icons/NavIcons';
 import { hrefFor } from '@/components/music/links';
+import { NewPlaylistModal } from '@/components/music/NewPlaylistModal';
 import { config } from '@/config';
 import { LIBRARY_SECTIONS, type LibrarySection } from '@/data/music/library';
 import { useLibraryPlaylists, useSignedIn } from '@/data/music/queries';
@@ -97,11 +99,25 @@ function LibrarySectionsNav({ onNavigate }: { onNavigate: () => void }) {
 }
 
 /** Playlists (report §1), matching the web version with All Playlists and user playlists. */
-function PlaylistsNav({ onNavigate }: { onNavigate: () => void }) {
+function PlaylistsNav({ onNavigate, onNewPlaylist }: { onNavigate: () => void; onNewPlaylist?: () => void }) {
   const playlists = useLibraryPlaylists();
+  const signedIn = useSignedIn();
   return (
     <>
-      <h2 className={sectionHeader}>Playlists</h2>
+      <div className="flex items-center justify-between mt-4 px-2 py-1">
+        <h2 className="type-callout-emphasized text-secondary">Playlists</h2>
+        {signedIn && onNewPlaylist && (
+          <button
+            type="button"
+            onClick={onNewPlaylist}
+            className="grid size-5 place-items-center rounded-full hover:bg-quaternary text-secondary hover:text-primary transition-colors cursor-pointer"
+            aria-label="New Playlist"
+            title="New Playlist"
+          >
+            <Plus size={14} />
+          </button>
+        )}
+      </div>
       <ul className={list}>
         <li>
           <PrefetchNavLink to="/library/playlists" className={item} onClick={onNavigate}>
@@ -159,6 +175,7 @@ export function Sidebar() {
   const update = useExtensionUpdate();
   const signedIn = useSignedIn();
   const spotifySignedIn = useSpotifySignedIn();
+  const [showNewPlaylistModal, setShowNewPlaylistModal] = useState(false);
   const close = () => setDrawerOpen(false);
 
   return (
@@ -179,7 +196,7 @@ export function Sidebar() {
         <div className="min-h-0 flex-1 overflow-y-auto pr-3 pl-5 [scrollbar-width:none]">
           <NavList items={PRIMARY} onNavigate={close} />
           {signedIn && <LibrarySectionsNav onNavigate={close} />}
-          <PlaylistsNav onNavigate={close} />
+          <PlaylistsNav onNavigate={close} onNewPlaylist={() => setShowNewPlaylistModal(true)} />
           {spotifySignedIn && <SpotifyNav onNavigate={close} />}
         </div>
         <div className="flex flex-col gap-2 pt-3 pr-3 pb-5 pl-5">
@@ -220,6 +237,10 @@ export function Sidebar() {
         </div>
       </nav>
       {drawerOpen && <div className="absolute inset-0 z-[calc(var(--z-web-chrome)-1)] hidden bg-scrim max-sm:block" onClick={close} aria-hidden="true" />}
+      <NewPlaylistModal
+        isOpen={showNewPlaylistModal}
+        onClose={() => setShowNewPlaylistModal(false)}
+      />
     </>
   );
 }

@@ -226,7 +226,8 @@ export type LikeStatus = 'LIKE' | 'DISLIKE' | 'INDIFFERENT';
 /** The thumbs state YouTube Music shows on its player for this track. */
 export async function fetchLikeStatus(videoId: string): Promise<LikeStatus> {
   const yt = await getSignedInnertube();
-  const response = await yt.actions.execute('/next', { videoId, client: 'YTMUSIC' });
+  const cleanId = videoId.replace(/^addon:[^:]+:/, '');
+  const response = await yt.actions.execute('/next', { videoId: cleanId, client: 'YTMUSIC' });
   const button = collect((response.data as Raw).playerOverlays, 'likeButtonRenderer')[0];
   const status = button?.likeStatus;
   return status === 'LIKE' || status === 'DISLIKE' ? status : 'INDIFFERENT';
@@ -235,21 +236,23 @@ export async function fetchLikeStatus(videoId: string): Promise<LikeStatus> {
 /** Likes a track (it joins Liked Music) or takes the like back. */
 export async function setTrackLiked(videoId: string, liked: boolean): Promise<void> {
   const yt = await getSignedInnertube();
-  if (liked) {
-    await yt.interact.like(videoId);
-  } else {
-    await yt.interact.removeRating(videoId);
-  }
+  const endpoint = liked ? '/like/like' : '/like/removelike';
+  const cleanId = videoId.replace(/^addon:[^:]+:/, '');
+  await yt.actions.execute(endpoint, {
+    target: { videoId: cleanId },
+    client: 'YTMUSIC',
+  });
 }
 
 /** Adds an album or playlist to the library, or removes it: YouTube saves both by liking the list. */
 export async function setListSaved(playlistId: string, saved: boolean): Promise<void> {
   const yt = await getSignedInnertube();
-  if (saved) {
-    await yt.playlist.addToLibrary(playlistId);
-  } else {
-    await yt.playlist.removeFromLibrary(playlistId);
-  }
+  const endpoint = saved ? '/like/like' : '/like/removelike';
+  const cleanId = playlistId.replace(/^VL/, '');
+  await yt.actions.execute(endpoint, {
+    target: { playlistId: cleanId },
+    client: 'YTMUSIC',
+  });
 }
 
 export interface PlaylistOption {
@@ -265,20 +268,42 @@ export interface PlaylistOption {
  */
 export async function fetchPlaylistOptions(videoId: string): Promise<PlaylistOption[]> {
   const yt = await getSignedInnertube();
-  const response = await yt.actions.execute('/playlist/get_add_to_playlist', { videoIds: [videoId], client: 'YTMUSIC' });
-  return collect(response.data, 'playlistAddToOptionRenderer')
-    .map((option) => ({
-      playlistId: typeof option.playlistId === 'string' ? option.playlistId : '',
-      title: runsText(option.title),
-    }))
-    .filter((option) => option.playlistId && option.playlistId !== LIKED_MUSIC_PLAYLIST && option.title);
+  const cleanId = videoId.replace(/^addon:[^:]+:/, '');
+  let options: PlaylistOption[] = [];
+  try {
+    const response = await yt.actions.execute('/playlist/get_add_to_playlist', { videoIds: [cleanId], client: 'YTMUSIC' });
+    options = collect(response.data, 'playlistAddToOptionRenderer')
+      .map((option) => ({
+        playlistId: typeof option.playlistId === 'string' ? option.playlistId : '',
+        title: runsText(option.title),
+      }))
+      .filter((option) => option.playlistId && option.playlistId !== LIKED_MUSIC_PLAYLIST && option.title);
+  } catch (err) {
+    console.warn('[Playlist] get_add_to_playlist failed, falling back to library:', err);
+  }
+
+  // Fallback to library playlists if get_add_to_playlist is empty
+  if (options.length === 0) {
+    try {
+      const lib = await fetchLibraryPlaylists();
+      options = lib
+        .map((item) => ({
+          playlistId: item.id.replace(/^VL/, ''),
+          title: item.title,
+        }))
+        .filter((item) => item.playlistId && item.title);
+    } catch {}
+  }
+
+  return options;
 }
 
 export async function addToPlaylist(playlistId: string, videoId: string): Promise<void> {
   const yt = await getSignedInnertube();
+  const cleanId = videoId.replace(/^addon:[^:]+:/, '');
   await yt.actions.execute('/browse/edit_playlist', {
     playlistId: playlistId.replace(/^VL/, ''),
-    actions: [{ action: 'ACTION_ADD_VIDEO', addedVideoId: videoId, dedupeOption: 'DEDUPE_OPTION_SKIP' }],
+    actions: [{ action: 'ACTION_ADD_VIDEO', addedVideoId: cleanId, dedupeOption: 'DEDUPE_OPTION_SKIP' }],
     client: 'YTMUSIC',
   });
 }
@@ -287,15 +312,19 @@ export async function addToPlaylist(playlistId: string, videoId: string): Promis
  * A new private playlist holding [videoIds], as YtMusicRepository.createPlaylist
  * makes one (InnerTube `playlist/create`). Returns its id, without the VL.
  */
-export async function createPlaylist(title: string, videoIds: string[], description = ''): Promise<string> {
+export async function createPlaylist(title: string, videoIds: string[] = [], description = ''): Promise<string> {
   const yt = await getSignedInnertube();
-  const response = await yt.actions.execute('/playlist/create', {
+  const cleanVideoIds = videoIds.map((v) => v.replace(/^addon:[^:]+:/, ''));
+  const payload: Record<string, unknown> = {
     title,
     description,
     privacyStatus: 'PRIVATE',
-    videoIds,
     client: 'YTMUSIC',
-  });
+  };
+  if (cleanVideoIds.length > 0) {
+    payload.videoIds = cleanVideoIds;
+  }
+  const response = await yt.actions.execute('/playlist/create', payload);
   const id = (response.data as { playlistId?: string } | undefined)?.playlistId;
   if (!id) throw new Error('YouTube Music did not make the playlist');
   return id;

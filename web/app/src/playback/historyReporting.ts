@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { DetectedExtension } from '@bitchord/shared/bridge';
+import { isDesktopApp, type DetectedExtension } from '@bitchord/shared/bridge';
 import { getBridge } from '@/extension/bridge';
 import { extensionQueryKey } from '@/extension/useExtension';
 import { ensureYtAuth } from '@/extension/useYtAuth';
 import { queryClient } from '@/lib/queryClient';
-import { getAudio, onTrackEnded, usePlayer } from '@/state/player';
+import { getAudio, getCanonicalVideoId, onTrackEnded, usePlayer } from '@/state/player';
 import { getSignedInnertube } from './youtube/innertube';
 import { trackLog } from './trackLog';
 
@@ -61,6 +61,7 @@ interface Session {
 const newCpn = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => CPN_ALPHABET[b & 63]).join('');
 
 function extensionSupportsStats(): boolean {
+  if (isDesktopApp()) return true;
   const detected = queryClient.getQueryData<DetectedExtension | null>(extensionQueryKey);
   return !!detected?.info.capabilities.includes('yt.stats');
 }
@@ -197,7 +198,8 @@ function close(): void {
 
 function sample(): void {
   const { nowPlaying, status } = usePlayer.getState();
-  const videoId = nowPlaying?.videoId ?? null;
+  const rawVideoId = nowPlaying?.videoId ?? null;
+  const videoId = getCanonicalVideoId(nowPlaying) ?? rawVideoId;
   if (session && session.videoId !== videoId) close();
   if (!videoId || status !== 'playing') return;
 

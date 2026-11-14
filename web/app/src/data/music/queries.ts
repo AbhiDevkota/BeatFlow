@@ -13,6 +13,7 @@ import { useYtAuth, ytAuthSnapshot } from '@/extension/useYtAuth';
 import { queryClient } from '@/lib/queryClient';
 import {
   addToPlaylist,
+  createPlaylist,
   fetchAlbum,
   fetchArtist,
   fetchBrowse,
@@ -265,6 +266,50 @@ export function useAddToPlaylist() {
     onSettled: (_data, _error, { playlistId }) => {
       void queryClient.invalidateQueries({ queryKey: ['music', 'playlist', playlistId] });
       void queryClient.invalidateQueries({ queryKey: ['music', 'playlist', `VL${playlistId.replace(/^VL/, '')}`] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'playlists'] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'sidebar-playlists'] });
     },
+  });
+}
+
+export function useCreatePlaylist() {
+  return useMutation({
+    mutationFn: ({ title, videoIds = [], description = '' }: { title: string; videoIds?: string[]; description?: string }) =>
+      createPlaylist(title, videoIds, description),
+    onSettled: (playlistId) => {
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'playlists'] });
+      void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'sidebar-playlists'] });
+      if (playlistId) {
+        void queryClient.invalidateQueries({ queryKey: ['music', 'playlist', playlistId] });
+        void queryClient.invalidateQueries({ queryKey: ['music', 'playlist', `VL${playlistId.replace(/^VL/, '')}`] });
+      }
+    },
+  });
+}
+
+/** Optimistically prepends a track into Recently Played cache so Home and Library update in real time. */
+export function recordRecentTrack(track: Track): void {
+  const cleanId = track.videoId.replace(/^addon:[^:]+:/, '');
+  const cleanTrack: Track = { ...track, videoId: cleanId };
+  const queryKey = ['music', 'library', 'recent'] as const;
+  queryClient.setQueryData<InfiniteData<Paged<BrowsePage>>>(queryKey, (old) => {
+    if (!old || !old.pages.length) return old;
+    const firstPage = old.pages[0];
+    if (!firstPage?.data) return old;
+    const currentTracks = firstPage.data.tracks ?? [];
+    const filtered = currentTracks.filter((t) => t.videoId.replace(/^addon:[^:]+:/, '') !== cleanId);
+    return {
+      ...old,
+      pages: [
+        {
+          ...firstPage,
+          data: {
+            ...firstPage.data,
+            tracks: [cleanTrack, ...filtered],
+          },
+        },
+        ...old.pages.slice(1),
+      ],
+    };
   });
 }

@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
+import { Plus } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { CircleLockup, SquareLockup, VideoLockup } from '@/components/music/Lockups';
+import { NewPlaylistModal } from '@/components/music/NewPlaylistModal';
 import { EmptyState, LoadError, LoadMoreError, NeedsExtension } from '@/components/music/States';
 import { TrackList } from '@/components/music/TrackList';
 import { isLibrarySection, LIBRARY_SECTIONS, type LibrarySection } from '@/data/music/library';
@@ -34,6 +36,7 @@ export default function LibraryPage() {
   const auth = useYtAuth();
   const signedIn = useSignedIn();
   const library = useLibrary(section);
+  const [showNewPlaylistModal, setShowNewPlaylistModal] = useState(false);
   const loadMore = useLoadMore(
     library.hasNextPage && !library.isFetchingNextPage && !library.isFetchNextPageError
       ? () => void library.fetchNextPage()
@@ -59,10 +62,35 @@ export default function LibraryPage() {
 
   const grid = library.data.pages.flatMap((page) => page.data.grid);
   const tracks = library.data.pages.flatMap((page) => page.data.tracks);
+  const headerAction = (section === 'playlists' || isGeneralLibrary) && signedIn ? (
+    <button
+      type="button"
+      onClick={() => setShowNewPlaylistModal(true)}
+      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-quaternary/80 hover:bg-quaternary text-sm font-medium text-primary hover:text-white transition-all active:scale-95 cursor-pointer shadow-sm"
+    >
+      <Plus size={16} />
+      <span>New Playlist</span>
+    </button>
+  ) : undefined;
+
   return (
     <>
-      <PageHeader title={title} back={!isGeneralLibrary} />
-      {!grid.length && !tracks.length && <EmptyState title="Nothing here yet" />}
+      <PageHeader title={title} back={!isGeneralLibrary} action={headerAction} />
+      {!grid.length && !tracks.length && (
+        <div className="flex flex-col items-center">
+          <EmptyState title="Nothing here yet" />
+          {section === 'playlists' && signedIn && (
+            <button
+              type="button"
+              onClick={() => setShowNewPlaylistModal(true)}
+              className="mt-3 flex items-center gap-1.5 px-4 py-2 rounded-full bg-key text-sm font-semibold text-white hover:brightness-110 active:scale-95 transition-all shadow-md cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>Create a playlist</span>
+            </button>
+          )}
+        </div>
+      )}
       {grid.length > 0 && (
         <ul className={seeAllGrid} data-wide={grid.every((i) => i.wide) || undefined}>
           {grid.map((item, i) => (
@@ -94,6 +122,10 @@ export default function LibraryPage() {
       )}
       {grid.length > 0 && <div ref={loadMore} aria-hidden="true" />}
       {library.isFetchNextPageError && <LoadMoreError onRetry={() => void library.fetchNextPage()} />}
+      <NewPlaylistModal
+        isOpen={showNewPlaylistModal}
+        onClose={() => setShowNewPlaylistModal(false)}
+      />
     </>
   );
 }
