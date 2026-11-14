@@ -204,22 +204,28 @@ export function AppShell() {
     <div className="grid h-full grid-rows-[minmax(0,1fr)_auto]">
       <WindowControls />
       {/* The side panel slides in from beyond the right edge; never let it scroll the page. */}
-      <div className="relative min-h-0 overflow-hidden">
-        <Sidebar />
-        <MobileTopBar />
-        {/* The page scrolls under the fixed sidebar and the floating player. Native scrollbars hidden in favour of Apple-style overlay pill. */}
-        <main
-          id="scrollable-page"
-          className="absolute inset-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden data-tint:bg-(--page-tint) data-tint:transition-[background-color] data-tint:duration-300 data-tint:ease-in"
+      <div className="relative min-h-0 overflow-hidden bg-black">
+        <div
+          id="app-content-wrapper"
+          className="size-full transition-[transform,border-radius,filter] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] data-[fullscreen=true]:scale-[0.95] data-[fullscreen=true]:rounded-[20px] data-[fullscreen=true]:brightness-75 data-[fullscreen=true]:pointer-events-none data-[fullscreen=true]:overflow-hidden"
+          data-fullscreen={fullScreen || undefined}
         >
-          {/* Clears the floating pill: its height, its offset, and some air. Indents content past the fixed translucent sidebar. */}
-          <div className="min-h-full pl-(--web-navigation-width) pb-[calc(var(--player-pill-height)+var(--player-bottom-offset)+40px)] max-sm:pt-(--mobile-top-bar-height) max-sm:pl-0">
-            <Outlet />
-          </div>
-        </main>
-        <OverlayScrollbar />
-        <PlayerBar />
-        <SidePanel />
+          <Sidebar />
+          <MobileTopBar />
+          {/* The page scrolls under the fixed sidebar and the floating player. Native scrollbars hidden in favour of Apple-style overlay pill. */}
+          <main
+            id="scrollable-page"
+            className="absolute inset-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden data-tint:bg-(--page-tint) data-tint:transition-[background-color] data-tint:duration-300 data-tint:ease-in"
+          >
+            {/* Clears the floating pill: its height, its offset, and some air. Indents content past the fixed translucent sidebar. */}
+            <div className="min-h-full pl-(--web-navigation-width) pb-[calc(var(--player-pill-height)+var(--player-bottom-offset)+40px)] max-sm:pt-(--mobile-top-bar-height) max-sm:pl-0">
+              <Outlet />
+            </div>
+          </main>
+          <OverlayScrollbar />
+          <PlayerBar />
+          <SidePanel />
+        </div>
       </div>
       {banner}
       {(fullScreen || fullScreenMounted) && (
