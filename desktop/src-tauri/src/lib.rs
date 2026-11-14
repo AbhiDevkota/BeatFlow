@@ -897,6 +897,37 @@ fn read_download_meta(songs_dir: &Path, stem: &str) -> DownloadMeta {
 }
 
 
+fn tag_audio_file(path: &Path, title: &str, artist: &str, album: Option<&str>, cover: Option<&[u8]>) -> anyhow::Result<()> {
+  let mut tag = mp4ameta::Tag::read_from_path(path)?;
+  tag.set_title(title);
+  let artists: Vec<&str> = artist.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+  for (i, a) in artists.iter().enumerate() {
+    if i == 0 {
+      tag.set_artist(*a);
+    } else {
+      tag.add_artist(*a);
+    }
+  }
+  if let Some(a) = artists.first() {
+    tag.set_album_artist(*a);
+  }
+  if let Some(album) = album {
+    tag.set_album(album);
+  }
+  if let Some(c) = cover {
+    let img = match c.get(..4) {
+      Some([0xff, 0xd8, ..]) => Some(mp4ameta::Img::jpeg(c.to_vec())),
+      Some([0x89, b'P', b'N', b'G']) => Some(mp4ameta::Img::png(c.to_vec())),
+      _ => None,
+    };
+    if let Some(img) = img {
+      tag.set_artwork(img);
+    }
+  }
+  tag.write_to_path(path)?;
+  Ok(())
+}
+
 fn client() -> &'static reqwest::Client {
   HTTP_CLIENT.get_or_init(|| {
     reqwest::Client::builder()
@@ -2074,7 +2105,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       };
 
       let is_dash = audio_url.contains(".mpd") || ext_param.eq_ignore_ascii_case("mpd") || audio_url.contains("/manifest");
-      let (bytes, effective_ext) = if is_dash {
+      let (mut bytes, effective_ext) = if is_dash {
         println!("[Rust Bridge] Detected DASH manifest stream for '{}' ({})", title_raw, audio_url);
         let xml_resp = client().get(audio_url).send().await.map_err(|e| format!("Failed to fetch DASH manifest: {e}"))?;
         let xml_text = xml_resp.text().await.map_err(|e| format!("Failed to read DASH manifest XML: {e}"))?;
@@ -2101,13 +2132,19 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
           return Err(format!("Download failed with HTTP {}", resp.status()));
         }
         let b = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
-        let e = if ext_param.is_empty() || ext_param.eq_ignore_ascii_case("mpd") {
+        let e = if b.get(4..8) == Some(b"ftyp") {
           "m4a".to_string()
         } else {
-          ext_param.trim_start_matches('.').to_string()
+          "webm".to_string()
         };
         (b, e)
       };
+
+      // YouTube's files sometimes carry the "dash" brand in the ftyp box; as a
+      // standalone file some players want the "M4A " brand. Patch it in place.
+      if effective_ext == "m4a" && bytes.get(8..12) == Some(b"dash") {
+        bytes[8..12].copy_from_slice(b"M4A ");
+      }
 
       let file_name = format!("{}.{}", file_stem, effective_ext);
       let songs_dir = get_songs_dir();
@@ -2116,8 +2153,6 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       println!("[Rust Bridge] Writing downloaded track '{}' ({} bytes) to {:?}", file_name, bytes.len(), file_path);
       fs::write(&file_path, &bytes).map_err(|e| e.to_string())?;
 
-      // Download album art thumbnail if provided. The extension follows what
-      // the host actually sent, so a PNG from an addon stays a PNG.
       if let Some(t_url) = thumbnail_url && !t_url.is_empty() {
         if let Ok(t_resp) = client().get(t_url).send().await
           && t_resp.status().is_success()
@@ -2134,6 +2169,10 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
               }
             }
             let _ = fs::write(get_thumbnails_dir().join(format!("{}.{}", file_stem, ext)), &t_bytes);
+            // Embed the cover (and metadata) into the MP4, BeatFlow-prod style.
+            if effective_ext == "m4a" {
+              let _ = tag_audio_file(&file_path, title_raw, artist_raw, album, Some(&t_bytes));
+            }
           }
         }
       }

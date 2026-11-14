@@ -28,5 +28,6 @@ roxmltree = "0.21"
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
 webview2-com = "0.39"
+mp4ameta = "0.13.0"
 windows-core = "0.62"
 

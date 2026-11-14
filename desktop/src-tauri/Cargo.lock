@@ -138,6 +138,7 @@ dependencies = [
  "dirs 6.0.0",
  "futures-util",
  "log",
+ "mp4ameta",
  "reqwest 0.12.28",
  "roxmltree",
  "serde",
@@ -1915,6 +1916,12 @@ dependencies = [
  "wasi",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "mp4ameta"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "453e991b2efe96c288cbc2d03a19e353504294559ecb6c03067fff5bd824616d"
 
 [[package]]
 name = "muda"
