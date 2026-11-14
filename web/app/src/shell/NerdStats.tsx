@@ -4,6 +4,7 @@ import type { AutoDJSnapshot } from '@/playback/automix';
 import type { analyzer as Analyzer } from '@/playback/automix/analysis/analyzer';
 import type { NowPlaying } from '@/state/player';
 import { usePlayer } from '@/state/player';
+import { AudioQualityMenu } from '@/components/music/AudioQualityMenu';
 
 /**
  * Stats for nerds, under the artist in the full-screen player (the phone's
@@ -14,13 +15,23 @@ export function NerdStats() {
   const show = usePlayer((s) => s.showNerdStats);
   const nowPlaying = usePlayer((s) => s.nowPlaying);
   const automix = usePlayer((s) => s.automix);
+  const [pipelineOpen, setPipelineOpen] = useState(false);
   if (!show || !nowPlaying) return null;
   return (
-    // The phone's shadow: free on the dark mesh, and what keeps it legible over a bright music video.
-    <div className="mt-1 flex min-w-0 flex-col gap-px type-[500_11px/14px] tabular-nums [text-shadow:0_1px_4px_rgb(0_0_0/0.55)]">
-      <span className="truncate text-secondary">{describeStream(nowPlaying) ?? 'Measuring the stream…'}</span>
-      {automix && <AutomixLine videoId={nowPlaying.videoId} />}
-    </div>
+    <>
+      {/* The phone's shadow: free on the dark mesh, and what keeps it legible over a bright music video. */}
+      <div
+        onClick={() => setPipelineOpen(true)}
+        className="mt-1 flex min-w-0 flex-col gap-px type-[500_11px/14px] tabular-nums [text-shadow:0_1px_4px_rgb(0_0_0/0.55)] cursor-pointer hover:opacity-100 transition-opacity"
+        title="Click to view Audio Pipeline live specifications"
+      >
+        <span className="truncate text-secondary hover:text-primary transition-colors">
+          {describeStream(nowPlaying) ?? 'Measuring the stream…'}
+        </span>
+        {automix && <AutomixLine videoId={nowPlaying.videoId} />}
+      </div>
+      {pipelineOpen && <AudioQualityMenu onClose={() => setPipelineOpen(false)} />}
+    </>
   );
 }
 
