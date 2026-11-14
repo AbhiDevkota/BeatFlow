@@ -417,6 +417,18 @@ export function getCanonicalVideoId(
   return target;
 }
 
+export function isLocalTrack(track: Track | null | undefined): boolean {
+  if (!track) return false;
+  const vid = track.videoId || '';
+  if (vid.startsWith('beatflow://local') || vid.includes('/local/')) {
+    return true;
+  }
+  if (track.sourceName === 'On Device' || track.sourceName === 'BeatFlow Local') {
+    return true;
+  }
+  return false;
+}
+
 function extensionReady(track?: Track): boolean {
   if (typeof window !== 'undefined' && isDesktopApp()) return true;
   if (
@@ -735,7 +747,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   async upgradeQuality() {
     const { queue, index, status } = get();
     const entry = queue[index];
-    if (!entry || partyHooks?.inParty()) return false;
+    if (!entry || partyHooks?.inParty() || isLocalTrack(entry.track)) return false;
     const currentTrack = entry.track;
 
     trackLog.i(`[Player] Initiating quality upgrade for "${currentTrack.title}" (${currentTrack.videoId})`, currentTrack.videoId);
@@ -783,7 +795,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   async revertToOriginal() {
     const { queue, index } = get();
     const entry = queue[index];
-    if (!entry || partyHooks?.inParty()) return false;
+    if (!entry || partyHooks?.inParty() || isLocalTrack(entry.track)) return false;
     const currentTrack = entry.track;
 
     const original = originalTracks.get(currentTrack.videoId);
@@ -834,7 +846,7 @@ if (typeof window !== 'undefined') {
     const prefer = e.detail?.prefer;
     const { queue, index, upgradingQuality } = usePlayer.getState();
     const entry = queue[index];
-    if (!entry || upgradingQuality || partyHooks?.inParty()) return;
+    if (!entry || upgradingQuality || partyHooks?.inParty() || isLocalTrack(entry.track)) return;
     const currentTrack = entry.track;
 
     const isCurrentlyAtmos =
@@ -858,7 +870,7 @@ if (typeof window !== 'undefined') {
     const auto = e.detail?.auto;
     const { queue, index, upgradingQuality, isUpgraded } = usePlayer.getState();
     const entry = queue[index];
-    if (!entry || upgradingQuality || partyHooks?.inParty()) return;
+    if (!entry || upgradingQuality || partyHooks?.inParty() || isLocalTrack(entry.track)) return;
     const currentTrack = entry.track;
 
     if (!auto && isUpgraded(currentTrack.videoId)) {
@@ -914,8 +926,7 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   // If this song was previously downloaded to the BeatFlow songs folder, stream directly from disk!
   if (
     isDesktopApp() &&
-    !currentTrack.videoId.startsWith('beatflow://') &&
-    !currentTrack.videoId.includes('/local/') &&
+    !isLocalTrack(currentTrack) &&
     !partyHooks?.inParty()
   ) {
     try {
@@ -942,61 +953,64 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     } catch {}
   }
 
-  const preferAudio = (contentSettings.preferMusicOnly || contentSettings.preferAudioCuts) && !partyHooks?.inParty();
-  if (preferAudio && isVideoTrack(currentTrack)) {
-    try {
-      const audio = await resolveAudioTrack(currentTrack);
-      if (token !== loadToken) return;
-      if (audio && audio.videoId !== currentTrack.videoId) {
-        currentTrack = audio;
-        const currentQueue = [...usePlayer.getState().queue];
-        if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
-          currentQueue[at] = { ...currentQueue[at]!, track: audio };
-          usePlayer.setState({ queue: currentQueue });
-        }
-      }
-    } catch {
-      // Continue with currentTrack on resolution error
-    }
-  }
+  const isCurrentLocal = isLocalTrack(currentTrack);
 
-  // Direct Source Streaming:
-  // If enabled and addons are available, resolve the high-quality stream directly from the addon
-  // BEFORE starting YouTube playback, so playback begins on the high-quality stream immediately from 0.0s.
-  if (
-    isDesktopApp() &&
-    contentSettings.directSource &&
-    !currentTrack.videoId.startsWith('addon:') &&
-    !currentTrack.videoId.startsWith('beatflow://') &&
-    !revertedTracks.has(currentTrack.videoId) &&
-    !partyHooks?.inParty()
-  ) {
-    try {
-      const { getAutoUpgradeQuality, getInstalledAddons } = await import('@/data/addons/addonStore');
-      if (getAutoUpgradeQuality() && getInstalledAddons().some((a) => a.enabled)) {
-        trackLog.i(`[Direct Source] Resolving high-quality addon stream for "${currentTrack.title}"`, currentTrack.videoId);
-        const { findBestQualityUpgrade } = await import('@/data/addons/qualityUpgrade');
-        const upgrade = await findBestQualityUpgrade(currentTrack);
-        if (upgrade && token === loadToken) {
-          const directTrack: Track = {
-            ...upgrade.track,
-            title: currentTrack.title || upgrade.track.title,
-            artists: currentTrack.artists.length ? currentTrack.artists : upgrade.track.artists,
-            thumbnail: currentTrack.thumbnail || upgrade.track.thumbnail,
-            album: currentTrack.album || upgrade.track.album,
-          };
-          originalTracks.set(directTrack.videoId, currentTrack);
-          currentTrack = directTrack;
+  if (!isCurrentLocal) {
+    const preferAudio = (contentSettings.preferMusicOnly || contentSettings.preferAudioCuts) && !partyHooks?.inParty();
+    if (preferAudio && isVideoTrack(currentTrack)) {
+      try {
+        const audio = await resolveAudioTrack(currentTrack);
+        if (token !== loadToken) return;
+        if (audio && audio.videoId !== currentTrack.videoId) {
+          currentTrack = audio;
           const currentQueue = [...usePlayer.getState().queue];
           if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
-            currentQueue[at] = { ...currentQueue[at]!, track: directTrack };
+            currentQueue[at] = { ...currentQueue[at]!, track: audio };
             usePlayer.setState({ queue: currentQueue });
           }
-          trackLog.i(`[Direct Source] Direct stream ready: ${directTrack.videoId} (${directTrack.sourceQuality})`, directTrack.videoId);
         }
+      } catch {
+        // Continue with currentTrack on resolution error
       }
-    } catch (err) {
-      console.warn('[Direct Source] Addon resolution failed, falling back to YouTube:', err);
+    }
+
+    // Direct Source Streaming:
+    // If enabled and addons are available, resolve the high-quality stream directly from the addon
+    // BEFORE starting YouTube playback, so playback begins on the high-quality stream immediately from 0.0s.
+    if (
+      isDesktopApp() &&
+      contentSettings.directSource &&
+      !currentTrack.videoId.startsWith('addon:') &&
+      !revertedTracks.has(currentTrack.videoId) &&
+      !partyHooks?.inParty()
+    ) {
+      try {
+        const { getAutoUpgradeQuality, getInstalledAddons } = await import('@/data/addons/addonStore');
+        if (getAutoUpgradeQuality() && getInstalledAddons().some((a) => a.enabled)) {
+          trackLog.i(`[Direct Source] Resolving high-quality addon stream for "${currentTrack.title}"`, currentTrack.videoId);
+          const { findBestQualityUpgrade } = await import('@/data/addons/qualityUpgrade');
+          const upgrade = await findBestQualityUpgrade(currentTrack);
+          if (upgrade && token === loadToken) {
+            const directTrack: Track = {
+              ...upgrade.track,
+              title: currentTrack.title || upgrade.track.title,
+              artists: currentTrack.artists.length ? currentTrack.artists : upgrade.track.artists,
+              thumbnail: currentTrack.thumbnail || upgrade.track.thumbnail,
+              album: currentTrack.album || upgrade.track.album,
+            };
+            originalTracks.set(directTrack.videoId, currentTrack);
+            currentTrack = directTrack;
+            const currentQueue = [...usePlayer.getState().queue];
+            if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+              currentQueue[at] = { ...currentQueue[at]!, track: directTrack };
+              usePlayer.setState({ queue: currentQueue });
+            }
+            trackLog.i(`[Direct Source] Direct stream ready: ${directTrack.videoId} (${directTrack.sourceQuality})`, directTrack.videoId);
+          }
+        }
+      } catch (err) {
+        console.warn('[Direct Source] Addon resolution failed, falling back to YouTube:', err);
+      }
     }
   }
 
@@ -1027,9 +1041,9 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
 
     if (
       isDesktopApp() &&
+      !isCurrentLocal &&
       !contentSettings.directSource &&
       !currentTrack.videoId.startsWith('addon:') &&
-      !currentTrack.videoId.startsWith('beatflow://') &&
       !revertedTracks.has(currentTrack.videoId)
     ) {
       void checkAutoUpgrade(currentTrack, token);
@@ -1077,7 +1091,7 @@ async function smoothTransitionToTrack(
 ): Promise<boolean> {
   const state = usePlayer.getState();
   const entry = state.queue[at];
-  if (!entry) return false;
+  if (!entry || isLocalTrack(entry.track) || isLocalTrack(targetTrack)) return false;
 
   const all = await getDecks();
   const front = all[active]!;
@@ -1241,7 +1255,7 @@ async function smoothTransitionToTrack(
 }
 
 async function checkAutoUpgrade(track: Track, expectedToken: number): Promise<void> {
-  if (!isDesktopApp() || partyHooks?.inParty() || revertedTracks.has(track.videoId)) return;
+  if (!isDesktopApp() || partyHooks?.inParty() || revertedTracks.has(track.videoId) || isLocalTrack(track)) return;
   try {
     const { getAutoUpgradeQuality, getInstalledAddons } = await import('@/data/addons/addonStore');
     if (!getAutoUpgradeQuality()) return;
@@ -1335,7 +1349,7 @@ async function convertUpcomingTracks() {
   const nextIndices = [index + 1, index + 2].filter((i) => i >= 0 && i < queue.length);
   for (const i of nextIndices) {
     const entry = usePlayer.getState().queue[i];
-    if (entry && isVideoTrack(entry.track)) {
+    if (entry && !isLocalTrack(entry.track) && isVideoTrack(entry.track)) {
       try {
         const audio = await resolveAudioTrack(entry.track);
         if (audio && audio.videoId !== entry.track.videoId) {
