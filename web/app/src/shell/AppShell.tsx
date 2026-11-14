@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { resumeSession } from '@/party/listenTogether';
 import { startPartySync } from '@/party/partySync';
 import { useDiscordPresence } from '@/playback/discordPresence';
@@ -7,6 +7,7 @@ import { startLivePresence } from '@/playback/livePresence';
 import { Outlet, useNavigate } from 'react-router';
 import { resolveDeepLink } from '@/lib/deepLink';
 import { PrefetchLink } from '@/components/PrefetchLink';
+import { UseProfileModal, type ProfileData } from '@/components/UseProfileModal';
 import { config } from '@/config';
 import { useExtension } from '@/extension/useExtension';
 import { isDesktopApp, isMobileBrowser } from '@/lib/platform';
@@ -32,8 +33,26 @@ const FullScreenPlayer = lazy(() => import('./FullScreenPlayer').then((m) => ({ 
  */
 export function AppShell() {
   const navigate = useNavigate();
+  const [detectedProfile, setDetectedProfile] = useState<ProfileData | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
   useKeyboardShortcuts();
   useDiscordPresence();
+
+  // Listen for YouTube Music login profile detection from in-app login window
+  useEffect(() => {
+    if (!desktop) return;
+    const handleAuthDetected = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const auth = customEvent.detail;
+      if (auth) {
+        setDetectedProfile(auth.active || auth);
+        setShowProfileModal(true);
+      }
+    };
+    window.addEventListener('beatflow:yt-auth-detected', handleAuthDetected);
+    return () => window.removeEventListener('beatflow:yt-auth-detected', handleAuthDetected);
+  }, []);
 
   // Listen for beatflow:// deep links (from desktop bridge, protocol handler, or window events)
   useEffect(() => {
@@ -175,6 +194,11 @@ export function AppShell() {
           <FullScreenPlayer />
         </Suspense>
       )}
+      <UseProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        profile={detectedProfile}
+      />
     </div>
   );
 }

@@ -157,10 +157,16 @@ export async function downloadTrack(
       audioUrl = await resolveAddonStream(track.videoId);
       const cleanUrl = audioUrl.split('?')[0] ?? '';
       const extMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
-      if (extMatch && extMatch[1]) {
+      if (extMatch && extMatch[1] && extMatch[1].toLowerCase() !== 'mpd') {
         extension = extMatch[1].toLowerCase();
       } else if (track.sourceFormat?.codec) {
-        extension = track.sourceFormat.codec.toLowerCase();
+        const c = track.sourceFormat.codec.toLowerCase();
+        if (c.includes('flac')) extension = 'm4a';
+        else if (c.includes('mp3')) extension = 'mp3';
+        else if (c.includes('opus')) extension = 'opus';
+        else extension = 'm4a';
+      } else {
+        extension = 'm4a';
       }
     } else if (track.videoId.startsWith('http://') || track.videoId.startsWith('https://')) {
       audioUrl = track.videoId;
