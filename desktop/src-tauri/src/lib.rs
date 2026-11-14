@@ -222,8 +222,8 @@ pub fn extract_webview2_cookies_for_url(window: &tauri::WebviewWindow, target_ur
         Ok(())
       }));
 
-      let empty_url = HSTRING::from("");
-      let pcwstr = PCWSTR::from_raw(empty_url.as_ptr());
+      let url_hstring = HSTRING::from(target.as_str());
+      let pcwstr = PCWSTR::from_raw(url_hstring.as_ptr());
       let _ = cookie_manager.GetCookies(pcwstr, &handler);
     }
   });
@@ -257,6 +257,13 @@ pub fn clear_webview2_cookies_by_filter(window: &tauri::WebviewWindow, domain_ke
         Err(_) => return,
       };
 
+      let is_spotify = filter.iter().any(|f| f.contains("spotify"));
+      let target_url = if is_spotify {
+        "https://open.spotify.com"
+      } else {
+        "https://music.youtube.com"
+      };
+
       let cm_clone = cookie_manager.clone();
       let handler = GetCookiesCompletedHandler::create(Box::new(move |res, list_opt| {
         if res.is_err() {
@@ -279,8 +286,8 @@ pub fn clear_webview2_cookies_by_filter(window: &tauri::WebviewWindow, domain_ke
         Ok(())
       }));
 
-      let empty_url = HSTRING::from("");
-      let pcwstr = PCWSTR::from_raw(empty_url.as_ptr());
+      let url_hstring = HSTRING::from(target_url);
+      let pcwstr = PCWSTR::from_raw(url_hstring.as_ptr());
       let _ = cookie_manager.GetCookies(pcwstr, &handler);
     }
   });
@@ -1251,6 +1258,16 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   } else if is_tidal {
     header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://listen.tidal.com"));
     header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://listen.tidal.com/"));
+  } else if target_url.contains("spotify.com") {
+    if !header_map.contains_key("origin") {
+      header_map.insert(HeaderName::from_static("origin"), HeaderValue::from_static("https://open.spotify.com"));
+    }
+    if !header_map.contains_key("referer") {
+      header_map.insert(HeaderName::from_static("referer"), HeaderValue::from_static("https://open.spotify.com/"));
+    }
+    if !header_map.contains_key("app-platform") {
+      header_map.insert(HeaderName::from_static("app-platform"), HeaderValue::from_static("WebPlayer"));
+    }
   }
 
   // 4. Inject YouTube Auth when requested
@@ -1685,6 +1702,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       let url_str = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
       if let Ok(parsed_url) = url::Url::parse(url_str) {
         if let Some(existing) = app.get_webview_window("spotify-login") {
+          let _ = existing.eval(&format!("window.location.href = '{}';", parsed_url));
           let _ = existing.show();
           let _ = existing.set_focus();
           let _ = existing.unminimize();
@@ -1707,6 +1725,12 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       let path = get_spotify_auth_path();
       if path.exists() {
         let _ = fs::remove_file(&path);
+      }
+      if let Some(main_win) = app.get_webview_window("main") {
+        clear_webview2_cookies_by_filter(&main_win, &["spotify.com"]);
+      }
+      if let Some(login_win) = app.get_webview_window("spotify-login") {
+        clear_webview2_cookies_by_filter(&login_win, &["spotify.com"]);
       }
       println!("[BeatFlow Spotify Auth] 🗑️ Spotify auth cleared");
       let auth = json!({
@@ -1735,9 +1759,9 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       Ok(auth)
     }
     "spotify.canvas" => Ok(json!({ "url": null })),
-    "spotify.playlists" => Ok(json!({ "items": [], "total": 0, "offset": 0, "limit": 50 })),
-    "spotify.tracks" => Ok(json!({ "items": [], "total": 0, "offset": 0, "limit": 50 })),
-    "spotify.playlist" => Ok(json!({ "id": "", "name": "", "description": "", "images": [], "owner": { "name": "" }, "tracks": [] })),
+    "spotify.playlists" => Ok(json!({ "items": [], "total": 0, "offset": 0, "limit": 50, "raw": 0 })),
+    "spotify.tracks" => Ok(json!({ "items": [], "total": 0, "offset": 0, "limit": 50, "raw": 0 })),
+    "spotify.playlist" => Ok(json!({ "id": "", "name": "", "description": "", "images": [], "owner": { "name": "" }, "tracks": [], "total": 0 })),
     "spotify.searchTracks" => Ok(json!([])),
     "discord.state" => Ok(json!({
       "available": false,
@@ -2058,6 +2082,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or(default_url);
       if let Ok(parsed_url) = url::Url::parse(url_str) {
         if let Some(existing) = app.get_webview_window("google-login") {
+          let _ = existing.eval(&format!("window.location.href = '{}';", parsed_url));
           let _ = existing.show();
           let _ = existing.set_focus();
           let _ = existing.unminimize();
@@ -2411,38 +2436,38 @@ static AUTH_SERVER_PORT: OnceLock<u16> = OnceLock::new();
 
 async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
   let data: Value = serde_json::from_str(payload_str).map_err(|e| e.to_string())?;
-  let cookies = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
-  let has_sapisid = cookies.contains("SAPISID=")
-    || cookies.contains("__Secure-3PAPISID=")
-    || cookies.contains("__Secure-1PAPISID=");
-
-  if !has_sapisid {
-    println!("[BeatFlow Auth] ⚠️ Rejected auth payload: missing valid SAPISID cookie");
-    return Err("Missing SAPISID".into());
-  }
 
   // Attempt to extract full cookie jar from WebView2 on Windows to include HttpOnly session cookies
-  let mut resolved_cookies = cookies.to_string();
+  let mut resolved_cookies = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("").to_string();
   #[cfg(target_os = "windows")]
   {
     if let Some(app_handle) = APP_HANDLE.get() {
       if let Some(login_win) = app_handle.get_webview_window("google-login") {
         if let Some(c) = extract_webview2_cookies(&login_win) {
-          if c.contains("SAPISID=") {
+          if c.contains("SAPISID=") || c.contains("__Secure-3PAPISID=") || c.contains("__Secure-1PAPISID=") {
             resolved_cookies = c;
           }
         }
       }
-      if !resolved_cookies.contains("HSID=") {
+      if !resolved_cookies.contains("SAPISID=") && !resolved_cookies.contains("__Secure-3PAPISID=") {
         if let Some(main_win) = app_handle.get_webview_window("main") {
           if let Some(c) = extract_webview2_cookies(&main_win) {
-            if c.contains("SAPISID=") {
+            if c.contains("SAPISID=") || c.contains("__Secure-3PAPISID=") {
               resolved_cookies = c;
             }
           }
         }
       }
     }
+  }
+
+  let has_sapisid = resolved_cookies.contains("SAPISID=")
+    || resolved_cookies.contains("__Secure-3PAPISID=")
+    || resolved_cookies.contains("__Secure-1PAPISID=");
+
+  if !has_sapisid {
+    println!("[BeatFlow Auth] ⚠️ Rejected auth payload: missing valid SAPISID cookie in resolved cookies");
+    return Err("Missing SAPISID".into());
   }
 
   let mut resolved_name = data
@@ -3199,212 +3224,30 @@ pub fn run() {
     .on_page_load(|window, payload| {
       let _ = window.eval(DESKTOP_BRIDGE_INIT);
       if window.label() == "google-login" {
-        let url = payload.url().as_str();
-        // Do not auto-close or capture while user is on channel switcher or Google account chooser
-        if url.contains("music.youtube.com")
-          && !url.contains("/channel_switcher")
-          && !url.contains("/signin")
-          && !url.contains("/select_account")
+        let url_obj = payload.url();
+        let host = url_obj.host_str().unwrap_or("");
+        let path = url_obj.path();
+        // Do not capture or auto-close while on accounts.google.com or channel switcher
+        if host == "music.youtube.com"
+          && !path.contains("/channel_switcher")
+          && !path.contains("/signin")
+          && !path.contains("/select_account")
         {
-          let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
-          let script = format!(r#"
-            (function() {{
-              if (window.__BEATFLOW_AUTH_ACTIVE__) return;
-              window.__BEATFLOW_AUTH_ACTIVE__ = true;
-
-              var attempts = 0;
-              var maxAttempts = 60;
-              var completed = false;
-              var fetchingMenu = false;
-
-              function cleanText(t) {{
-                if (!t) return "";
-                return t.replace(/^(?:Account photo(?: for| of)?|Photo of|Picture of)\s+/i, '')
-                        .replace(/\s+(?:profile photo|account photo)$/i, '')
-                        .trim();
-              }}
-
-              function send(p) {{
-                fetch("http://127.0.0.1:{}/auth-callback", {{
-                  method: "POST",
-                  headers: {{ "Content-Type": "application/json" }},
-                  body: JSON.stringify(p)
-                }}).catch(function() {{
-                  new Image().src = "http://127.0.0.1:{}/auth-callback?data=" + encodeURIComponent(JSON.stringify(p));
-                }});
-              }}
-
-              var timer = setInterval(function() {{
-                attempts++;
-                if (completed || attempts > maxAttempts) {{
-                  clearInterval(timer);
-                  return;
-                }}
-
-                try {{
-                  var cookies = document.cookie || "";
-                  var hasSapisid = /(?:^|;\s*)(?:__Secure-[13]P)?SAPISID=([^;]+)/.test(cookies);
-
-                  var ytcfg = window.ytcfg;
-                  var d = (ytcfg && ytcfg.data_) || {{}};
-                  var loggedIn = false;
-                  if (ytcfg && ytcfg.get) {{
-                    loggedIn = !!ytcfg.get('LOGGED_IN');
-                  }} else if (d.LOGGED_IN) {{
-                    loggedIn = !!d.LOGGED_IN;
-                  }}
-
-                  if (!hasSapisid && !loggedIn) {{
-                    return;
-                  }}
-
-                  var name = d.USER_NAME || "";
-                  var email = d.USER_EMAIL || "";
-                  var avatar = d.USER_AVATAR_URL || "";
-                  var handle = d.USER_HANDLE || "";
-                  var authUser = (d.SESSION_INDEX !== undefined) ? String(d.SESSION_INDEX) : "0";
-
-                  if (ytcfg && ytcfg.get) {{
-                    name = name || ytcfg.get('USER_NAME') || "";
-                    email = email || ytcfg.get('USER_EMAIL') || "";
-                    avatar = avatar || ytcfg.get('USER_AVATAR_URL') || "";
-                    handle = handle || ytcfg.get('USER_HANDLE') || "";
-                  }}
-
-                  var avatarBtn = document.querySelector('button#avatar-btn, ytmusic-settings-button button, ytmusic-app-header #avatar-btn');
-                  if (avatarBtn) {{
-                    var aria = avatarBtn.getAttribute('aria-label') || avatarBtn.getAttribute('title') || "";
-                    var m = aria.match(/(?:for|of)\s+([^,\n\r]+)/i);
-                    var candidate = m ? m[1].trim() : cleanText(aria);
-                    if (candidate && !candidate.toLowerCase().includes('google account') && candidate.toLowerCase() !== 'account photo') {{
-                      name = name || candidate;
-                    }}
-                  }}
-
-                  var avatarImg = document.querySelector('button#avatar-btn img, ytmusic-settings-button img, ytmusic-app-header img[alt], yt-img-shadow[id="avatar"] img');
-                  if (avatarImg) {{
-                    avatar = avatar || avatarImg.src || "";
-                    var alt = avatarImg.getAttribute('alt') || "";
-                    var m2 = alt.match(/(?:for|of)\s+([^,\n\r]+)/i);
-                    var candidate2 = m2 ? m2[1].trim() : cleanText(alt);
-                    if (candidate2 && !candidate2.toLowerCase().includes('google account') && candidate2.toLowerCase() !== 'account photo') {{
-                      name = name || candidate2;
-                    }}
-                  }}
-
-                  var accountEl = document.querySelector('#account-name, .ytmusic-nav-bar #account-name, yt-formatted-string.text#account-name');
-                  if (accountEl && accountEl.textContent && accountEl.textContent.trim()) {{
-                    name = name || accountEl.textContent.trim();
-                  }}
-
-                  if (!name && email) {{
-                    name = email.split('@')[0];
-                  }}
-
-                  // Inject confirmation banner so user can switch channel or confirm without premature auto-close
-                  var existingBar = document.getElementById('beatflow-confirm-bar');
-                  if (!existingBar && document.body) {{
-                    var bar = document.createElement('div');
-                    bar.id = 'beatflow-confirm-bar';
-                    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999999;background:rgba(22,22,26,0.96);backdrop-filter:blur(24px);border-bottom:1px solid rgba(255,255,255,0.18);padding:10px 18px;display:flex;align-items:center;justify-content:space-between;color:white;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,0.6);';
-                    bar.innerHTML = '<div style="display:flex;align-items:center;gap:12px;">' +
-                      (avatar ? '<img id="beatflow-bar-avatar" src="' + avatar + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.2);" />' : '') +
-                      '<div>' +
-                        '<div style="font-size:13.5px;font-weight:600;line-height:1.2;">Signed in as <span id="beatflow-bar-name">' + (name || 'YouTube Account') + '</span>' + (handle ? ' <span id="beatflow-bar-handle" style="font-size:12px;color:rgba(255,255,255,0.6);font-weight:normal;">(' + handle + ')</span>' : '') + '</div>' +
-                        '<div style="font-size:11.5px;color:rgba(255,255,255,0.65);margin-top:2px;">Switch channel above if needed, then confirm</div>' +
-                      '</div>' +
-                    '</div>' +
-                    '<div style="display:flex;align-items:center;gap:8px;">' +
-                      '<button id="beatflow-switch-btn" style="background:rgba(255,255,255,0.12);color:white;border:1px solid rgba(255,255,255,0.2);border-radius:10px;padding:7px 14px;font-size:13px;font-weight:500;cursor:pointer;">Switch Account</button>' +
-                      '<button id="beatflow-use-account-btn" style="background:#0a84ff;color:white;border:none;border-radius:10px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;">Use This Account</button>' +
-                    '</div>';
-                    document.body.appendChild(bar);
-                    var switchBtn = document.getElementById('beatflow-switch-btn');
-                    if (switchBtn) {{
-                      switchBtn.onclick = function() {{
-                        window.location.href = 'https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F';
-                      }};
-                    }}
-                    var btn = document.getElementById('beatflow-use-account-btn');
-                    if (btn) {{
-                      btn.onclick = function() {{
-                        completed = true;
-                        clearInterval(timer);
-                        send({{
-                          name: name || "YouTube Account",
-                          email: email || null,
-                          avatarUrl: avatar || null,
-                          handle: handle || null,
-                          authUser: authUser,
-                          cookies: cookies
-                        }});
-                      }};
-                    }}
-                  }} else if (existingBar) {{
-                    var nameEl = document.getElementById('beatflow-bar-name');
-                    if (nameEl && name) nameEl.textContent = name;
-                    var avEl = document.getElementById('beatflow-bar-avatar');
-                    if (avEl && avatar) avEl.src = avatar;
-                  }}
-
-                  // If cookies ready, trigger fast account_menu fetch in page to get channel name
-                  if (attempts >= 2 && !fetchingMenu) {{
-                    fetchingMenu = true;
-                    fetch("/youtubei/v1/account/account_menu?prettyPrint=false", {{
-                      method: "POST",
-                      headers: {{ "Content-Type": "application/json", "X-Youtube-Client-Name": "67", "X-Youtube-Client-Version": "1.20250219.01.00" }},
-                      body: JSON.stringify({{ context: (ytcfg && ytcfg.get && ytcfg.get("INNERTUBE_CONTEXT")) || {{ client: {{ clientName: "WEB_REMIX", clientVersion: "1.20250219.01.00" }} }} }}),
-                      credentials: "include"
-                    }}).then(function(r) {{ return r.json(); }}).then(function(res) {{
-                      try {{
-                        var h = res.actions[0].openPopupAction.popup.multiPageMenuRenderer.header.activeAccountHeaderRenderer;
-                        var n = (h.accountName && h.accountName.runs && h.accountName.runs[0] && h.accountName.runs[0].text) || (h.accountName && h.accountName.simpleText);
-                        var hndl = (h.channelHandle && h.channelHandle.runs && h.channelHandle.runs[0] && h.channelHandle.runs[0].text) || null;
-                        var av = (h.avatar && h.avatar.thumbnails && h.avatar.thumbnails[h.avatar.thumbnails.length - 1].url) || null;
-                        if (n) {{
-                          name = n;
-                          if (hndl) handle = hndl;
-                          if (av) avatar = av;
-                          var nameEl2 = document.getElementById('beatflow-bar-name');
-                          if (nameEl2) nameEl2.textContent = n;
-                          var avEl2 = document.getElementById('beatflow-bar-avatar');
-                          if (avEl2 && av) avEl2.src = av;
-                        }}
-                      }} catch(e) {{}}
-                    }}).catch(function() {{}});
-                  }}
-                }} catch(e) {{
-                  if (attempts >= maxAttempts) clearInterval(timer);
-                }}
-              }}, 200);
-            }})();
-          "#, port, port);
-          let _ = window.eval(&script);
-        }
-      }
-      if window.label() == "spotify-login" {
-        let url = payload.url().as_str();
-        if url.contains("spotify.com") {
           let app_handle = window.app_handle().clone();
           tauri::async_runtime::spawn(async move {
             for _ in 0..60 {
               tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
               #[cfg(target_os = "windows")]
-              if let Some(login_win) = app_handle.get_webview_window("spotify-login") {
-                if let Some(c) = extract_webview2_cookies_for_url(&login_win, "https://open.spotify.com") {
-                  if let Some(pos) = c.find("sp_dc=") {
-                    let rest = &c[pos + 6..];
-                    let sp_dc_val = rest.split(';').next().unwrap_or("").trim().to_string();
-                    if !sp_dc_val.is_empty() {
-                      let payload = json!({
-                        "sp_dc": sp_dc_val,
-                        "name": "Spotify Account",
-                        "avatarUrl": null,
-                        "cookies": c
-                      });
-                      let _ = handle_spotify_auth_callback(&payload.to_string()).await;
-                      break;
-                    }
+              if let Some(login_win) = app_handle.get_webview_window("google-login") {
+                if let Some(c) = extract_webview2_cookies(&login_win) {
+                  if c.contains("SAPISID=") || c.contains("__Secure-3PAPISID=") || c.contains("__Secure-1PAPISID=") {
+                    println!("[BeatFlow Google Auth] 🔑 Detected valid SAPISID in google-login WebView2!");
+                    let payload = json!({
+                      "cookies": c,
+                      "authUser": "0"
+                    });
+                    let _ = handle_auth_callback(&payload.to_string()).await;
+                    break;
                   }
                 }
               } else {
@@ -3412,74 +3255,37 @@ pub fn run() {
               }
             }
           });
-
-          let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
-          let script = format!(r#"
-            (function() {{
-              if (window.__BEATFLOW_SPOTIFY_AUTH_ACTIVE__) return;
-              window.__BEATFLOW_SPOTIFY_AUTH_ACTIVE__ = true;
-
-              var attempts = 0;
-              var maxAttempts = 50;
-              var completed = false;
-
-              var timer = setInterval(function() {{
-                attempts++;
-                if (completed || attempts > maxAttempts) {{
-                  clearInterval(timer);
-                  return;
-                }}
-
-                try {{
-                  var name = "";
-                  var avatar = "";
-
-                  var userBtn = document.querySelector('button[data-testid="user-widget-link"], button[aria-label="User"]');
-                  if (userBtn) {{
-                    var span = userBtn.querySelector('span');
-                    if (span && span.textContent) name = span.textContent.trim();
-                    var img = userBtn.querySelector('img');
-                    if (img && img.src) avatar = img.src;
-                  }}
-
-                  if (!name) {{
-                    var stateEl = document.querySelector('script#initial-state');
-                    if (stateEl && stateEl.textContent) {{
-                      try {{
-                        var state = JSON.parse(stateEl.textContent);
-                        if (state.session && state.session.user) {{
-                          name = state.session.user.name || state.session.user.displayName || "";
-                          avatar = avatar || (state.session.user.images && state.session.user.images[0] && state.session.user.images[0].url) || "";
-                        }}
-                      }} catch(e) {{}}
-                    }}
-                  }}
-
-                  if (userBtn || name || attempts >= 10) {{
-                    completed = true;
-                    clearInterval(timer);
-
-                    var payload = {{
-                      name: name || "Spotify Account",
-                      avatarUrl: avatar || null
-                    }};
-
-                    fetch("http://127.0.0.1:{}/auth-callback-spotify", {{
-                      method: "POST",
-                      headers: {{ "Content-Type": "application/json" }},
-                      body: JSON.stringify(payload)
-                    }}).catch(function() {{
-                      new Image().src = "http://127.0.0.1:{}/auth-callback-spotify?data=" + encodeURIComponent(JSON.stringify(payload));
-                    }});
-                  }}
-                }} catch(e) {{
-                  if (attempts >= maxAttempts) clearInterval(timer);
-                }}
-              }}, 300);
-            }})();
-          "#, port, port);
-          let _ = window.eval(&script);
         }
+      }
+      if window.label() == "spotify-login" {
+        let app_handle = window.app_handle().clone();
+        tauri::async_runtime::spawn(async move {
+          for _ in 0..120 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            #[cfg(target_os = "windows")]
+            if let Some(login_win) = app_handle.get_webview_window("spotify-login") {
+              if let Some(c) = extract_webview2_cookies_for_url(&login_win, "https://open.spotify.com") {
+                if let Some(pos) = c.find("sp_dc=") {
+                  let rest = &c[pos + 6..];
+                  let sp_dc_val = rest.split(';').next().unwrap_or("").trim().to_string();
+                  if !sp_dc_val.is_empty() {
+                    println!("[BeatFlow Spotify Auth] 🔑 Detected sp_dc cookie from WebView2!");
+                    let payload = json!({
+                      "sp_dc": sp_dc_val,
+                      "name": "Spotify Account",
+                      "avatarUrl": null,
+                      "cookies": c
+                    });
+                    let _ = handle_spotify_auth_callback(&payload.to_string()).await;
+                    break;
+                  }
+                }
+              }
+            } else {
+              break;
+            }
+          }
+        });
       }
       if let Some(url) = get_deep_link_value() {
         if let Ok(json) = serde_json::to_string(&url) {

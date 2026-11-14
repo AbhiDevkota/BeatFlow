@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { isDesktopApp, desktopBridge, type DetectedExtension, type SpotifyAuthState } from '@bitchord/shared/bridge';
 import { queryClient } from '@/lib/queryClient';
+import * as desktopSpotify from '@/data/spotify/desktopSpotify';
 import { extensionQueryKey, useExtension } from './useExtension';
 
 /**
@@ -34,8 +35,14 @@ function adopt(state: SpotifyAuthState): void {
 }
 
 async function readAuth(refresh: boolean): Promise<SpotifyAuthState> {
+  if (isDesktopApp()) {
+    if (refresh) desktopSpotify.invalidateSession();
+    const state = await desktopSpotify.authState();
+    adopt(state);
+    return state;
+  }
   const extension = detected();
-  const bridge = extension && supported(extension) ? extension.bridge : (isDesktopApp() ? desktopBridge() : null);
+  const bridge = extension && supported(extension) ? extension.bridge : null;
   if (!bridge) return SIGNED_OUT;
   const state = await bridge.call('spotify.authState', { refresh }, { timeoutMs: 30_000 });
   adopt(state);
@@ -61,9 +68,25 @@ export function useSpotifyAuth(): SpotifyAuthStatus {
   useEffect(() => {
     const bridge = present?.bridge ?? desktop;
     if (!bridge || !enabled) return;
-    return bridge.subscribe((event) => {
-      if (event.event === 'spotify.authState') adopt(event.data);
+    const unsub = bridge.subscribe((event) => {
+      if (event.event === 'spotify.authState') {
+        if (isDesktopApp()) {
+          void readAuth(true);
+        } else {
+          adopt(event.data);
+        }
+      }
     });
+    const onAuthDetected = () => {
+      if (isDesktopApp()) {
+        void readAuth(true);
+      }
+    };
+    window.addEventListener('beatflow:spotify-auth-detected', onAuthDetected);
+    return () => {
+      unsub();
+      window.removeEventListener('beatflow:spotify-auth-detected', onAuthDetected);
+    };
   }, [present, desktop, enabled]);
 
   if ((extension.state === 'checking' && !desktop) || (enabled && query.isPending)) return { state: 'checking' };

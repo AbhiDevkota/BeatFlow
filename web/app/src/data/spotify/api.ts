@@ -1,13 +1,14 @@
 import type { SpotifyPlaylist, SpotifyTrack } from '@bitchord/shared/bridge';
+import { isDesktopApp } from '@bitchord/shared/bridge';
 import { best, type MatchCandidate } from '@/data/match/trackMatcher';
 import { searchSongs } from '@/data/music/api';
 import type { Track } from '@/data/music/types';
 import { getBridge } from '@/extension/bridge';
+import * as desktopSpotify from './desktopSpotify';
 
 /**
- * Spotify through the extension (prompt §7.1): the library, a playlist's
- * tracks, and matching each one to its YouTube Music song. Ports
- * SpotifyLibrary.kt's paging and SpotifyImporter.matchTrack.
+ * Spotify through the extension or native engine (prompt §7.1): the library,
+ * a playlist's tracks, and matching each one to its YouTube Music song.
  */
 
 export const LIKED_ID = 'liked';
@@ -20,29 +21,57 @@ function bridge() {
 
 /** Every playlist in the library, Liked Songs first, however many pages it takes. */
 export async function fetchSpotifyPlaylists(): Promise<SpotifyPlaylist[]> {
+  if (isDesktopApp()) {
+    const out: SpotifyPlaylist[] = [];
+    for (let offset = 0; ; ) {
+      const page = await desktopSpotify.playlists(offset);
+      out.push(...page.items);
+      const raw = page.raw ?? page.items?.length ?? 0;
+      offset += raw;
+      if (raw === 0 || offset >= page.total) break;
+    }
+    return out;
+  }
   const out: SpotifyPlaylist[] = [];
   for (let offset = 0; ; ) {
     const page = await bridge().call('spotify.playlists', { offset }, { timeoutMs: 30_000 });
     out.push(...page.items);
-    offset += page.raw;
-    if (page.raw === 0 || offset >= page.total) break;
+    const raw = page.raw ?? page.items?.length ?? 0;
+    offset += raw;
+    if (raw === 0 || offset >= page.total) break;
   }
   return out;
 }
 
 export function fetchSpotifyPlaylistInfo(playlistId: string) {
+  if (isDesktopApp()) {
+    return desktopSpotify.playlistInfo(playlistId);
+  }
   return bridge().call('spotify.playlist', { playlistId }, { timeoutMs: 30_000 });
 }
 
 /** Every track of a playlist; [onPage] gets the running list after each page, so a long one fills in. */
 export async function fetchSpotifyTracks(playlistId: string, onPage: (soFar: SpotifyTrack[], total: number) => void): Promise<SpotifyTrack[]> {
+  if (isDesktopApp()) {
+    const out: SpotifyTrack[] = [];
+    for (let offset = 0; ; ) {
+      const page = await desktopSpotify.tracks(playlistId, offset);
+      out.push(...page.items);
+      const raw = page.raw ?? page.items?.length ?? 0;
+      offset += raw;
+      onPage([...out], page.total);
+      if (raw === 0 || offset >= page.total) break;
+    }
+    return out;
+  }
   const out: SpotifyTrack[] = [];
   for (let offset = 0; ; ) {
     const page = await bridge().call('spotify.tracks', { playlistId, offset }, { timeoutMs: 30_000 });
     out.push(...page.items);
-    offset += page.raw;
+    const raw = page.raw ?? page.items?.length ?? 0;
+    offset += raw;
     onPage([...out], page.total);
-    if (page.raw === 0 || offset >= page.total) break;
+    if (raw === 0 || offset >= page.total) break;
   }
   return out;
 }
@@ -108,7 +137,9 @@ const canvases = new Map<string, string | null>();
  */
 export async function fetchCanvas(track: { videoId: string; title: string; artist: string; durationSec: number }): Promise<string | null> {
   if (canvases.has(track.videoId)) return canvases.get(track.videoId)!;
-  const hits = await bridge().call('spotify.searchTracks', { query: `${track.title} ${track.artist}` }, { timeoutMs: 20_000 });
+  const hits = isDesktopApp()
+    ? await desktopSpotify.searchTracks(`${track.title} ${track.artist}`)
+    : await bridge().call('spotify.searchTracks', { query: `${track.title} ${track.artist}` }, { timeoutMs: 20_000 });
   const pick = best(
     hits.map((h) => ({
       title: h.title,
@@ -119,7 +150,11 @@ export async function fetchCanvas(track: { videoId: string; title: string; artis
     })),
     { title: track.title, artist: track.artist, durationSec: track.durationSec > 0 ? Math.round(track.durationSec) : null },
   );
-  const url = pick ? (await bridge().call('spotify.canvas', { trackId: pick.id }, { timeoutMs: 20_000 })).url : null;
+  const url = pick
+    ? isDesktopApp()
+      ? await desktopSpotify.canvas(pick.id)
+      : (await bridge().call('spotify.canvas', { trackId: pick.id }, { timeoutMs: 20_000 })).url
+    : null;
   canvases.set(track.videoId, url);
   if (canvases.size > 200) canvases.delete(canvases.keys().next().value!);
   return url;
