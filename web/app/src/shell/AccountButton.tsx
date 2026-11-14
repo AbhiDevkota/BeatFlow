@@ -31,13 +31,13 @@ export function GoogleLogo({ size = 18, className = '' }: { size?: number; class
   );
 }
 
-// Miniplayer-style glass pill matching BeatFlow's player pill and mobile theme
+// Miniplayer-style glass curved rectangle with transparent lighting matching BeatFlow's theme
 const googlePill =
-  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-2 h-8 rounded-pill px-3.5 text-primary hover:text-white hover:bg-white/10 active:scale-[0.98] transition-all select-none';
+  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-2 h-9 rounded-[10px] px-3.5 border border-white/10 hover:border-white/20 bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.12)] text-primary hover:text-white active:scale-[0.98] transition-all select-none cursor-pointer';
 const connectPill =
-  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-pill bg-key/80 px-3 text-white hover:brightness-110 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
+  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-9 rounded-[10px] bg-key/80 border border-key/40 px-3 text-white hover:brightness-110 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60 cursor-pointer';
 const retryPill =
-  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-8 rounded-pill px-3 text-primary hover:bg-white/10 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60';
+  'glass-pill relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 h-9 rounded-[10px] px-3 border border-white/10 hover:border-white/20 bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-md text-primary hover:bg-white/10 active:scale-[0.98] transition-all text-[12px] font-semibold leading-none truncate disabled:opacity-60 cursor-pointer';
 const avatar = 'inline-grid flex-none place-items-center rounded-full bg-quinary object-cover type-[600_11px/1] text-secondary';
 
 function Avatar({ src, name, size }: { src: string | null; name: string; size: number }) {
@@ -80,7 +80,9 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
           onClick={() => {
             onNavigate?.();
             if (isDesktopApp()) {
-              void desktopBridge()?.call('auth.openLoginWindow', {});
+              void desktopBridge()?.call('auth.openLoginWindow', {
+                url: 'https://accounts.google.com/ServiceLogin?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F',
+              });
             } else {
               setGoogleModalUrl(undefined);
               setGoogleModalOpen(true);
@@ -130,7 +132,7 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
     <>
       <button
         // Signed in: a 24px avatar and the name, opening the account menu.
-        className="glass-pill relative flex min-w-0 flex-1 items-center gap-2 h-8 rounded-pill px-2.5 text-start type-body-reduced text-primary hover:bg-white/10 aria-expanded:bg-white/10 transition-all select-none"
+        className="glass-pill relative flex min-w-0 flex-1 items-center gap-2.5 h-9 rounded-[10px] px-2.5 border border-white/10 hover:border-white/20 bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.12)] text-start type-body-reduced text-primary hover:bg-white/[0.10] aria-expanded:bg-white/[0.12] aria-expanded:border-white/25 active:scale-[0.98] transition-all select-none cursor-pointer"
         aria-haspopup="menu"
         aria-expanded={anchor !== null}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
@@ -164,8 +166,15 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
           <MenuItem
             onSelect={() => {
               close();
-              setGoogleModalUrl(SIGN_IN_URL.replace('ServiceLogin', 'AddSession'));
-              setGoogleModalOpen(true);
+              if (isDesktopApp()) {
+                void desktopBridge()?.call('auth.openLoginWindow', {
+                  addAccount: true,
+                  url: 'https://accounts.google.com/AddSession?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F',
+                });
+              } else {
+                setGoogleModalUrl('https://accounts.google.com/AddSession?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F');
+                setGoogleModalOpen(true);
+              }
             }}
             trailing={<ArrowUpRight size={13} />}
           >

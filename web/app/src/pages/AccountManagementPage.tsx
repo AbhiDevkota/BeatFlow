@@ -92,7 +92,9 @@ export default function AccountManagementPage() {
                   type="button"
                   onClick={() => {
                     if (desktop) {
-                      desktopBridge()?.call('auth.openLoginWindow', {});
+                      desktopBridge()?.call('auth.openLoginWindow', {
+                        url: 'https://accounts.google.com/ServiceLogin?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F',
+                      });
                     } else {
                       setSignInModalOpen(true);
                     }
@@ -121,7 +123,7 @@ export default function AccountManagementPage() {
                       onClick={() => {
                         desktopBridge()?.call('auth.openLoginWindow', {
                           addAccount: true,
-                          url: 'https://accounts.google.com/AddSession?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F',
+                          url: 'https://accounts.google.com/AddSession?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F',
                         });
                       }}
                     >

@@ -258,37 +258,56 @@ pub fn clear_webview2_cookies_by_filter(window: &tauri::WebviewWindow, domain_ke
       };
 
       let is_spotify = filter.iter().any(|f| f.contains("spotify"));
-      let target_url = if is_spotify {
-        "https://open.spotify.com"
+      let target_urls: &[&str] = if is_spotify {
+        &[
+          "",
+          "https://accounts.spotify.com",
+          "https://open.spotify.com",
+          "https://spotify.com",
+        ]
       } else {
-        "https://music.youtube.com"
+        &[
+          "",
+          "https://accounts.google.com",
+          "https://music.youtube.com",
+          "https://www.youtube.com",
+          "https://google.com",
+          "https://myaccount.google.com",
+        ]
       };
 
-      let cm_clone = cookie_manager.clone();
-      let handler = GetCookiesCompletedHandler::create(Box::new(move |res, list_opt| {
-        if res.is_err() {
-          return Ok(());
-        }
-        if let Some(list) = list_opt {
-          let mut count = 0u32;
-          let _ = list.Count(&mut count);
-          for i in 0..count {
-            if let Ok(cookie) = list.GetValueAtIndex(i) {
-              let mut dom_pwstr = PWSTR::null();
-              let _ = cookie.Domain(&mut dom_pwstr);
-              let dom = dom_pwstr.to_string().unwrap_or_default();
-              if filter.iter().any(|f| dom.contains(f)) {
-                let _ = cm_clone.DeleteCookie(&cookie);
+      for &target_url in target_urls {
+        let cm_clone = cookie_manager.clone();
+        let filter_clone = filter.clone();
+        let handler = GetCookiesCompletedHandler::create(Box::new(move |res, list_opt| {
+          if res.is_err() {
+            return Ok(());
+          }
+          if let Some(list) = list_opt {
+            let mut count = 0u32;
+            let _ = list.Count(&mut count);
+            for i in 0..count {
+              if let Ok(cookie) = list.GetValueAtIndex(i) {
+                let mut dom_pwstr = PWSTR::null();
+                let _ = cookie.Domain(&mut dom_pwstr);
+                let dom = dom_pwstr.to_string().unwrap_or_default();
+                if filter_clone.iter().any(|f| dom.contains(f)) {
+                  let _ = cm_clone.DeleteCookie(&cookie);
+                }
               }
             }
           }
-        }
-        Ok(())
-      }));
+          Ok(())
+        }));
 
-      let url_hstring = HSTRING::from(target_url);
-      let pcwstr = PCWSTR::from_raw(url_hstring.as_ptr());
-      let _ = cookie_manager.GetCookies(pcwstr, &handler);
+        let url_hstring = HSTRING::from(target_url);
+        let pcwstr = if target_url.is_empty() {
+          PCWSTR::null()
+        } else {
+          PCWSTR::from_raw(url_hstring.as_ptr())
+        };
+        let _ = cookie_manager.GetCookies(pcwstr, &handler);
+      }
     }
   });
 }
@@ -1498,6 +1517,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
         if let Some(login_win) = app.get_webview_window("google-login") {
           clear_webview2_cookies_by_filter(&login_win, &["youtube.com", "google.com"]);
+          let _ = login_win.close();
         }
         println!("[BeatFlow Auth] 🗑️ Disconnected and cleared Google/YouTube cookies from WebView2");
         return Ok(json!({
@@ -1535,6 +1555,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }
       if let Some(login_win) = app.get_webview_window("google-login") {
         clear_webview2_cookies_by_filter(&login_win, &["youtube.com", "google.com"]);
+        let _ = login_win.close();
       }
       println!("[BeatFlow Auth] 🗑️ User YouTube auth cleared");
       Ok(json!({
@@ -1656,6 +1677,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
         if let Some(login_win) = app.get_webview_window("spotify-login") {
           clear_webview2_cookies_by_filter(&login_win, &["spotify.com"]);
+          let _ = login_win.close();
         }
         println!("[BeatFlow Spotify Auth] 🗑️ Disconnected and cleared Spotify cookies from WebView2");
         let auth = json!({
@@ -1699,7 +1721,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       Ok(auth)
     }
     "spotify.signIn" | "auth.openSpotifyLoginWindow" => {
-      let url_str = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
+      let url_str = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F&show_dialog=true";
       if let Ok(parsed_url) = url::Url::parse(url_str) {
         if let Some(existing) = app.get_webview_window("spotify-login") {
           let _ = existing.eval(&format!("window.location.href = '{}';", parsed_url));
@@ -1731,6 +1753,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }
       if let Some(login_win) = app.get_webview_window("spotify-login") {
         clear_webview2_cookies_by_filter(&login_win, &["spotify.com"]);
+        let _ = login_win.close();
       }
       println!("[BeatFlow Spotify Auth] 🗑️ Spotify auth cleared");
       let auth = json!({
@@ -2075,9 +2098,9 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
     "auth.openLoginWindow" => {
       let is_add = params.get("addAccount").and_then(|v| v.as_bool()).unwrap_or(false);
       let default_url = if is_add {
-        "https://accounts.google.com/AddSession?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F"
+        "https://accounts.google.com/AddSession?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F"
       } else {
-        "https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F"
+        "https://accounts.google.com/ServiceLogin?service=youtube&prompt=select_account&continue=https%3A%2F%2Fmusic.youtube.com%2F"
       };
       let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or(default_url);
       if let Ok(parsed_url) = url::Url::parse(url_str) {

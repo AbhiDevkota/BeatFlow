@@ -14,13 +14,11 @@ function devExtensionId(): string {
   }
 }
 
-// The party server's address stays out of the repo: .env.local here, a
-// Cloudflare Pages variable in production. Without it Listen Together can't
-// make a party, so a production build stops instead of shipping that.
+// The party server's address defaults to BeatFlow's Render deployment if not overridden.
 function requirePartyServer(mode: string): void {
   const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_');
   if (!env.VITE_PARTY_SERVER_URL?.trim()) {
-    throw new Error('VITE_PARTY_SERVER_URL is not set (app/.env.local, or the Cloudflare Pages environment).');
+    process.env.VITE_PARTY_SERVER_URL = 'https://beatflow-jam-together.onrender.com';
   }
 }
 

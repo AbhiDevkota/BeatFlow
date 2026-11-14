@@ -1,4 +1,4 @@
-import { ArrowUpRight, ListMusic, Settings } from 'lucide-react';
+import { ArrowUpRight, ListMusic, Settings, Users } from 'lucide-react';
 import { MdOutlineExtension } from 'react-icons/md';
 import { PrefetchLink, PrefetchNavLink } from '@/components/PrefetchLink';
 import { LogoMark } from '@/components/icons/LogoMark';
@@ -40,6 +40,11 @@ const PRIMARY: NavItem[] = [
   { to: '/new', label: 'New', Icon: NewIcon },
   { to: '/library', label: 'Library', Icon: LibraryIcon, end: true },
   { to: '/downloads', label: 'Downloads', Icon: DownloadsIcon },
+  {
+    to: '/settings/listen-together',
+    label: 'Listen Together',
+    Icon: (props: NavIconProps) => <Users size={20} className={props.className} strokeWidth={2} />,
+  },
 ];
 
 const LIBRARY_ICONS: Record<Exclude<LibrarySection, 'playlists'>, NavItem['Icon']> = {
@@ -200,16 +205,16 @@ export function Sidebar() {
               </a>
             </div>
           )}
-          <div className="flex items-center justify-between gap-2 min-h-8">
+          <div className="flex items-center justify-between gap-2 min-h-9">
             <AccountButton onNavigate={close} />
             <PrefetchNavLink
               to="/settings"
-              className="glass-pill relative grid size-8 flex-none place-items-center rounded-pill text-secondary hover:text-primary hover:bg-white/10 aria-[current=page]:text-primary transition-all active:scale-[0.98]"
+              className="glass-pill relative grid size-9 flex-none place-items-center rounded-[10px] border border-white/10 hover:border-white/20 bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.12)] text-secondary hover:text-primary aria-[current=page]:text-primary transition-all active:scale-[0.98] cursor-pointer"
               aria-label="Settings"
               title="Settings"
               onClick={close}
             >
-              <Settings size={17} strokeWidth={1.9} />
+              <Settings size={18} strokeWidth={1.9} />
             </PrefetchNavLink>
           </div>
         </div>
