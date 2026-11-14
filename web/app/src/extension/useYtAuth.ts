@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type { DetectedExtension, YtAuthState } from '@bitchord/shared/bridge';
 import { queryClient } from '@/lib/queryClient';
+import { resetInnertubeSession } from '@/playback/youtube/innertube';
 import { extensionQueryKey, useExtension } from './useExtension';
 
 /**
@@ -51,7 +52,22 @@ export function noteMusicIdentity(identity: string): void {
 
 function resetMusic(): void {
   musicIdentity = null;
-  void queryClient.cancelQueries({ queryKey: ['music'] }).then(() => queryClient.resetQueries({ queryKey: ['music'] }));
+  resetInnertubeSession();
+  void queryClient.cancelQueries({ queryKey: ['music'] }).then(() => {
+    void queryClient.resetQueries({ queryKey: ['music'] });
+    void queryClient.invalidateQueries({ queryKey: ['music'] });
+    void queryClient.invalidateQueries({ queryKey: ['music', 'library'] });
+    void queryClient.invalidateQueries({ queryKey: ['music', 'library', 'sidebar-playlists'] });
+    void queryClient.refetchQueries({ queryKey: ['music', 'library', 'sidebar-playlists'] });
+    void queryClient.refetchQueries({ queryKey: ['music', 'home'] });
+  });
+}
+
+/**
+ * Public export for external auth detection (in-app Tauri window or browser CDP capture).
+ */
+export function adoptYtAuthState(state: YtAuthState): void {
+  adopt(state);
 }
 
 /**
@@ -61,12 +77,13 @@ function resetMusic(): void {
  */
 function adopt(state: YtAuthState): void {
   queryClient.setQueryData(ytAuthQueryKey, state);
+  resetInnertubeSession();
   const identity = identityOf(state);
   if (lastIdentity !== null && identity !== lastIdentity) {
     // Loaded on demand: the resolver pulls in BotGuard, which the shell shouldn't.
     void import('@/playback/youtube/resolver').then((m) => m.onSessionChanged());
   }
-  if (musicIdentity !== null && identity !== musicIdentity) resetMusic();
+  resetMusic();
   lastIdentity = identity;
 }
 

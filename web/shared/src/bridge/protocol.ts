@@ -316,6 +316,14 @@ export interface BridgeMethods {
     params: { url?: string };
     result: { opened: boolean };
   };
+  'auth.startBrowserSignIn': {
+    params: { url?: string };
+    result: { started: boolean };
+  };
+  'auth.saveSession': {
+    params: { cookies?: string; session?: string; data?: string };
+    result: any;
+  };
   'addon.manifest': {
     params: { baseUrl: string };
     result: any;

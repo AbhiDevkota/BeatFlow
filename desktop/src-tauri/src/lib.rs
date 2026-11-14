@@ -88,6 +88,49 @@ fn sha1_hex(data: &[u8]) -> String {
   format!("{:08x}{:08x}{:08x}{:08x}{:08x}", h0, h1, h2, h3, h4)
 }
 
+fn compute_youtube_authorization(cookies: &str, origin: &str) -> Option<String> {
+  let ts = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_secs();
+
+  let get_cookie_val = |target: &str| -> Option<&str> {
+    for part in cookies.split(';') {
+      let trimmed = part.trim();
+      if let Some(rest) = trimmed.strip_prefix(target) {
+        if let Some(val) = rest.strip_prefix('=') {
+          return Some(val.trim());
+        }
+      }
+    }
+    None
+  };
+
+  let schemes = [
+    ("SAPISIDHASH", "SAPISID"),
+    ("SAPISID1PHASH", "__Secure-1PAPISID"),
+    ("SAPISID3PHASH", "__Secure-3PAPISID"),
+  ];
+
+  let mut parts = Vec::new();
+  for (scheme, cookie_name) in schemes {
+    if let Some(secret) = get_cookie_val(cookie_name) {
+      if !secret.is_empty() {
+        let to_hash = format!("{} {} {}", ts, secret, origin);
+        let hash = sha1_hex(to_hash.as_bytes());
+        parts.push(format!("{} {}_{}", scheme, ts, hash));
+      }
+    }
+  }
+
+  if parts.is_empty() {
+    None
+  } else {
+    Some(parts.join(" "))
+  }
+}
+
+#[allow(dead_code)]
 fn compute_sapisid_hash(sapisid: &str, origin: &str) -> String {
   let ts = std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)
@@ -96,6 +139,329 @@ fn compute_sapisid_hash(sapisid: &str, origin: &str) -> String {
   let to_hash = format!("{} {} {}", ts, sapisid, origin);
   let hash = sha1_hex(to_hash.as_bytes());
   format!("SAPISIDHASH {}_{}", ts, hash)
+}
+
+#[cfg(target_os = "windows")]
+pub fn extract_webview2_cookies(window: &tauri::WebviewWindow) -> Option<String> {
+  use webview2_com::Microsoft::Web::WebView2::Win32::*;
+  use webview2_com::GetCookiesCompletedHandler;
+  use windows_core::{Interface, HSTRING, PCWSTR, PWSTR};
+
+  let (tx, rx) = std::sync::mpsc::channel();
+  let res = window.with_webview(move |wv| {
+    let controller = wv.controller();
+    unsafe {
+      let core = match controller.CoreWebView2() {
+        Ok(c) => c,
+        Err(_) => {
+          let _ = tx.send(None);
+          return;
+        }
+      };
+      let core2: ICoreWebView2_2 = match core.cast() {
+        Ok(c) => c,
+        Err(_) => {
+          let _ = tx.send(None);
+          return;
+        }
+      };
+      let cookie_manager = match core2.CookieManager() {
+        Ok(cm) => cm,
+        Err(_) => {
+          let _ = tx.send(None);
+          return;
+        }
+      };
+
+      let tx_inner = tx.clone();
+      let handler = GetCookiesCompletedHandler::create(Box::new(move |res, list_opt| {
+        if res.is_err() {
+          let _ = tx_inner.send(None);
+          return Ok(());
+        }
+        let list = match list_opt {
+          Some(l) => l,
+          None => {
+            let _ = tx_inner.send(None);
+            return Ok(());
+          }
+        };
+        let mut count = 0u32;
+        let _ = list.Count(&mut count);
+        let mut parts = Vec::new();
+        for i in 0..count {
+          if let Ok(cookie) = list.GetValueAtIndex(i) {
+            let mut name_pwstr = PWSTR::null();
+            let mut val_pwstr = PWSTR::null();
+            let mut dom_pwstr = PWSTR::null();
+            let _ = cookie.Name(&mut name_pwstr);
+            let _ = cookie.Value(&mut val_pwstr);
+            let _ = cookie.Domain(&mut dom_pwstr);
+            let name = name_pwstr.to_string().unwrap_or_default();
+            let val = val_pwstr.to_string().unwrap_or_default();
+            let dom = dom_pwstr.to_string().unwrap_or_default();
+            if (dom.contains("youtube.com") || dom.contains("google.com")) && !name.is_empty() && !val.is_empty() {
+              parts.push(format!("{}={}", name, val));
+            }
+          }
+        }
+        let _ = tx_inner.send(Some(parts.join("; ")));
+        Ok(())
+      }));
+
+      let url = HSTRING::from("https://music.youtube.com");
+      let pcwstr = PCWSTR::from_raw(url.as_ptr());
+      let _ = cookie_manager.GetCookies(pcwstr, &handler);
+    }
+  });
+
+  if res.is_err() {
+    return None;
+  }
+  rx.recv_timeout(std::time::Duration::from_secs(3)).ok().flatten()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn extract_webview2_cookies(_window: &tauri::WebviewWindow) -> Option<String> {
+  None
+}
+
+fn find_preferred_browser() -> Option<(&'static str, PathBuf)> {
+  #[cfg(target_os = "windows")]
+  {
+    let local = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("C:\\Users\\Default\\AppData\\Local"));
+    let program_files = std::env::var_os("ProgramFiles").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Program Files"));
+    let program_files_x86 = std::env::var_os("ProgramFiles(x86)").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Program Files (x86)"));
+
+    let candidates = [
+      ("Edge", program_files_x86.join("Microsoft\\Edge\\Application\\msedge.exe")),
+      ("Edge", program_files.join("Microsoft\\Edge\\Application\\msedge.exe")),
+      ("Edge", local.join("Microsoft\\Edge\\Application\\msedge.exe")),
+      ("Chrome", program_files.join("Google\\Chrome\\Application\\chrome.exe")),
+      ("Chrome", program_files_x86.join("Google\\Chrome\\Application\\chrome.exe")),
+      ("Chrome", local.join("Google\\Chrome\\Application\\chrome.exe")),
+      ("Brave", program_files.join("BraveSoftware\\Brave-Browser\\Application\\brave.exe")),
+      ("Brave", local.join("BraveSoftware\\Brave-Browser\\Application\\brave.exe")),
+    ];
+
+    for (name, path) in candidates {
+      if path.is_file() {
+        return Some((name, path));
+      }
+    }
+  }
+  None
+}
+
+async fn capture_cdp_cookies(port: u16, ws_path: &str) -> Option<String> {
+  use tokio::io::{AsyncReadExt, AsyncWriteExt};
+  let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.ok()?;
+  let handshake = format!(
+    "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+    ws_path, port
+  );
+  stream.write_all(handshake.as_bytes()).await.ok()?;
+
+  let mut buf = vec![0u8; 4096];
+  let n = stream.read(&mut buf).await.ok()?;
+  let resp = String::from_utf8_lossy(&buf[..n]);
+  if !resp.contains("101 Switching Protocols") {
+    return None;
+  }
+
+  // Send {"id":1,"method":"Storage.getCookies"}
+  let cmd = r#"{"id":1,"method":"Storage.getCookies"}"#;
+  let len = cmd.len();
+  let mut frame = Vec::with_capacity(6 + len);
+  frame.push(0x81);
+  frame.push(0x80 | (len as u8));
+  frame.extend_from_slice(&[0, 0, 0, 0]);
+  frame.extend_from_slice(cmd.as_bytes());
+  stream.write_all(&frame).await.ok()?;
+
+  let mut received = Vec::new();
+  let mut read_buf = vec![0u8; 16384];
+  for _ in 0..20 {
+    tokio::select! {
+      res = stream.read(&mut read_buf) => {
+        if let Ok(n) = res {
+          if n > 0 {
+            received.extend_from_slice(&read_buf[..n]);
+            let text = String::from_utf8_lossy(&received);
+            if text.contains(r#""id":1"#) {
+              if let Some(start) = text.find('{') {
+                if let Ok(val) = serde_json::from_str::<Value>(&text[start..]) {
+                  if let Some(cookies) = val.get("result").and_then(|r| r.get("cookies")).and_then(|c| c.as_array()) {
+                    let mut parts = Vec::new();
+                    for c in cookies {
+                      let domain = c.get("domain").and_then(|d| d.as_str()).unwrap_or("");
+                      if domain.contains("youtube.com") || domain.contains("google.com") {
+                        if let (Some(n), Some(v)) = (c.get("name").and_then(|s| s.as_str()), c.get("value").and_then(|s| s.as_str())) {
+                          if !n.is_empty() && !v.is_empty() {
+                            parts.push(format!("{}={}", n, v));
+                          }
+                        }
+                      }
+                    }
+                    if !parts.is_empty() {
+                      return Some(parts.join("; "));
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      _ = tokio::time::sleep(std::time::Duration::from_millis(300)) => {}
+    }
+  }
+  None
+}
+
+fn start_interactive_browser_sign_in(url: &str) -> bool {
+  #[cfg(target_os = "windows")]
+  {
+    if let Some((browser_name, browser_path)) = find_preferred_browser() {
+      let profile_dir = get_config_dir().join("browser_sign_in").join(browser_name);
+      let _ = fs::create_dir_all(&profile_dir);
+      let port_file = profile_dir.join("DevToolsActivePort");
+      let _ = fs::remove_file(&port_file);
+
+      let target_url = if url.is_empty() {
+        "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F".to_string()
+      } else {
+        url.to_string()
+      };
+
+      let mut sign_in_process = match std::process::Command::new(&browser_path)
+        .arg(format!("--user-data-dir={}", profile_dir.display()))
+        .arg("--disable-background-mode")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--new-window")
+        .arg(&target_url)
+        .spawn()
+      {
+        Ok(child) => child,
+        Err(e) => {
+          eprintln!("[BeatFlow Browser Auth] Failed to launch {}: {}", browser_name, e);
+          open_in_browser(&target_url);
+          return false;
+        }
+      };
+
+      println!("[BeatFlow Browser Auth] Launched {} for Google sign-in", browser_name);
+
+      tauri::async_runtime::spawn(async move {
+        let _ = tokio::task::spawn_blocking(move || {
+          let _ = sign_in_process.wait();
+        }).await;
+
+        println!("[BeatFlow Browser Auth] Browser window closed, starting headless capture pass...");
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+
+        let port_file = profile_dir.join("DevToolsActivePort");
+        let _ = fs::remove_file(&port_file);
+
+        let mut reader = match std::process::Command::new(&browser_path)
+          .arg(format!("--user-data-dir={}", profile_dir.display()))
+          .arg("--headless=new")
+          .arg("--disable-background-mode")
+          .arg("--remote-debugging-port=0")
+          .arg("--remote-debugging-address=127.0.0.1")
+          .arg("about:blank")
+          .spawn()
+        {
+          Ok(child) => child,
+          Err(e) => {
+            eprintln!("[BeatFlow Browser Auth] Failed to launch headless reader: {}", e);
+            return;
+          }
+        };
+
+        let mut endpoint: Option<(u16, String)> = None;
+        for _ in 0..40 {
+          if port_file.is_file() {
+            if let Ok(content) = fs::read_to_string(&port_file) {
+              let lines: Vec<&str> = content.lines().collect();
+              if lines.len() >= 2 {
+                if let Ok(port) = lines[0].trim().parse::<u16>() {
+                  let path = lines[1].trim().to_string();
+                  endpoint = Some((port, path));
+                  break;
+                }
+              }
+            }
+          }
+          tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        if let Some((port, ws_path)) = endpoint {
+          println!("[BeatFlow Browser Auth] Connecting to CDP port {} path {}", port, ws_path);
+          if let Some(cookies) = capture_cdp_cookies(port, &ws_path).await {
+            if cookies.contains("SAPISID=") {
+              println!("[BeatFlow Browser Auth] Successfully captured cookies from browser!");
+              let payload = json!({
+                "cookies": cookies,
+                "name": format!("{} User", browser_name),
+                "authUser": "0"
+              });
+              let _ = handle_auth_callback(&payload.to_string()).await;
+            } else {
+              println!("[BeatFlow Browser Auth] Captured cookies did not contain SAPISID");
+            }
+          }
+        }
+
+        let _ = reader.kill();
+        let _ = reader.wait();
+      });
+
+      return true;
+    }
+  }
+
+  open_in_browser(url);
+  false
+}
+
+async fn handle_manual_session_import(raw: &str) -> Result<Value, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err("No cookie or session data provided".into());
+  }
+
+  let cookies = if trimmed.starts_with('{') {
+    if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+      if let Some(c) = v.get("cookies").or_else(|| v.get("cookie")).and_then(|s| s.as_str()) {
+        c.to_string()
+      } else {
+        trimmed.to_string()
+      }
+    } else {
+      trimmed.to_string()
+    }
+  } else if let Some(stripped) = trimmed.strip_prefix("Cookie:").or_else(|| trimmed.strip_prefix("cookie:")) {
+    stripped.trim().to_string()
+  } else {
+    trimmed.to_string()
+  };
+
+  let has_sapisid = cookies.contains("SAPISID=")
+    || cookies.contains("__Secure-3PAPISID=")
+    || cookies.contains("__Secure-1PAPISID=");
+  if !has_sapisid {
+    return Err("Provided cookies do not contain SAPISID. Make sure you copy cookies from YouTube Music.".into());
+  }
+
+  let payload = json!({
+    "cookies": cookies,
+    "name": "YouTube Account",
+    "authUser": "0"
+  });
+
+  handle_auth_callback(&payload.to_string()).await
 }
 
 pub fn get_yt_auth_path() -> PathBuf {
@@ -369,6 +735,8 @@ struct FetchParams {
   body: Option<String>,
   #[serde(rename = "bodyEncoding", default)]
   body_encoding: Option<String>,
+  #[serde(default)]
+  auth: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -404,6 +772,14 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
   let is_apple = params.url.contains("amp-api.music.apple.com");
   let is_musixmatch = params.url.contains("musixmatch.com");
   let is_tidal = params.url.contains("tidal.com");
+  let is_stats = params.url.contains("/api/stats/");
+
+  let yt_origin = if is_stats || params.url.contains("music.youtube.com") {
+    "https://music.youtube.com"
+  } else {
+    "https://www.youtube.com"
+  };
+
   if params.url.contains("music.youtube.com/youtubei/") {
     req = req
       .header("Origin", "https://music.youtube.com")
@@ -420,7 +796,7 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
         .header("Origin", "https://www.youtube.com")
         .header("Referer", "https://www.youtube.com/");
     }
-  } else if params.url.contains("/api/stats/") {
+  } else if is_stats {
     req = req
       .header("Origin", "https://music.youtube.com")
       .header("Referer", "https://music.youtube.com/");
@@ -437,7 +813,14 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
       .header("User-Agent", hires::USER_AGENT);
   }
 
-  if is_yt {
+  let wants_auth = params.auth.unwrap_or(false)
+    || (is_youtube
+      && params.auth.is_none()
+      && !params.url.contains("sw.js")
+      && !params.url.contains("player")
+      && !params.url.contains("iframe_api"));
+
+  if is_yt && wants_auth {
     if let Some(auth) = load_yt_auth() {
       let connected = auth.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
       let signed_in = auth.get("signedIn").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -445,57 +828,70 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
         if let Some(cookies) = auth.get("cookies").and_then(|v| v.as_str()) {
           if !cookies.is_empty() {
             req = req.header("Cookie", cookies);
-            for part in cookies.split(';') {
-              let trimmed = part.trim();
-              if let Some(val) = trimmed.strip_prefix("SAPISID=")
-                .or_else(|| trimmed.strip_prefix("__Secure-3PAPISID="))
-                .or_else(|| trimmed.strip_prefix("__Secure-1PAPISID="))
-              {
-                if !val.is_empty() {
-                  let auth_hash = compute_sapisid_hash(val, "https://music.youtube.com");
-                  req = req.header("Authorization", auth_hash);
-                  break;
-                }
-              }
+            if let Some(auth_header) = compute_youtube_authorization(cookies, yt_origin) {
+              req = req.header("Authorization", auth_header);
             }
           }
         }
         if let Some(auth_user) = auth.get("active").and_then(|v| v.get("authUser")).and_then(|v| v.as_str()) {
           req = req.header("X-Goog-AuthUser", auth_user);
         }
+        if let Some(page_id) = auth.get("active").and_then(|v| v.get("pageId")).and_then(|v| v.as_str()) {
+          if !page_id.is_empty() {
+            req = req.header("X-Goog-PageId", page_id);
+          }
+        }
+        req = req
+          .header("Origin", yt_origin)
+          .header("Referer", format!("{}/", yt_origin))
+          .header("X-Origin", yt_origin);
       }
     }
   }
 
+  const IDENTITY_HEADERS: &[&str] = &[
+    "authorization",
+    "cookie",
+    "x-goog-authuser",
+    "x-goog-pageid",
+    "x-origin",
+    "origin",
+    "referer",
+  ];
+
   if let Some(headers) = params.headers {
     for (k, v) in headers {
+      let lower = k.to_lowercase();
       // If this is a YouTube request, drop the page's identity/origin headers
       // (origin, referer, x-origin, host, content-length) so they don't override or conflict.
-      if k.eq_ignore_ascii_case("host") || k.eq_ignore_ascii_case("content-length") {
+      if lower == "host" || lower == "content-length" {
+        continue;
+      }
+      if is_yt && wants_auth && IDENTITY_HEADERS.contains(&lower.as_str()) {
         continue;
       }
       if is_yt
-        && (k.eq_ignore_ascii_case("origin")
-          || k.eq_ignore_ascii_case("referer")
-          || k.eq_ignore_ascii_case("x-origin"))
+        && (lower == "origin"
+          || lower == "referer"
+          || lower == "x-origin")
       {
         continue;
       }
       if is_apple
-        && (k.eq_ignore_ascii_case("origin")
-          || k.eq_ignore_ascii_case("referer"))
+        && (lower == "origin"
+          || lower == "referer")
       {
         continue;
       }
       if is_tidal
-        && (k.eq_ignore_ascii_case("origin")
-          || k.eq_ignore_ascii_case("referer")
-          || k.eq_ignore_ascii_case("x-origin"))
+        && (lower == "origin"
+          || lower == "referer"
+          || lower == "x-origin")
       {
         continue;
       }
       // Drop any localhost/tauri origin for external media/addon requests
-      if (k.eq_ignore_ascii_case("origin") || k.eq_ignore_ascii_case("referer"))
+      if (lower == "origin" || lower == "referer")
         && (v.contains("localhost") || v.contains("tauri:") || v.contains("127.0.0.1"))
       {
         continue;
@@ -1093,6 +1489,20 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }
       Ok(json!({ "opened": true }))
     }
+    "auth.startBrowserSignIn" => {
+      let url_str = params.get("url").and_then(|v| v.as_str()).unwrap_or("https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F");
+      let started = start_interactive_browser_sign_in(url_str);
+      Ok(json!({ "started": started }))
+    }
+    "auth.saveSession" => {
+      let raw_input = params.get("cookies")
+        .or_else(|| params.get("session"))
+        .or_else(|| params.get("data"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+      let outcome = handle_manual_session_import(raw_input).await?;
+      Ok(outcome)
+    }
     "addon.manifest" => {
       let base_url = params.get("baseUrl").and_then(|v| v.as_str()).ok_or("Missing baseUrl")?;
       let addon_client = hires::AddonClient::new(base_url).ok_or("Invalid addon baseUrl")?;
@@ -1422,6 +1832,30 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
     return Err("Missing SAPISID".into());
   }
 
+  // Attempt to extract full cookie jar from WebView2 on Windows to include HttpOnly session cookies
+  let mut resolved_cookies = cookies.to_string();
+  #[cfg(target_os = "windows")]
+  {
+    if let Some(app_handle) = APP_HANDLE.get() {
+      if let Some(login_win) = app_handle.get_webview_window("google-login") {
+        if let Some(c) = extract_webview2_cookies(&login_win) {
+          if c.contains("SAPISID=") {
+            resolved_cookies = c;
+          }
+        }
+      }
+      if !resolved_cookies.contains("HSID=") {
+        if let Some(main_win) = app_handle.get_webview_window("main") {
+          if let Some(c) = extract_webview2_cookies(&main_win) {
+            if c.contains("SAPISID=") {
+              resolved_cookies = c;
+            }
+          }
+        }
+      }
+    }
+  }
+
   let email = data.get("email").and_then(|v| v.as_str());
   let name = data
     .get("name")
@@ -1456,7 +1890,7 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
     "connected": true,
     "signedIn": true,
     "problem": null,
-    "cookies": cookies,
+    "cookies": resolved_cookies,
     "accounts": [account],
     "active": channel
   });
@@ -1467,9 +1901,17 @@ async fn handle_auth_callback(payload_str: &str) -> Result<Value, String> {
   if let Some(app_handle) = APP_HANDLE.get() {
     if let Some(main_win) = app_handle.get_webview_window("main") {
       let auth_str = serde_json::to_string(&auth).unwrap_or_default();
+      let bridge_event = json!({
+        "channel": "bitchord-bridge",
+        "direction": "event",
+        "payload": {
+          "event": "yt.authState",
+          "data": auth
+        }
+      });
+      let bridge_str = serde_json::to_string(&bridge_event).unwrap_or_default();
       let script = format!(
-        "window.dispatchEvent(new CustomEvent('beatflow:yt-auth-detected', {{ detail: {} }}));",
-        auth_str
+        "window.dispatchEvent(new CustomEvent('beatflow:yt-auth-detected', {{ detail: {auth_str} }})); window.postMessage({bridge_str}, '*');"
       );
       let _ = main_win.eval(&script);
     }

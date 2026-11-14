@@ -27,3 +27,6 @@ url = "2.5"
 roxmltree = "0.21"
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+webview2-com = "0.39"
+windows-core = "0.62"
+

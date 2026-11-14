@@ -8,7 +8,7 @@ import { Outlet, useNavigate } from 'react-router';
 import { resolveDeepLink } from '@/lib/deepLink';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { queryClient } from '@/lib/queryClient';
-import { ytAuthQueryKey } from '@/extension/useYtAuth';
+import { adoptYtAuthState, ytAuthQueryKey } from '@/extension/useYtAuth';
 import { config } from '@/config';
 import { useExtension } from '@/extension/useExtension';
 import { isDesktopApp, isMobileBrowser } from '@/lib/platform';
@@ -38,16 +38,14 @@ export function AppShell() {
   useKeyboardShortcuts();
   useDiscordPresence();
 
-  // Listen for YouTube Music login profile detection from in-app login window
+  // Listen for YouTube Music login profile detection from in-app login window or browser capture
   useEffect(() => {
     if (!desktop) return;
     const handleAuthDetected = (e: Event) => {
       const customEvent = e as CustomEvent;
       const auth = customEvent.detail;
       if (auth) {
-        queryClient.setQueryData(ytAuthQueryKey, auth);
-        void queryClient.invalidateQueries({ queryKey: ytAuthQueryKey });
-        void queryClient.invalidateQueries({ queryKey: ['music'] });
+        adoptYtAuthState(auth);
       }
     };
     window.addEventListener('beatflow:yt-auth-detected', handleAuthDetected);

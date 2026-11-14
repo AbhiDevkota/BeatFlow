@@ -13,6 +13,11 @@ import { fastBase64ToUint8Array } from '@/desktop/desktopFetch';
  */
 let instance: Promise<Innertube> | null = null;
 
+export function resetInnertubeSession(): void {
+  instance = null;
+  signedInstance = null;
+}
+
 export function getInnertube(): Promise<Innertube> {
   instance ??= create().catch((error: unknown) => {
     instance = null;

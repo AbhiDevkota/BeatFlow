@@ -147,6 +147,8 @@ dependencies = [
  "tauri-plugin-log",
  "tokio",
  "url",
+ "webview2-com",
+ "windows-core",
 ]
 
 [[package]]
