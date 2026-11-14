@@ -1,5 +1,6 @@
+import { ChevronLeft } from 'lucide-react';
 import { useMemo, useState, type CSSProperties } from 'react';
-import { useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { PlayIcon } from '@/components/icons/Transport';
 import { Artwork } from '@/components/music/Artwork';
@@ -107,6 +108,7 @@ function TopReleaseCard({ item }: { item: MusicItem }) {
  * vertical gradient, onBackgroundVariant secondary text, and PlayCircle styling.
  */
 export default function ArtistPage() {
+  const navigate = useNavigate();
   const id = decodeURIComponent(useParams().id ?? '');
   const { missing } = useYouTubeReady();
   const artist = useArtist(id);
@@ -163,6 +165,19 @@ export default function ArtistPage() {
     <>
       {/* The hero: full-bleed, ~1.93:1 of the content column, the name and actions centred near the bottom. */}
       <header className="relative max-h-[70vh] overflow-hidden">
+        {/* Floating Back Button */}
+        <div className="absolute top-5 left-6 z-20">
+          <button
+            type="button"
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/home'))}
+            className="inline-flex items-center gap-1.5 rounded-full bg-black/45 hover:bg-black/65 text-white/90 hover:text-white backdrop-blur-md border border-white/15 px-3 py-1.5 text-xs font-medium shadow-md active:scale-95 transition-all select-none"
+            aria-label="Back"
+            title="Back"
+          >
+            <ChevronLeft size={16} strokeWidth={2.4} />
+            <span>Back</span>
+          </button>
+        </div>
         <div className="relative w-full">
           <Artwork src={data.heroImage} displayWidth={2880} aspect={1165 / 604} eager />
           {/* Apple's photograph fades in over YouTube's once it arrives. */}

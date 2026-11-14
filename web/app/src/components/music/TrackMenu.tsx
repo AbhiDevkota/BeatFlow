@@ -1,7 +1,7 @@
 import { Check, ChevronLeft, ChevronRight, Download, ListEnd, ListPlus, ListStart, Loader2, MoreHorizontal, Music, RotateCcw, Sparkles, Star, Video } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { isDesktopApp } from '@bitchord/shared/bridge';
-import { checkTrackDownloaded, deleteDownloadedTrack, downloadTrack } from '@/data/downloads/desktopDownloads';
+import { deleteDownloadedTrack, downloadTrack, useDownloadsStore } from '@/data/downloads/desktopDownloads';
 import { Menu, MenuHeader, MenuItem, MenuSeparator, type MenuPlacement } from '@/components/Menu';
 import { isVideoTrack } from '@/data/music/resolveAudio';
 import {
@@ -80,30 +80,14 @@ function AccountItems({ track, onClose, onPlaylists }: { track: Track; onClose: 
 }
 
 function DesktopDownloadItem({ track, onClose }: { track: Track; onClose: () => void }) {
-  const [status, setStatus] = useState<'checking' | 'not_downloaded' | 'downloading' | 'downloaded'>('checking');
-  const [downloadedFile, setDownloadedFile] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const artist = track.artists.map((a) => a.name).join(', ');
+  const localItem = useDownloadsStore((s) => s.getLocalTrack(track.title, artist, track.videoId));
+  const isDownloaded = Boolean(localItem);
 
-  useEffect(() => {
-    let active = true;
-    const artist = track.artists.map((a) => a.name).join(', ');
-    checkTrackDownloaded(track.title, artist).then((res) => {
-      if (active) {
-        if (res.exists) {
-          setStatus('downloaded');
-          setDownloadedFile(res.fileName ?? null);
-        } else {
-          setStatus('not_downloaded');
-        }
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [track.title, track.artists]);
+  if (!isDesktopApp()) return null;
 
-  if (!isDesktopApp() || status === 'checking') return null;
-
-  if (status === 'downloading') {
+  if (downloading) {
     return (
       <MenuItem icon={<Loader2 size={15} className="animate-spin text-primary" />} disabled onSelect={() => {}}>
         Downloading…
@@ -111,15 +95,12 @@ function DesktopDownloadItem({ track, onClose }: { track: Track; onClose: () => 
     );
   }
 
-  if (status === 'downloaded') {
+  if (isDownloaded && localItem) {
     return (
       <MenuItem
-        icon={<Check size={15} className="text-primary" />}
+        icon={<Check size={15} className="text-key" />}
         onSelect={async () => {
-          if (downloadedFile) {
-            await deleteDownloadedTrack(downloadedFile);
-            setStatus('not_downloaded');
-          }
+          await deleteDownloadedTrack(localItem.fileName);
           onClose();
         }}
       >
@@ -132,13 +113,13 @@ function DesktopDownloadItem({ track, onClose }: { track: Track; onClose: () => 
     <MenuItem
       icon={<Download size={15} />}
       onSelect={async () => {
-        setStatus('downloading');
+        setDownloading(true);
         try {
           await downloadTrack(track);
-          setStatus('downloaded');
         } catch (e) {
           console.error('Download error:', e);
-          setStatus('not_downloaded');
+        } finally {
+          setDownloading(false);
         }
         onClose();
       }}

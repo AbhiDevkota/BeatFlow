@@ -67,7 +67,7 @@ export default function DebugPage() {
 
   return (
     <>
-      <PageHeader title="Debug" />
+      <PageHeader title="Debug" back={true} />
       <div className="mx-(--body-gutter) mt-5 max-w-[980px]">
         <form
           className="flex gap-2.5"

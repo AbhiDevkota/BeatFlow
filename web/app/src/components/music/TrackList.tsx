@@ -1,8 +1,10 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { PrefetchLink } from '@/components/PrefetchLink';
 import { PauseIcon, PlayIcon } from '@/components/icons/Transport';
 import type { ArtistRef, Track } from '@/data/music/types';
+import { useDownloadsStore } from '@/data/downloads/desktopDownloads';
 import { usePlayer } from '@/state/player';
 import { Artwork } from './Artwork';
 import { ExplicitBadge } from './ExplicitBadge';
@@ -99,6 +101,9 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
   const togglePlay = usePlayer((s) => s.togglePlay);
   const unavailable = track.unavailable;
   const onPlay = () => (unavailable ? undefined : current ? togglePlay() : onPlayRow());
+  const isDownloaded =
+    useDownloadsStore((s) => s.isDownloaded(track.title, track.artists[0]?.name)) ||
+    track.videoId.startsWith('beatflow://local');
 
   return (
     <div
@@ -152,6 +157,11 @@ function Row({ track, variant, position, fallbackArtwork, onPlayRow }: RowProps)
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate type-body text-primary">{track.title}</span>
             {track.explicit && <ExplicitBadge />}
+            {isDownloaded && (
+              <span title="Downloaded on device" className="inline-flex items-center text-key shrink-0">
+                <CheckCircle2 size={13} strokeWidth={2.5} />
+              </span>
+            )}
             {track.sourceQuality && (
               <SourceQualityBadge quality={track.sourceQuality} size="sm" />
             )}

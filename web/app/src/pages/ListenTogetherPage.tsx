@@ -47,7 +47,7 @@ export default function ListenTogetherPage() {
 
   return (
     <div className={settingsUi.centered}>
-      <PageHeader title="Listen Together" />
+      <PageHeader title="Listen Together" back={true} />
       <div className={settingsUi.body}>
         {state.code ? (
           <InParty />

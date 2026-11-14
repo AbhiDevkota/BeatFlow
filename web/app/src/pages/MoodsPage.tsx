@@ -35,7 +35,7 @@ export default function MoodsPage() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Find Your Mood" />
+      <PageHeader title="Find Your Mood" back={true} />
 
       <div className="mx-(--body-gutter) mt-6">
         <p className="text-sm sm:text-base text-secondary max-w-2xl mb-8">

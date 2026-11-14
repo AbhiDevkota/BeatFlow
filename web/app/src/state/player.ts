@@ -909,6 +909,38 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
 
   let currentTrack = entry.track;
   const contentSettings = useContentSettings.getState();
+
+  // 0. Offline / Downloaded Playback Check:
+  // If this song was previously downloaded to the BeatFlow songs folder, stream directly from disk!
+  if (
+    isDesktopApp() &&
+    !currentTrack.videoId.startsWith('beatflow://') &&
+    !partyHooks?.inParty()
+  ) {
+    try {
+      const { useDownloadsStore, toTrackFromDownloaded } = await import('@/data/downloads/desktopDownloads');
+      const local = useDownloadsStore.getState().getLocalTrack(currentTrack.title, currentTrack.artists[0]?.name);
+      if (local) {
+        const localTrack = toTrackFromDownloaded(local);
+        const directTrack: Track = {
+          ...localTrack,
+          title: currentTrack.title || localTrack.title,
+          artists: currentTrack.artists.length ? currentTrack.artists : localTrack.artists,
+          thumbnail: currentTrack.thumbnail || localTrack.thumbnail,
+          album: currentTrack.album || localTrack.album,
+        };
+        originalTracks.set(directTrack.videoId, currentTrack);
+        currentTrack = directTrack;
+        const currentQueue = [...usePlayer.getState().queue];
+        if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+          currentQueue[at] = { ...currentQueue[at]!, track: directTrack };
+          usePlayer.setState({ queue: currentQueue });
+        }
+        trackLog.i(`[Player] Using local downloaded audio file for "${currentTrack.title}"`, directTrack.videoId);
+      }
+    } catch {}
+  }
+
   const preferAudio = (contentSettings.preferMusicOnly || contentSettings.preferAudioCuts) && !partyHooks?.inParty();
   if (preferAudio && isVideoTrack(currentTrack)) {
     try {
@@ -1355,13 +1387,20 @@ function refillAutoplay(force = false, anySeed = false): Promise<void> {
       .reverse()
       .find((e) => !exhaustedSeeds.has(e.track.videoId))?.track;
   }
-  if (!playing || !seed || exhaustedSeeds.has(seed.videoId)) return Promise.resolve();
-  if (!force && autoplaySeed === seed.videoId) return Promise.resolve();
-  autoplaySeed = seed.videoId;
+  if (!playing || !seed) return Promise.resolve();
+
+  // Resolve canonical YouTube video ID so fetchRadio works even when directly streaming from addons or local files
+  const canonicalSeedId = getCanonicalVideoId(seed) ?? seed.videoId;
+  if (!canonicalSeedId || canonicalSeedId.startsWith('addon:') || canonicalSeedId.startsWith('beatflow://')) {
+    return Promise.resolve();
+  }
+  if (exhaustedSeeds.has(canonicalSeedId)) return Promise.resolve();
+  if (!force && autoplaySeed === canonicalSeedId) return Promise.resolve();
+  autoplaySeed = canonicalSeedId;
   refilling ??= (async () => {
     try {
       const { fetchRadio } = await import('@/data/music/api');
-      const { candidates, seedIsVideo } = await fetchRadio(seed.videoId);
+      const { candidates, seedIsVideo } = await fetchRadio(canonicalSeedId);
       const current = usePlayer.getState();
       const extra = extendStation(
         current.queue.map((e) => e.track),
@@ -1370,19 +1409,19 @@ function refillAutoplay(force = false, anySeed = false): Promise<void> {
         seedIsVideo,
       );
       if (!extra.length) {
-        exhaustedSeeds.add(seed.videoId);
+        exhaustedSeeds.add(canonicalSeedId);
         return;
       }
-      const source: QueueSource = { title: `${seed.title} Radio`, type: 'radio', id: `RDAMVM${seed.videoId}` };
+      const source: QueueSource = { title: `${seed.title} Radio`, type: 'radio', id: `RDAMVM${canonicalSeedId}` };
       // Still on the same track? One that moved on gets its own top-up.
       if (current.queue[current.index]?.track.videoId !== playing.videoId || !current.autoplay) {
         autoplaySeed = null;
         return;
       }
       usePlayer.setState({ queue: [...current.queue, ...extra.map((t) => asEntry(t, 'autoplay', source))] });
-      trackLog.i(`AutoPlay added ${extra.length} tracks from ${seed.title}'s radio`, seed.videoId);
+      trackLog.i(`AutoPlay added ${extra.length} tracks from ${seed.title}'s radio`, canonicalSeedId);
     } catch (error) {
-      trackLog.w(`AutoPlay couldn't load the radio: ${String(error)}`, seed.videoId);
+      trackLog.w(`AutoPlay couldn't load the radio: ${String(error)}`, canonicalSeedId);
       autoplaySeed = null;
     } finally {
       refilling = null;
@@ -1594,7 +1633,17 @@ function bindElement(deck: Deck, n: number) {
   };
   element.addEventListener('playing', () => set('playing'));
   element.addEventListener('pause', () => {
-    if (!element.ended) set('paused');
+    if (!element.ended) {
+      if (element.duration > 0 && element.currentTime >= element.duration - 0.45) {
+        if (!inFront() || holding) return;
+        endedListeners.forEach((listener) => listener());
+        if (fade?.pending) cancelCrossfade();
+        if (graph?.dj.forceHandoff()) return;
+        void advance(true).then(intent);
+        return;
+      }
+      set('paused');
+    }
   });
   element.addEventListener('waiting', () => set('buffering'));
   element.addEventListener('ended', () => {
@@ -1614,6 +1663,20 @@ function bindElement(deck: Deck, n: number) {
     if (!inFront()) return;
     maybeCrossfade();
     ensureAutoplay();
+    // Guard against DASH / direct streams where mediaElement.ended fails to fire at end-of-stream
+    if (
+      !holding &&
+      element.duration > 0 &&
+      element.currentTime >= element.duration - 0.25 &&
+      !element.paused &&
+      !element.seeking &&
+      usePlayer.getState().status === 'playing'
+    ) {
+      endedListeners.forEach((listener) => listener());
+      if (fade?.pending) cancelCrossfade();
+      if (graph?.dj.forceHandoff()) return;
+      void advance(true).then(intent);
+    }
   });
   for (const event of ['durationchange', 'ratechange', 'seeked'] as const) {
     element.addEventListener(event, () => {

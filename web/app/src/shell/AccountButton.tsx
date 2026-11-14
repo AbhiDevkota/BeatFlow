@@ -1,5 +1,6 @@
 import { ArrowUpRight, ChevronsUpDown } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { GoogleSignInModal } from '@/components/GoogleSignInModal';
 import { Menu, MenuHeader, MenuItem, MenuSeparator } from '@/components/Menu';
 import { useRefreshYtAuth, useSelectChannel, useSetConnected, useYtAuth } from '@/extension/useYtAuth';
 
@@ -58,6 +59,8 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
   const connect = useSetConnected();
   const refresh = useRefreshYtAuth();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [googleModalOpen, setGoogleModalOpen] = useState(false);
+  const [googleModalUrl, setGoogleModalUrl] = useState<string | undefined>(undefined);
   const close = useCallback(() => setAnchor(null), []);
 
   if (status.state === 'checking') {
@@ -68,19 +71,28 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
 
   if (!auth || !auth.browserSignedIn) {
     return (
-      <a
-        className={googlePill}
-        href={SIGN_IN_URL}
-        target="_blank"
-        rel="noreferrer"
-        title="Continue With Google"
-        onClick={onNavigate}
-      >
-        <GoogleLogo size={18} />
-        <span className="truncate text-[12.5px] font-semibold leading-none tracking-tight">
-          Continue With Google
-        </span>
-      </a>
+      <>
+        <button
+          type="button"
+          className={googlePill}
+          title="Continue With Google"
+          onClick={() => {
+            onNavigate?.();
+            setGoogleModalUrl(undefined);
+            setGoogleModalOpen(true);
+          }}
+        >
+          <GoogleLogo size={18} />
+          <span className="truncate text-[12.5px] font-semibold leading-none tracking-tight">
+            Continue With Google
+          </span>
+        </button>
+        <GoogleSignInModal
+          isOpen={googleModalOpen}
+          onClose={() => setGoogleModalOpen(false)}
+          url={googleModalUrl}
+        />
+      </>
     );
   }
 
@@ -147,7 +159,8 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
           <MenuItem
             onSelect={() => {
               close();
-              window.open(SIGN_IN_URL.replace('ServiceLogin', 'AddSession'), '_blank', 'noreferrer');
+              setGoogleModalUrl(SIGN_IN_URL.replace('ServiceLogin', 'AddSession'));
+              setGoogleModalOpen(true);
             }}
             trailing={<ArrowUpRight size={13} />}
           >
@@ -164,6 +177,11 @@ export function AccountButton({ onNavigate }: { onNavigate?: () => void } = {}) 
           </MenuItem>
         </Menu>
       )}
+      <GoogleSignInModal
+        isOpen={googleModalOpen}
+        onClose={() => setGoogleModalOpen(false)}
+        url={googleModalUrl}
+      />
     </>
   );
 }

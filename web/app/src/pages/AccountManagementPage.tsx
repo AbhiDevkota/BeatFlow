@@ -1,6 +1,8 @@
-import { ArrowLeft, Check } from 'lucide-react';
+import { ChevronLeft, Check } from 'lucide-react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { SiSpotify, SiYoutubemusic } from 'react-icons/si';
+import { GoogleSignInModal } from '@/components/GoogleSignInModal';
 import { isDesktopApp } from '@/lib/platform';
 import { useExtension } from '@/extension/useExtension';
 import { useRefreshYtAuth, useSelectChannel, useSetConnected, useYtAuth } from '@/extension/useYtAuth';
@@ -38,6 +40,7 @@ export default function AccountManagementPage() {
   const desktop = isDesktopApp();
   const extension = useExtension();
   const present = extension.state === 'present';
+  const [signInModalOpen, setSignInModalOpen] = useState(false);
 
   const ytReady = yt.state === 'ready';
   const ytAuth = ytReady ? yt.auth : null;
@@ -58,7 +61,7 @@ export default function AccountManagementPage() {
             className="grid size-8 place-items-center rounded-full bg-quaternary/60 text-secondary hover:text-primary transition-colors"
             aria-label="Back to Settings"
           >
-            <ArrowLeft size={18} />
+            <ChevronLeft size={18} />
           </Link>
           <h1 className="type-title-2 font-bold tracking-tight">Account Management</h1>
         </div>
@@ -85,14 +88,13 @@ export default function AccountManagementPage() {
 
             <div className="flex items-center gap-2 flex-shrink-0">
               {ytReady && !ytAuth?.browserSignedIn && (
-                <a
-                  href={SIGN_IN_URL}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => setSignInModalOpen(true)}
                   className={settingsUi.inlineButton}
                 >
                   Sign In
-                </a>
+                </button>
               )}
               {ytReady && ytAuth?.browserSignedIn && !ytAuth?.connected && (
                 <button
@@ -178,6 +180,10 @@ export default function AccountManagementPage() {
           Connecting your Spotify account enables Spotify Canvas background video playback on Now Playing and Spotify library import.
         </p>
       </div>
+      <GoogleSignInModal
+        isOpen={signInModalOpen}
+        onClose={() => setSignInModalOpen(false)}
+      />
     </div>
   );
 }

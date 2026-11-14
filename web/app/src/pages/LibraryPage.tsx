@@ -46,7 +46,7 @@ export default function LibraryPage() {
   if (auth.state === 'ready' && !signedIn) {
     return (
       <>
-        <PageHeader title={title} />
+        <PageHeader title={title} back={!isGeneralLibrary} />
         <EmptyState
           title="Sign in to see your library"
           detail="BeatFlow uses the YouTube Music account this browser is signed in to. Sign in on music.youtube.com, then come back."
@@ -61,7 +61,7 @@ export default function LibraryPage() {
   const tracks = library.data.pages.flatMap((page) => page.data.tracks);
   return (
     <>
-      <PageHeader title={title} />
+      <PageHeader title={title} back={!isGeneralLibrary} />
       {!grid.length && !tracks.length && <EmptyState title="Nothing here yet" />}
       {grid.length > 0 && (
         <ul className={seeAllGrid} data-wide={grid.every((i) => i.wide) || undefined}>

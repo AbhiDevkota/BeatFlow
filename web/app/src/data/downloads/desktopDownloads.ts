@@ -1,4 +1,5 @@
 import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
+import { create } from 'zustand';
 import type { Track } from '@/data/music/types';
 import { resolveAudioUrl } from '@/playback/automix/fetchAudio';
 
@@ -11,13 +12,74 @@ export interface DownloadedItem {
   artist: string;
   durationSec: number;
   localUrl: string;
+  thumbnail?: string | null;
+  hasLyrics?: boolean;
 }
 
 export interface DownloadsFolderInfo {
   path: string;
+  songsPath?: string;
+  lyricsPath?: string;
+  thumbnailsPath?: string;
+  configPath?: string;
+  cachePath?: string;
   isDev: boolean;
   folderName: string;
 }
+
+export interface DownloadsStoreState {
+  downloaded: DownloadedItem[];
+  initialized: boolean;
+  refresh: () => Promise<void>;
+  isDownloaded: (titleOrId: string, artist?: string, videoId?: string) => boolean;
+  getLocalTrack: (titleOrId: string, artist?: string, videoId?: string) => DownloadedItem | null;
+}
+
+export const useDownloadsStore = create<DownloadsStoreState>((set, get) => ({
+  downloaded: [],
+  initialized: false,
+  refresh: async () => {
+    if (!isDesktopApp()) return;
+    try {
+      const items = await listDownloadedTracks();
+      set({ downloaded: items, initialized: true });
+    } catch {}
+  },
+  isDownloaded: (titleOrId, artist, videoId) => {
+    const list = get().downloaded;
+    const tClean = titleOrId.toLowerCase().trim();
+    const aClean = (artist ?? '').toLowerCase().trim();
+    const vClean = (videoId ?? '').toLowerCase().trim();
+    return list.some((item) => {
+      if (vClean && item.fileName.toLowerCase().includes(vClean)) return true;
+      if (item.localUrl.toLowerCase().includes(tClean)) return true;
+      const itTitle = item.title.toLowerCase().trim();
+      const itArtist = item.artist.toLowerCase().trim();
+      return (
+        itTitle === tClean &&
+        (!aClean || !itArtist || itArtist.includes(aClean) || aClean.includes(itArtist))
+      );
+    });
+  },
+  getLocalTrack: (titleOrId, artist, videoId) => {
+    const list = get().downloaded;
+    const tClean = titleOrId.toLowerCase().trim();
+    const aClean = (artist ?? '').toLowerCase().trim();
+    const vClean = (videoId ?? '').toLowerCase().trim();
+    return (
+      list.find((item) => {
+        if (vClean && item.fileName.toLowerCase().includes(vClean)) return true;
+        if (item.localUrl.toLowerCase().includes(tClean)) return true;
+        const itTitle = item.title.toLowerCase().trim();
+        const itArtist = item.artist.toLowerCase().trim();
+        return (
+          itTitle === tClean &&
+          (!aClean || !itArtist || itArtist.includes(aClean) || aClean.includes(itArtist))
+        );
+      }) ?? null
+    );
+  },
+}));
 
 export async function getDownloadsFolder(): Promise<DownloadsFolderInfo | null> {
   if (!isDesktopApp()) return null;
@@ -25,10 +87,10 @@ export async function getDownloadsFolder(): Promise<DownloadsFolderInfo | null> 
   return bridge.call('downloads.getFolder', {});
 }
 
-export async function openDownloadsFolder(): Promise<boolean> {
+export async function openDownloadsFolder(subfolder?: string): Promise<boolean> {
   if (!isDesktopApp()) return false;
   const bridge = desktopBridge();
-  const res = await bridge.call('downloads.openFolder', {});
+  const res = await bridge.call('downloads.openFolder', { subfolder } as any);
   return res.opened;
 }
 
@@ -45,6 +107,8 @@ export async function listDownloadedTracks(): Promise<DownloadedItem[]> {
     artist: it.artist,
     durationSec: 0,
     localUrl: it.localUrl,
+    thumbnail: it.thumbnail ?? null,
+    hasLyrics: it.hasLyrics ?? false,
   }));
 }
 
@@ -52,7 +116,7 @@ export async function checkTrackDownloaded(
   title: string,
   artist: string,
   fileName?: string,
-): Promise<{ exists: boolean; fileName?: string | null }> {
+): Promise<{ exists: boolean; fileName?: string | null; localUrl?: string | null }> {
   if (!isDesktopApp()) return { exists: false };
   const bridge = desktopBridge();
   return bridge.call('downloads.checkExists', { title, artist, fileName });
@@ -62,6 +126,7 @@ export async function deleteDownloadedTrack(fileName: string): Promise<boolean> 
   if (!isDesktopApp()) return false;
   const bridge = desktopBridge();
   const res = await bridge.call('downloads.deleteTrack', { fileName });
+  void useDownloadsStore.getState().refresh();
   return res.deleted;
 }
 
@@ -111,6 +176,30 @@ export async function downloadTrack(
     }
   }
 
+  // Attempt to fetch lyrics to save along with the song
+  let lyricsText: string | undefined;
+  try {
+    const { lookupLyrics } = await import('@/lyrics/repository');
+    const lyrics = await lookupLyrics({
+      videoId: track.videoId,
+      title: track.title,
+      artist: artist,
+      durationMs: (track.durationSec ?? 0) * 1000,
+      album: track.album?.name ?? null,
+    });
+    if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
+      lyricsText = lyrics.lines
+        .map((line) => {
+          const min = Math.floor(line.timeMs / 60000);
+          const sec = Math.floor((line.timeMs % 60000) / 1000);
+          const ms = Math.floor((line.timeMs % 1000) / 10);
+          const time = `[${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(2, '0')}]`;
+          return `${time}${line.text}`;
+        })
+        .join('\n');
+    }
+  } catch {}
+
   const bridge = desktopBridge();
   const res = await bridge.call('downloads.downloadTrack', {
     audioUrl,
@@ -118,7 +207,11 @@ export async function downloadTrack(
     artist,
     videoId: track.videoId,
     extension,
+    thumbnailUrl: track.thumbnail ?? undefined,
+    lyrics: lyricsText,
   });
+
+  void useDownloadsStore.getState().refresh();
 
   return {
     success: res.success,
@@ -146,7 +239,7 @@ export function toTrackFromDownloaded(item: DownloadedItem): Track {
     album: null,
     durationSec: item.durationSec > 0 ? item.durationSec : null,
     explicit: false,
-    thumbnail: null,
+    thumbnail: item.thumbnail ?? null,
     index: null,
     plays: null,
     sourceQuality,

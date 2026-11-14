@@ -24,7 +24,7 @@ export default function BrowsePage() {
   const empty = !page.grid.length && !page.tracks.length && !page.shelves.length;
   return (
     <>
-      <PageHeader title={title} />
+      <PageHeader title={title} back={true} />
       {empty && <EmptyState title="Nothing here yet" />}
       {page.grid.length > 0 && (
         <ul className={seeAllGrid} data-wide={page.grid.every((i) => i.wide) || undefined}>

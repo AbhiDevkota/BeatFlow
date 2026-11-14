@@ -65,7 +65,46 @@ export function AppShell() {
       void import('@/data/addons/addonStore').then((m) => {
         void m.syncAddonsWithFolderConfig();
       });
+      void import('@/data/downloads/desktopDownloads').then((m) => {
+        void m.useDownloadsStore.getState().refresh();
+      });
     }
+  }, []);
+
+  // Intercept all external links in desktop app to open in the user's default browser
+  useEffect(() => {
+    if (!desktop) return;
+    const handleLinkClick = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement)?.closest('a');
+      if (!target) return;
+      const href = target.getAttribute('href');
+      if (!href) return;
+      if (href.startsWith('http://') || href.startsWith('https://')) {
+        e.preventDefault();
+        e.stopPropagation();
+        void import('@bitchord/shared/bridge').then(({ desktopBridge }) => {
+          void desktopBridge().call('shell.open', { url: href });
+        });
+      }
+    };
+
+    const originalOpen = window.open;
+    window.open = (url?: string | URL, target?: string, features?: string) => {
+      const urlStr = typeof url === 'string' ? url : url?.toString();
+      if (urlStr && (urlStr.startsWith('http://') || urlStr.startsWith('https://')) && target !== 'google_login') {
+        void import('@bitchord/shared/bridge').then(({ desktopBridge }) => {
+          void desktopBridge().call('shell.open', { url: urlStr });
+        });
+        return null;
+      }
+      return originalOpen.call(window, url, target, features);
+    };
+
+    document.addEventListener('click', handleLinkClick, { capture: true });
+    return () => {
+      document.removeEventListener('click', handleLinkClick, { capture: true });
+      window.open = originalOpen;
+    };
   }, []);
   // Listen Together: pick a party back up after a reload, and keep the player in step with it.
   useEffect(() => {

@@ -63,7 +63,7 @@ export default function DownloadsPage() {
   if (!isDesktop) {
     return (
       <>
-        <PageHeader title="Downloads" />
+        <PageHeader title="Downloads" back={true} />
         <EmptyState
           title="Desktop Offline Storage"
           detail="Downloads and offline playback are available in the BeatFlow Desktop application."
@@ -77,7 +77,7 @@ export default function DownloadsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <PageHeader title="Downloads" />
+            <PageHeader title="Downloads" back={true} />
             {folder && (
               <span
                 className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide ${

@@ -24,6 +24,10 @@ const activeLookups = new Map<string, Promise<Track>>();
  * videos generally do not, or are explicitly marked with item_type/kind 'video' or 16:9 aspect.
  */
 export function isVideoTrack(item: Track | MusicItem): boolean {
+  const vid = 'videoId' in item ? item.videoId : item.id;
+  if (vid && (vid.startsWith('beatflow://') || vid.startsWith('addon:'))) {
+    return false;
+  }
   if ('kind' in item) {
     return item.kind === 'video' || item.wide || !item.album;
   }
