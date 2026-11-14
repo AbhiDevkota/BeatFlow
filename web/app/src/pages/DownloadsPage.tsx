@@ -6,13 +6,10 @@ import {
   CircleAlert,
   CircleCheckBig,
   Download,
-  FolderOpen,
-  HardDrive,
   MicVocal,
   MonitorDown,
   Music2,
   Play,
-  RefreshCw,
   Search,
   SearchX,
   Shuffle,
@@ -22,20 +19,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { isDesktopApp } from '@bitchord/shared/bridge';
 import { PageHeader } from '@/components/PageHeader';
-import { PrefetchLink } from '@/components/PrefetchLink';
 import { SkeletonBlock, SkeletonLine } from '@/components/Skeleton';
 import { detailButton } from '@/components/music/DetailHeader';
 import { stateStyles } from '@/components/music/States';
 import { TrackList, type DownloadRowMeta } from '@/components/music/TrackList';
 import { playList, shuffleList } from '@/components/music/play';
 import {
-  getDownloadsFolder,
-  openDownloadsFolder,
   toTrackFromDownloaded,
   useDownloadsStore,
   type ActiveDownload,
   type DownloadedItem,
-  type DownloadsFolderInfo,
 } from '@/data/downloads/desktopDownloads';
 import type { Track } from '@/data/music/types';
 
@@ -87,11 +80,6 @@ function formatAdded(ms: number): { label: string; title: string } {
             ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
           });
   return { label, title: date.toLocaleString() };
-}
-
-function formatCheckedAt(ts: number | null): string {
-  if (!ts) return 'Not checked yet';
-  return `Checked ${new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 function extensionOf(item: DownloadedItem): string {
@@ -252,104 +240,17 @@ function ActiveDownloadsPanel({ downloads }: { downloads: ActiveDownload[] }) {
   );
 }
 
-function FolderChip({
-  label,
-  count,
-  subfolder,
-  path,
-}: {
-  label: string;
-  count: number;
-  subfolder: string;
-  path?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => void openDownloadsFolder(subfolder)}
-      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-divider/40 bg-page/60 px-3 type-caption-2 font-semibold text-secondary transition-colors hover:bg-quaternary/70 hover:text-primary"
-      title={path ? `Open ${path}` : `Open ${label.toLowerCase()} folder`}
-    >
-      <FolderOpen size={13} />
-      {label}
-      <span className="tabular-nums text-tertiary">{count}</span>
-    </button>
-  );
-}
-
-function StorageFooter({
-  folder,
-  songs,
-  lyrics,
-  covers,
-  checkedAt,
-}: {
-  folder: DownloadsFolderInfo | null;
-  songs: number;
-  lyrics: number;
-  covers: number;
-  checkedAt: string;
-}) {
-  return (
-    <footer className="mx-(--body-gutter) mt-10 mb-12 rounded-[16px] border border-divider/40 bg-quaternary/20 p-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-10 flex-none place-items-center rounded-xl bg-quaternary/70 text-secondary">
-            <HardDrive size={19} strokeWidth={1.9} />
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <p className="type-callout-emphasized">Stored on this device</p>
-              <span className="type-caption-2 text-tertiary">{checkedAt}</span>
-            </div>
-            <p
-              className="mt-0.5 truncate type-caption-2 text-secondary"
-              title={folder?.path ?? undefined}
-            >
-              {folder?.path ?? 'Locating your music folder…'}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <FolderChip label="Songs" count={songs} subfolder="songs" path={folder?.songsPath} />
-          <FolderChip label="Lyrics" count={lyrics} subfolder="lyrics" path={folder?.lyricsPath} />
-          <FolderChip label="Artwork" count={covers} subfolder="thumbnails" path={folder?.thumbnailsPath} />
-        </div>
-      </div>
-    </footer>
-  );
-}
-
 function RefreshError({ message }: { message: string }) {
-  const refresh = useDownloadsStore((s) => s.refresh);
   return (
-    <div className="mx-(--body-gutter) mt-6 flex flex-col gap-3 rounded-[16px] border border-red/20 bg-red/5 p-4 sm:flex-row sm:items-center">
+    <div className="mx-(--body-gutter) mt-6 flex items-center gap-3 rounded-[16px] border border-red/20 bg-red/5 p-4">
       <span className="grid size-10 flex-none place-items-center rounded-full bg-red/10 text-red">
         <CircleAlert size={20} />
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0">
         <p className="type-body-emphasized">Couldn’t read your downloads</p>
         <p className="mt-0.5 truncate type-callout text-secondary" title={message}>
           {message}
         </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full bg-key-bg px-3.5 type-callout-emphasized text-white transition-all hover:brightness-110 active:scale-95"
-        >
-          <RefreshCw size={13} />
-          Try again
-        </button>
-        <button
-          type="button"
-          onClick={() => void openDownloadsFolder()}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full bg-quaternary/70 px-3.5 type-callout-emphasized text-secondary transition-colors hover:bg-quaternary hover:text-primary"
-        >
-          <FolderOpen size={13} />
-          Open folder
-        </button>
       </div>
     </div>
   );
@@ -366,23 +267,6 @@ function EmptyDownloads() {
         <p className="mt-1 max-w-[390px] type-body-tall text-secondary">
           Download a song from its ⋯ menu and it will appear here, ready to play without a connection.
         </p>
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-          <PrefetchLink
-            to="/home"
-            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-key-bg px-4 type-body-emphasized text-white transition-all hover:brightness-110 active:scale-95"
-          >
-            <Music2 size={15} />
-            Browse music
-          </PrefetchLink>
-          <button
-            type="button"
-            onClick={() => void openDownloadsFolder()}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-quaternary/70 px-4 type-body-emphasized text-secondary transition-colors hover:bg-quaternary hover:text-primary"
-          >
-            <FolderOpen size={15} />
-            Open downloads folder
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -391,18 +275,13 @@ function EmptyDownloads() {
 function DownloadsSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading downloads">
-      <div className="mx-(--body-gutter) flex items-center justify-between pt-6">
+      <div className="mx-(--body-gutter) pt-6">
         <SkeletonBlock width={32} height={32} radius="50%" />
-        <div className="flex items-center gap-2">
-          <SkeletonBlock width={36} height={36} radius="50%" />
-          <SkeletonBlock width={36} height={36} radius="50%" />
-        </div>
       </div>
       <div className="mx-(--body-gutter) mt-5 flex items-end gap-8 max-md:flex-col max-md:items-center">
         <SkeletonBlock width={270} aspectRatio="1" radius="var(--radius-artwork-large)" />
         <div className="min-w-0 flex-1 pb-2 max-md:w-full">
-          <SkeletonLine lineHeight={20} fontSize={12} width={120} />
-          <SkeletonLine lineHeight={44} fontSize={34} width={240} style={{ marginTop: 6 }} />
+          <SkeletonLine lineHeight={44} fontSize={34} width={240} />
           <SkeletonLine lineHeight={18} fontSize={12} width={300} style={{ marginTop: 8 }} />
           <div className="mt-5 flex items-center gap-3">
             <SkeletonBlock width={36} height={36} radius="50%" />
@@ -434,11 +313,8 @@ export default function DownloadsPage() {
   const downloaded = useDownloadsStore((s) => s.downloaded);
   const activeDownloads = useDownloadsStore((s) => s.activeDownloads);
   const initialized = useDownloadsStore((s) => s.initialized);
-  const refreshing = useDownloadsStore((s) => s.refreshing);
   const error = useDownloadsStore((s) => s.error);
-  const lastRefreshed = useDownloadsStore((s) => s.lastRefreshed);
   const refresh = useDownloadsStore((s) => s.refresh);
-  const [folder, setFolder] = useState<DownloadsFolderInfo | null>(null);
   const [query, setQuery] = useState('');
   const [lyricsOnly, setLyricsOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>('recent');
@@ -462,19 +338,6 @@ export default function DownloadsPage() {
       document.removeEventListener('visibilitychange', reread);
     };
   }, [isDesktop, refresh]);
-
-  useEffect(() => {
-    if (!isDesktop) return;
-    let live = true;
-    void getDownloadsFolder()
-      .then((info) => {
-        if (live) setFolder(info);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [isDesktop]);
 
   const tracks = useMemo<Track[]>(() => downloaded.map(toTrackFromDownloaded), [downloaded]);
   const downloadMeta = useMemo(() => {
@@ -516,7 +379,6 @@ export default function DownloadsPage() {
   const filteredTracks = useMemo<Track[]>(() => filtered.map(toTrackFromDownloaded), [filtered]);
   const totalBytes = useMemo(() => downloaded.reduce((sum, item) => sum + item.size, 0), [downloaded]);
   const lyricsCount = useMemo(() => downloaded.filter((item) => item.hasLyrics).length, [downloaded]);
-  const coverCount = useMemo(() => downloaded.filter((item) => item.thumbnail).length, [downloaded]);
   const covers = useMemo(
     () => downloaded.flatMap((item) => (item.thumbnail ? [item.thumbnail] : [])).slice(0, 4),
     [downloaded],
@@ -570,7 +432,7 @@ export default function DownloadsPage() {
 
   return (
     <div className="pb-12">
-      <div className="mx-(--body-gutter) flex items-center justify-between gap-4 pt-6">
+      <div className="mx-(--body-gutter) pt-6">
         <button
           type="button"
           onClick={goBack}
@@ -580,48 +442,12 @@ export default function DownloadsPage() {
         >
           <ChevronLeft size={19} strokeWidth={2.4} />
         </button>
-        <div className="flex items-center gap-2">
-          <span className="hidden type-callout text-secondary sm:inline">
-            {refreshing ? 'Refreshing…' : formatCheckedAt(lastRefreshed)}
-          </span>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className={`${detailButton.circle} transition-all active:scale-95`}
-            aria-label="Refresh downloads"
-            aria-busy={refreshing || undefined}
-            title={refreshing ? 'Refreshing…' : 'Refresh downloads'}
-            disabled={refreshing}
-          >
-            <RefreshCw size={16} strokeWidth={2.2} className={refreshing ? 'animate-spin' : undefined} />
-          </button>
-          <button
-            type="button"
-            onClick={() => void openDownloadsFolder()}
-            className={`${detailButton.circle} transition-all active:scale-95`}
-            aria-label="Open downloads folder"
-            title="Open downloads folder"
-          >
-            <FolderOpen size={17} strokeWidth={2.1} />
-          </button>
-        </div>
       </div>
 
       <section className="mx-(--body-gutter) mt-5 grid grid-cols-[auto_minmax(0,1fr)] items-end gap-x-8 gap-y-5 max-md:grid-cols-1 max-md:justify-items-center max-md:text-center">
         <HeroMosaic covers={covers} />
         <div className="flex min-w-0 flex-col pb-1 max-md:items-center">
-          <span
-            className={`inline-flex items-center gap-1.5 self-start rounded-full px-2.5 py-1 type-caption-2 font-semibold uppercase tracking-[0.12em] max-md:self-center ${
-              tracks.length > 0 ? 'bg-green/10 text-green' : 'bg-quaternary/60 text-secondary'
-            }`}
-          >
-            <span
-              className={`size-1.5 rounded-full ${tracks.length > 0 ? 'bg-green' : 'bg-tertiary'}`}
-              aria-hidden="true"
-            />
-            {tracks.length > 0 ? 'Available offline' : 'Nothing saved yet'}
-          </span>
-          <h1 className="mt-3 type-header-emphasized">Downloads</h1>
+          <h1 className="type-header-emphasized">Downloads</h1>
           <p className="mt-1 type-callout-emphasized text-secondary">{metaLine}</p>
           {tracks.length > 0 && (
             <div className="mt-5 flex items-center gap-3.5">
@@ -761,14 +587,6 @@ export default function DownloadsPage() {
           />
         </div>
       )}
-
-      <StorageFooter
-        folder={folder}
-        songs={tracks.length}
-        lyrics={lyricsCount}
-        covers={coverCount}
-        checkedAt={refreshing ? 'Refreshing…' : formatCheckedAt(lastRefreshed)}
-      />
     </div>
   );
 }
