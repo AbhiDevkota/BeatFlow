@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { VolumeIcon } from '@/components/icons/Transport';
+import { Volume1, Volume2, VolumeX } from 'lucide-react';
 import { usePlayer } from '@/state/player';
 import { nextVolumeFromWheel } from './wheelVolume';
 
@@ -96,7 +96,13 @@ export function VolumeControl({ open, onOpen, className, iconSize = 20 }: Volume
         onPointerEnter={onOpen}
         onFocus={onOpen}
       >
-        <VolumeIcon level={level} size={iconSize} />
+        {muted || level === 0 ? (
+          <VolumeX size={iconSize} strokeWidth={1.8} />
+        ) : level < 0.5 ? (
+          <Volume1 size={iconSize} strokeWidth={1.8} />
+        ) : (
+          <Volume2 size={iconSize} strokeWidth={1.8} />
+        )}
       </button>
     </span>
   );
