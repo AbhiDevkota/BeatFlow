@@ -342,6 +342,7 @@ export class YouTubeEngine {
         this.direct = null;
 
         this.audio.src = videoId;
+        try { this.audio.load(); } catch {}
         if (startSec > 0) {
           const applySeek = () => {
             try {
