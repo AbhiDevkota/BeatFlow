@@ -35,6 +35,91 @@ pub fn load_addons_from_disk() -> Vec<InstalledAddon> {
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static INITIAL_DEEP_LINK: OnceLock<std::sync::Mutex<Option<String>>> = OnceLock::new();
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+fn sha1_hex(data: &[u8]) -> String {
+  let mut h0: u32 = 0x67452301;
+  let mut h1: u32 = 0xEFCDAB89;
+  let mut h2: u32 = 0x98BADCFE;
+  let mut h3: u32 = 0x10325476;
+  let mut h4: u32 = 0xC3D2E1F0;
+
+  let mut msg = data.to_vec();
+  let bit_len = (msg.len() as u64) * 8;
+  msg.push(0x80);
+  while (msg.len() % 64) != 56 {
+    msg.push(0);
+  }
+  msg.extend_from_slice(&bit_len.to_be_bytes());
+
+  for chunk in msg.chunks_exact(64) {
+    let mut w = [0u32; 80];
+    for i in 0..16 {
+      w[i] = u32::from_be_bytes(chunk[i * 4..(i + 1) * 4].try_into().unwrap());
+    }
+    for i in 16..80 {
+      w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
+    }
+    let mut a = h0;
+    let mut b = h1;
+    let mut c = h2;
+    let mut d = h3;
+    let mut e = h4;
+    for i in 0..80 {
+      let (f, k) = match i {
+        0..=19 => ((b & c) | ((!b) & d), 0x5A827999),
+        20..=39 => (b ^ c ^ d, 0x6ED9EBA1),
+        40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDC),
+        _ => (b ^ c ^ d, 0xCA62C1D6),
+      };
+      let temp = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(w[i]);
+      e = d;
+      d = c;
+      c = b.rotate_left(30);
+      b = a;
+      a = temp;
+    }
+    h0 = h0.wrapping_add(a);
+    h1 = h1.wrapping_add(b);
+    h2 = h2.wrapping_add(c);
+    h3 = h3.wrapping_add(d);
+    h4 = h4.wrapping_add(e);
+  }
+  format!("{:08x}{:08x}{:08x}{:08x}{:08x}", h0, h1, h2, h3, h4)
+}
+
+fn compute_sapisid_hash(sapisid: &str, origin: &str) -> String {
+  let ts = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_secs();
+  let to_hash = format!("{} {} {}", ts, sapisid, origin);
+  let hash = sha1_hex(to_hash.as_bytes());
+  format!("SAPISIDHASH {}_{}", ts, hash)
+}
+
+pub fn get_yt_auth_path() -> PathBuf {
+  get_config_dir().join("yt_auth.json")
+}
+
+pub fn load_yt_auth() -> Option<Value> {
+  let path = get_yt_auth_path();
+  if path.exists() {
+    if let Ok(content) = fs::read_to_string(&path) {
+      if let Ok(val) = serde_json::from_str::<Value>(&content) {
+        return Some(val);
+      }
+    }
+  }
+  None
+}
+
+pub fn save_yt_auth(val: &Value) {
+  let path = get_yt_auth_path();
+  if let Ok(content) = serde_json::to_string_pretty(val) {
+    let _ = fs::write(&path, content);
+  }
+}
 
 fn set_deep_link(url: String) {
   let m = INITIAL_DEEP_LINK.get_or_init(|| std::sync::Mutex::new(None));
@@ -140,8 +225,8 @@ pub fn get_addons_config_path() -> PathBuf {
 pub fn open_in_browser(url: &str) {
   #[cfg(target_os = "windows")]
   {
-    let _ = std::process::Command::new("cmd")
-      .args(["/c", "start", "", url])
+    let _ = std::process::Command::new("rundll32")
+      .args(["url.dll,FileProtocolHandler", url])
       .spawn();
   }
   #[cfg(target_os = "macos")]
@@ -229,14 +314,14 @@ fn url_encode(input: &str) -> String {
 fn is_audio_ext(ext: &str) -> bool {
   matches!(
     ext.to_lowercase().as_str(),
-    "mp3" | "m4a" | "flac" | "wav" | "ogg" | "opus" | "aac" | "webm" | "3gp" | "eac3" | "ec3" | "ac3" | "alac" | "aiff" | "aif"
+    "mp3" | "m4a" | "mp4" | "flac" | "wav" | "ogg" | "opus" | "aac" | "webm" | "3gp" | "eac3" | "ec3" | "ac3" | "alac" | "aiff" | "aif"
   )
 }
 
 fn mime_for_ext(ext: &str) -> &'static str {
   match ext.to_lowercase().as_str() {
     "mp3" => "audio/mpeg",
-    "m4a" | "aac" => "audio/mp4",
+    "m4a" | "mp4" | "aac" => "audio/mp4",
     "flac" => "audio/flac",
     "wav" => "audio/wav",
     "ogg" | "opus" => "audio/ogg",
@@ -336,6 +421,36 @@ async fn execute_http_request(params: FetchParams, is_youtube: bool) -> Result<F
       .header("Origin", "https://listen.tidal.com")
       .header("Referer", "https://listen.tidal.com/")
       .header("User-Agent", hires::USER_AGENT);
+  }
+
+  if is_yt {
+    if let Some(auth) = load_yt_auth() {
+      let connected = auth.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
+      let signed_in = auth.get("signedIn").and_then(|v| v.as_bool()).unwrap_or(false);
+      if connected && signed_in {
+        if let Some(cookies) = auth.get("cookies").and_then(|v| v.as_str()) {
+          if !cookies.is_empty() {
+            req = req.header("Cookie", cookies);
+            for part in cookies.split(';') {
+              let trimmed = part.trim();
+              if let Some(val) = trimmed.strip_prefix("SAPISID=")
+                .or_else(|| trimmed.strip_prefix("__Secure-3PAPISID="))
+                .or_else(|| trimmed.strip_prefix("__Secure-1PAPISID="))
+              {
+                if !val.is_empty() {
+                  let auth_hash = compute_sapisid_hash(val, "https://music.youtube.com");
+                  req = req.header("Authorization", auth_hash);
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if let Some(auth_user) = auth.get("active").and_then(|v| v.get("authUser")).and_then(|v| v.as_str()) {
+          req = req.header("X-Goog-AuthUser", auth_user);
+        }
+      }
+    }
   }
 
   if let Some(headers) = params.headers {
@@ -470,22 +585,118 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }))
     }
     "lyrics.requestPermissions" => Ok(json!({ "granted": true })),
-    "yt.authState" => Ok(json!({
-      "browserSignedIn": false,
-      "connected": false,
-      "signedIn": false,
-      "accounts": [],
-      "active": null,
-      "problem": null
-    })),
-    "yt.selectChannel" | "yt.setConnected" => Ok(json!({
-      "browserSignedIn": false,
-      "connected": false,
-      "signedIn": false,
-      "accounts": [],
-      "active": null,
-      "problem": null
-    })),
+    "yt.authState" => {
+      let auth = load_yt_auth().unwrap_or_else(|| json!({
+        "browserSignedIn": false,
+        "connected": false,
+        "signedIn": false,
+        "accounts": [],
+        "active": null,
+        "problem": null
+      }));
+      Ok(auth)
+    }
+    "yt.setConnected" => {
+      let connected = params.get("connected").and_then(|v| v.as_bool()).unwrap_or(true);
+      let mut auth = load_yt_auth().unwrap_or_else(|| json!({
+        "browserSignedIn": false,
+        "connected": false,
+        "signedIn": false,
+        "accounts": [],
+        "active": null,
+        "problem": null
+      }));
+      if let Some(map) = auth.as_object_mut() {
+        map.insert("connected".to_string(), json!(connected));
+        let signed_in = connected && map.get("active").map(|v| !v.is_null()).unwrap_or(false);
+        map.insert("signedIn".to_string(), json!(signed_in));
+      }
+      save_yt_auth(&auth);
+      Ok(auth)
+    }
+    "yt.selectChannel" => {
+      let channel_id = params.get("channelId").and_then(|v| v.as_str()).unwrap_or("");
+      let mut auth = load_yt_auth().unwrap_or_else(|| json!({
+        "browserSignedIn": true,
+        "connected": true,
+        "signedIn": true,
+        "accounts": [],
+        "active": null,
+        "problem": null
+      }));
+      let mut found_channel: Option<Value> = None;
+      if let Some(accounts) = auth.get("accounts").and_then(|v| v.as_array()) {
+        for acc in accounts {
+          if let Some(channels) = acc.get("channels").and_then(|v| v.as_array()) {
+            for ch in channels {
+              if ch.get("id").and_then(|v| v.as_str()) == Some(channel_id) {
+                let mut active = ch.clone();
+                if let Some(active_map) = active.as_object_mut() {
+                  active_map.insert("authUser".to_string(), acc.get("authUser").cloned().unwrap_or(json!("0")));
+                }
+                found_channel = Some(active);
+                break;
+              }
+            }
+          }
+          if found_channel.is_some() {
+            break;
+          }
+        }
+      }
+      if let Some(active) = found_channel {
+        if let Some(map) = auth.as_object_mut() {
+          map.insert("active".to_string(), active);
+          map.insert("signedIn".to_string(), json!(true));
+          map.insert("connected".to_string(), json!(true));
+          map.insert("browserSignedIn".to_string(), json!(true));
+        }
+      }
+      save_yt_auth(&auth);
+      Ok(auth)
+    }
+    "yt.saveProfile" | "yt.loginSuccess" => {
+      let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("YouTube Music User");
+      let email = params.get("email").and_then(|v| v.as_str());
+      let avatar_url = params.get("avatarUrl").and_then(|v| v.as_str());
+      let handle = params.get("handle").and_then(|v| v.as_str());
+      let auth_user = params.get("authUser").and_then(|v| v.as_str()).unwrap_or("0");
+      let cookies = params.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
+
+      let channel_id = format!("{}:own", auth_user);
+      let channel = json!({
+        "id": channel_id,
+        "name": name,
+        "handle": handle,
+        "avatarUrl": avatar_url,
+        "brand": false,
+        "authUser": auth_user
+      });
+      let account = json!({
+        "authUser": auth_user,
+        "name": name,
+        "email": email,
+        "avatarUrl": avatar_url,
+        "channels": [channel.clone()]
+      });
+
+      let auth = json!({
+        "browserSignedIn": true,
+        "connected": true,
+        "signedIn": true,
+        "problem": null,
+        "cookies": cookies,
+        "accounts": [account],
+        "active": channel
+      });
+      save_yt_auth(&auth);
+
+      if let Some(login_win) = app.get_webview_window("google-login") {
+        let _ = login_win.close();
+      }
+
+      Ok(auth)
+    }
     "spotify.authState" => Ok(json!({
       "browserSignedIn": false,
       "connected": false,
@@ -560,6 +771,10 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
           let path = entry.path();
           if path.is_file() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext.eq_ignore_ascii_case("mpd") {
+              let _ = fs::remove_file(&path);
+              continue;
+            }
             if is_audio_ext(ext) {
               if let Some(name) = path.file_name() {
                 let dest = songs_dir.join(name);
@@ -576,6 +791,10 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
           let path = entry.path();
           if path.is_file() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext.eq_ignore_ascii_case("mpd") {
+              let _ = fs::remove_file(&path);
+              continue;
+            }
             if is_audio_ext(ext) {
               let file_name = path.file_name().and_then(|f| f.to_str()).unwrap_or("").to_string();
               let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
@@ -644,18 +863,48 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       } else {
         format!("{} - {}", artist_clean, title_clean)
       };
-      let ext = if ext_param.is_empty() { "m4a" } else { ext_param.trim_start_matches('.') };
-      let file_name = format!("{}.{}", file_stem, ext);
+
+      let is_dash = audio_url.contains(".mpd") || ext_param.eq_ignore_ascii_case("mpd") || audio_url.contains("/manifest");
+      let (bytes, effective_ext) = if is_dash {
+        println!("[Rust Bridge] Detected DASH manifest stream for '{}' ({})", title_raw, audio_url);
+        let xml_resp = client().get(audio_url).send().await.map_err(|e| format!("Failed to fetch DASH manifest: {e}"))?;
+        let xml_text = xml_resp.text().await.map_err(|e| format!("Failed to read DASH manifest XML: {e}"))?;
+        let plan = dash::DolbyPlan::parse(&xml_text, audio_url).map_err(|e| format!("Failed to parse DASH manifest: {e}"))?;
+
+        let mut full_bytes = Vec::new();
+        println!("[Rust Bridge] Downloading DASH init segment: {}", plan.init);
+        let init_resp = client().get(&plan.init).send().await.map_err(|e| format!("Failed to fetch init segment: {e}"))?;
+        let init_data = init_resp.bytes().await.map_err(|e| e.to_string())?;
+        full_bytes.extend_from_slice(&init_data);
+
+        println!("[Rust Bridge] Downloading {} DASH media segments...", plan.segments.len());
+        for (i, seg) in plan.segments.iter().enumerate() {
+          let seg_resp = client().get(seg).send().await.map_err(|e| format!("Failed to fetch segment #{}: {e}", i + 1))?;
+          let seg_data = seg_resp.bytes().await.map_err(|e| e.to_string())?;
+          full_bytes.extend_from_slice(&seg_data);
+        }
+
+        let dash_ext = if plan.codec.contains("flac") { "m4a" } else if plan.is_dolby_atmos { "m4a" } else { "m4a" };
+        (full_bytes, dash_ext.to_string())
+      } else {
+        let resp = client().get(audio_url).send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+          return Err(format!("Download failed with HTTP {}", resp.status()));
+        }
+        let b = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+        let e = if ext_param.is_empty() || ext_param.eq_ignore_ascii_case("mpd") {
+          "m4a".to_string()
+        } else {
+          ext_param.trim_start_matches('.').to_string()
+        };
+        (b, e)
+      };
+
+      let file_name = format!("{}.{}", file_stem, effective_ext);
       let songs_dir = get_songs_dir();
       let file_path = songs_dir.join(&file_name);
 
-      println!("[Rust Bridge] Downloading track '{}' to {:?}", file_name, file_path);
-
-      let resp = client().get(audio_url).send().await.map_err(|e| e.to_string())?;
-      if !resp.status().is_success() {
-        return Err(format!("Download failed with HTTP {}", resp.status()));
-      }
-      let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+      println!("[Rust Bridge] Writing downloaded track '{}' ({} bytes) to {:?}", file_name, bytes.len(), file_path);
       fs::write(&file_path, &bytes).map_err(|e| e.to_string())?;
 
       // Download album art thumbnail if provided
@@ -673,6 +922,16 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       if let Some(l_text) = lyrics_text && !l_text.is_empty() {
         let lyrics_path = get_lyrics_dir().join(format!("{}.lrc", file_stem));
         let _ = fs::write(&lyrics_path, l_text);
+      }
+
+      // If an old .mpd file exists with the same stem, delete it
+      let old_mpd = songs_dir.join(format!("{}.mpd", file_stem));
+      if old_mpd.exists() {
+        let _ = fs::remove_file(old_mpd);
+      }
+      let old_root_mpd = get_music_dir().join(format!("{}.mpd", file_stem));
+      if old_root_mpd.exists() {
+        let _ = fs::remove_file(old_root_mpd);
       }
 
       let local_url = format!("beatflow://local/{}", file_name);
@@ -1129,6 +1388,75 @@ pub fn run() {
           return;
         }
 
+        // Handle beatflow://auth-callback?data=<encoded_json>
+        if uri.contains("auth-callback") {
+          println!("[Rust Bridge] Intercepted auth-callback URL: {}", uri);
+          if let Some(q_idx) = uri.find("data=") {
+            let encoded_data = &uri[q_idx + 5..];
+            let clean_encoded = encoded_data.split('&').next().unwrap_or(encoded_data);
+            let decoded_json = url_decode(clean_encoded);
+            if let Ok(data) = serde_json::from_str::<Value>(&decoded_json) {
+              let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("YouTube Music User");
+              let email = data.get("email").and_then(|v| v.as_str());
+              let avatar_url = data.get("avatarUrl").and_then(|v| v.as_str());
+              let handle = data.get("handle").and_then(|v| v.as_str());
+              let auth_user = data.get("authUser").and_then(|v| v.as_str()).unwrap_or("0");
+              let cookies = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
+
+              let channel_id = format!("{}:own", auth_user);
+              let channel = json!({
+                "id": channel_id,
+                "name": name,
+                "handle": handle,
+                "avatarUrl": avatar_url,
+                "brand": false,
+                "authUser": auth_user
+              });
+              let account = json!({
+                "authUser": auth_user,
+                "name": name,
+                "email": email,
+                "avatarUrl": avatar_url,
+                "channels": [channel.clone()]
+              });
+
+              let auth = json!({
+                "browserSignedIn": true,
+                "connected": true,
+                "signedIn": true,
+                "problem": null,
+                "cookies": cookies,
+                "accounts": [account],
+                "active": channel
+              });
+              save_yt_auth(&auth);
+
+              // Notify the main window and close login window
+              if let Some(app_handle) = APP_HANDLE.get() {
+                if let Some(main_win) = app_handle.get_webview_window("main") {
+                  let auth_str = serde_json::to_string(&auth).unwrap_or_default();
+                  let script = format!(
+                    "window.dispatchEvent(new CustomEvent('beatflow:yt-auth-detected', {{ detail: {} }}));",
+                    auth_str
+                  );
+                  let _ = main_win.eval(&script);
+                }
+                if let Some(login_win) = app_handle.get_webview_window("google-login") {
+                  let _ = login_win.close();
+                }
+              }
+            }
+          }
+          let resp = tauri::http::Response::builder()
+            .status(200)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Type", "text/html")
+            .body(b"<html><body><h1>Signed In!</h1><script>window.close();</script></body></html>".to_vec())
+            .unwrap();
+          responder.respond(resp);
+          return;
+        }
+
         // Handle beatflow://stream?url=<target> or beatflow://stream/?url=<target> or beatflow://localhost/stream?url=<target>
         let is_stream = uri.contains("stream") && uri.contains("url=");
         if is_stream {
@@ -1442,8 +1770,50 @@ pub fn run() {
       get_deep_link,
       open_deep_link,
     ])
-    .on_page_load(|window, _payload| {
+    .on_page_load(|window, payload| {
       let _ = window.eval(DESKTOP_BRIDGE_INIT);
+      if window.label() == "google-login" {
+        let url = payload.url().as_str();
+        if url.contains("music.youtube.com") {
+          let script = r#"
+            (function() {
+              function check() {
+                try {
+                  var ytcfg = window.ytcfg && window.ytcfg.data_;
+                  var cookies = document.cookie || "";
+                  var name = (ytcfg && ytcfg.USER_NAME) || "";
+                  var email = (ytcfg && ytcfg.USER_EMAIL) || "";
+                  var avatar = (ytcfg && ytcfg.USER_AVATAR_URL) || "";
+                  var handle = (ytcfg && ytcfg.USER_HANDLE) || "";
+                  var authUser = (ytcfg && ytcfg.SESSION_INDEX) ? String(ytcfg.SESSION_INDEX) : "0";
+
+                  var img = document.querySelector('ytmusic-settings-button img') || document.querySelector('button#avatar-btn img');
+                  if (img) {
+                    if (!avatar) avatar = img.src || "";
+                    if (!name) name = img.getAttribute('alt') || "";
+                  }
+
+                  if (name || cookies.indexOf("SAPISID") !== -1 || (ytcfg && ytcfg.LOGGED_IN)) {
+                    var data = {
+                      name: name || "YouTube Music User",
+                      email: email || null,
+                      avatarUrl: avatar || null,
+                      handle: handle || null,
+                      authUser: authUser,
+                      cookies: cookies
+                    };
+                    window.location.href = "beatflow://auth-callback?data=" + encodeURIComponent(JSON.stringify(data));
+                  }
+                } catch(e) {}
+              }
+              setTimeout(check, 1000);
+              setTimeout(check, 2500);
+              setTimeout(check, 4500);
+            })();
+          "#;
+          let _ = window.eval(script);
+        }
+      }
       if let Some(url) = get_deep_link_value() {
         if let Ok(json) = serde_json::to_string(&url) {
           let script = format!(
@@ -1454,6 +1824,7 @@ pub fn run() {
       }
     })
     .setup(|app| {
+      APP_HANDLE.set(app.handle().clone()).ok();
       register_custom_protocol();
       if cfg!(debug_assertions) {
         app.handle().plugin(

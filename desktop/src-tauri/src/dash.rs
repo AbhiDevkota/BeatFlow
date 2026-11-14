@@ -16,6 +16,7 @@ pub struct DolbyPlan {
     pub duration_ms: u64,
     pub sample_rate: u32,
     pub is_dolby_atmos: bool,
+    pub codec: String,
 }
 
 impl DolbyPlan {
@@ -42,12 +43,15 @@ impl DolbyPlan {
         reps.sort_by_key(|r| match r.attribute("codecs").unwrap_or("") {
             c if c.contains("ec-3") => 0,
             c if c.contains("ac-3") => 1,
-            _ => 2,
+            c if c.contains("flac") => 2,
+            _ => 3,
         });
 
-        let rep = reps.into_iter().find(|r| {
+        let rep = reps.iter().find(|r| {
             r.attribute("codecs").is_some_and(|c| c.contains("ec-3") || c.contains("ac-3"))
-        }).ok_or_else(|| anyhow::anyhow!("manifest has no Dolby rendition"))?;
+        }).or_else(|| reps.first())
+          .copied()
+          .ok_or_else(|| anyhow::anyhow!("manifest has no audio rendition"))?;
 
         let bandwidth = rep.attribute("bandwidth").and_then(|v| v.parse().ok()).unwrap_or(0);
 
@@ -127,13 +131,17 @@ impl DolbyPlan {
             .and_then(|v| v.parse().ok())
             .unwrap_or(48000);
 
+        let codec_str = rep.attribute("codecs").unwrap_or("").to_lowercase();
+        let is_dolby_atmos = codec_str.contains("ec-3") || codec_str.contains("ac-3");
+
         Ok(DolbyPlan {
             init,
             segments,
             bandwidth,
             duration_ms: period_ms,
             sample_rate,
-            is_dolby_atmos: true,
+            is_dolby_atmos,
+            codec: codec_str,
         })
     }
 }

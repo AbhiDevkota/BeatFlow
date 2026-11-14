@@ -191,6 +191,28 @@ export interface BridgeMethods {
   'yt.authState': { params: { refresh?: boolean }; result: YtAuthState };
   'yt.selectChannel': { params: { channelId: string }; result: YtAuthState };
   'yt.setConnected': { params: { connected: boolean }; result: YtAuthState };
+  'yt.saveProfile': {
+    params: {
+      name?: string;
+      email?: string | null;
+      avatarUrl?: string | null;
+      handle?: string | null;
+      authUser?: string;
+      cookies?: string;
+    };
+    result: YtAuthState;
+  };
+  'yt.loginSuccess': {
+    params: {
+      name?: string;
+      email?: string | null;
+      avatarUrl?: string | null;
+      handle?: string | null;
+      authUser?: string;
+      cookies?: string;
+    };
+    result: YtAuthState;
+  };
   'addon.fetch': { params: HttpRequest; result: HttpResponse };
   /** A lyric provider the page can't reach itself; refused with `permission` until its host is granted. */
   'lyrics.fetch': { params: HttpRequest; result: HttpResponse };
