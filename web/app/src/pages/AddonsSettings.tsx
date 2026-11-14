@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Globe, Loader2, Plus, Power, RefreshCw, Trash2, AlertCircle, Sparkles } from 'lucide-react';
-import { MdOutlineExtension } from 'react-icons/md';
+import { Check, Globe, Loader2, Plus, Sparkles, Trash2, AlertCircle, Zap } from 'lucide-react';
 import { isDesktopApp } from '@bitchord/shared/bridge';
 import {
   addAddon,
@@ -14,6 +13,7 @@ import {
   toggleAddon,
   type InstalledAddon,
 } from '@/data/addons/addonStore';
+import { Toggle } from './IntegrationSettings';
 import { settingsUi } from './settingsStyles';
 
 export function AddonsSettings() {
@@ -85,63 +85,34 @@ export function AddonsSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      <h2 className={settingsUi.sectionHeader}>Playback &amp; Hi-Res Audio</h2>
       <section className={settingsUi.group}>
-        <div className="px-4 py-3 border-b border-quaternary/30 bg-quaternary/10 flex items-center gap-2">
-          <Sparkles size={18} className="text-primary" />
-          <span className="type-title-3 font-semibold text-primary">Playback &amp; Hi-Res Audio</span>
-        </div>
+        <Toggle
+          icon={<Sparkles size={20} />}
+          label="Prefer Dolby Atmos"
+          detail="Ask hi-res sources for a Dolby Atmos copy when available. Falls back to stereo lossless when unsupported."
+          checked={preferAtmos}
+          onChange={(checked) => {
+            setPreferAtmos(checked);
+            setPreferDolbyAtmos(checked);
+          }}
+        />
 
-        <div className={settingsUi.row}>
-          <div className={settingsUi.rowText}>
-            <span>Prefer Dolby Atmos</span>
-            <span className={settingsUi.rowDetail}>
-              Ask the hi-res sources for a Dolby Atmos copy when they offer one. Falls back to the best stereo lossless copy when not available or unsupported.
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            className={settingsUi.switch}
-            checked={preferAtmos}
-            onChange={(e) => {
-              setPreferAtmos(e.target.checked);
-              setPreferDolbyAtmos(e.target.checked);
-            }}
-            aria-label="Prefer Dolby Atmos"
-          />
-        </div>
-
-        <div className={settingsUi.row}>
-          <div className={settingsUi.rowText}>
-            <span>Automatic Hi-Res Upgrade</span>
-            <span className={settingsUi.rowDetail}>
-              Automatically upgrade songs to Lossless, Hi-Res, or Dolby Atmos from your enabled addons when available during playback.
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            className={settingsUi.switch}
-            checked={autoUpgrade}
-            onChange={(e) => {
-              setAutoUpgrade(e.target.checked);
-              setAutoUpgradeQuality(e.target.checked);
-            }}
-            aria-label="Automatic Hi-Res Upgrade"
-          />
-        </div>
+        <Toggle
+          icon={<Zap size={20} />}
+          label="Automatic Hi-Res Upgrade"
+          detail="Automatically upgrade songs to Lossless, Hi-Res, or Dolby Atmos from enabled addons during playback."
+          checked={autoUpgrade}
+          onChange={(checked) => {
+            setAutoUpgrade(checked);
+            setAutoUpgradeQuality(checked);
+          }}
+        />
       </section>
 
+      <h2 className={settingsUi.sectionHeader}>Installed Addons</h2>
       <section className={settingsUi.group}>
-        <div className="px-4 py-3 border-b border-quaternary/30 bg-quaternary/10 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MdOutlineExtension size={18} className="text-primary" />
-            <span className="type-title-3 font-semibold text-primary">Installed Addons</span>
-          </div>
-          <span className="type-caption text-secondary">
-            {addons.length} {addons.length === 1 ? 'source' : 'sources'}
-          </span>
-        </div>
-
         {addons.length === 0 ? (
           <div className="px-4 py-8 text-center text-secondary type-callout">
             No addons installed yet. Add a source URL below to stream and search from custom providers.
@@ -150,31 +121,31 @@ export function AddonsSettings() {
           addons.map((addon) => (
             <div key={addon.id} className={settingsUi.rowWithIcon}>
               <span className={settingsUi.rowIcon}>
-                <Globe size={18} className={addon.enabled ? 'text-primary' : 'text-tertiary'} />
+                <Globe size={20} className={addon.enabled ? 'text-key' : 'text-tertiary'} />
               </span>
               <div className={settingsUi.rowText}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`font-medium ${addon.enabled ? 'text-primary' : 'text-secondary line-through'}`}>
                     {addon.name}
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-quaternary text-secondary font-mono">
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-quaternary text-secondary font-mono">
                     v{addon.version}
                   </span>
                   {addon.resources.map((res) => (
                     <span
                       key={res}
-                      className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20"
+                      className="text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-full bg-key/10 text-key border border-key/20"
                     >
                       {res}
                     </span>
                   ))}
                 </div>
-                <span className="type-callout text-secondary font-mono text-xs truncate max-w-sm" title={addon.baseUrl}>
+                <span className="type-caption text-secondary font-mono text-xs truncate max-w-sm mt-0.5" title={addon.baseUrl}>
                   {addon.baseUrl}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <input
                   type="checkbox"
                   className={settingsUi.switch}
@@ -185,7 +156,7 @@ export function AddonsSettings() {
                 <button
                   type="button"
                   onClick={() => handleRemove(addon.id)}
-                  className="p-1.5 rounded-full hover:bg-quaternary text-secondary hover:text-red transition-colors"
+                  className="p-1.5 rounded-full hover:bg-quaternary text-secondary hover:text-red transition-colors cursor-pointer"
                   title="Remove Addon"
                   aria-label={`Remove ${addon.name}`}
                 >
@@ -197,55 +168,51 @@ export function AddonsSettings() {
         )}
       </section>
 
+      <h2 className={settingsUi.sectionHeader}>Add New Source</h2>
       <section className={settingsUi.group}>
-        <div className="px-4 py-3 border-b border-quaternary/30 bg-quaternary/10 flex items-center gap-2">
-          <Plus size={18} className="text-primary" />
-          <span className="type-title-3 font-semibold text-primary">Add New Source</span>
-        </div>
-
         <form onSubmit={handleAdd} className="p-4 space-y-3">
           <label className="block type-caption text-secondary">
             Enter the base URL or manifest URL of the addon server:
           </label>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2.5">
             <input
               type="url"
               placeholder="e.g. http://localhost:8080 or https://addon.example.com"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
-              className="flex-1 rounded-[10px] bg-quaternary px-3 py-2 text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-key border border-divider"
+              className="flex-1 rounded-[10px] bg-quaternary/70 hover:bg-quaternary focus:bg-quaternary px-3.5 py-2 text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-1.5 focus:ring-key border border-divider transition-all"
               disabled={loading}
               required
             />
             <button
               type="submit"
               disabled={loading || !urlInput.trim()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[10px] bg-primary text-white text-sm font-medium hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-[10px] bg-key text-white text-sm font-medium hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none shadow-sm shrink-0 cursor-pointer"
             >
               {loading ? (
                 <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Connecting…
+                  <Loader2 size={15} className="animate-spin" />
+                  <span>Connecting…</span>
                 </>
               ) : (
                 <>
-                  <Plus size={14} />
-                  Install Addon
+                  <Plus size={15} />
+                  <span>Install Addon</span>
                 </>
               )}
             </button>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-xs text-red mt-2 bg-red/10 border border-red/20 px-3 py-2 rounded-[8px]">
-              <AlertCircle size={14} className="flex-shrink-0" />
+            <div className="flex items-center gap-2 text-xs text-red mt-2 bg-red/10 border border-red/20 px-3.5 py-2.5 rounded-[10px]">
+              <AlertCircle size={15} className="shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {success && (
-            <div className="flex items-center gap-2 text-xs text-green mt-2 bg-green/10 border border-green/20 px-3 py-2 rounded-[8px]">
-              <Check size={14} className="flex-shrink-0" />
+            <div className="flex items-center gap-2 text-xs text-green mt-2 bg-green/10 border border-green/20 px-3.5 py-2.5 rounded-[10px]">
+              <Check size={15} className="shrink-0" />
               <span>{success}</span>
             </div>
           )}
@@ -257,6 +224,6 @@ export function AddonsSettings() {
         No foreign code is ever downloaded or executed. When enabled, your custom addons are searched first, with
         YouTube Music serving as a comprehensive fallback.
       </p>
-    </div>
+    </>
   );
 }
