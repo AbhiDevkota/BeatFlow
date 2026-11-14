@@ -322,9 +322,10 @@ export default function SettingsPage() {
   // Playback group
   const renderPlaybackGroup = () => (
     <>
+      <h2 className={settingsUi.sectionHeader}>Playback</h2>
       <section className={settingsUi.group}>
         <Toggle
-          icon={<PlayCircle size={20} />}
+          icon={<PlayCircle size={22} />}
           label="AutoPlay"
           detail="When the queue ends, continue playing similar songs automatically."
           checked={autoplay}
@@ -332,10 +333,10 @@ export default function SettingsPage() {
         />
         <label className={settingsUi.controlRowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <Waves size={20} />
+            <Waves size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Crossfade</span>
+            <span className="font-medium text-primary">Crossfade</span>
             <span className={settingsUi.rowDetail}>Smoothly transition between consecutive tracks</span>
           </span>
           <Select<number | 'automix'>
@@ -354,10 +355,10 @@ export default function SettingsPage() {
         {automix && (
           <label className={settingsUi.controlRowWithIcon}>
             <span className={settingsUi.rowIcon}>
-              <Sparkles size={20} />
+              <Sparkles size={22} />
             </span>
             <span className={settingsUi.rowText}>
-              <span>Blend Length</span>
+              <span className="font-medium text-primary">Blend Length</span>
               <span className={settingsUi.rowDetail}>Maximum number of bars blended over beat matching</span>
             </span>
             <Select
@@ -369,21 +370,21 @@ export default function SettingsPage() {
           </label>
         )}
         <Toggle
-          icon={<Volume2 size={20} />}
+          icon={<Volume2 size={22} />}
           label="Loudness Normalization"
           detail="Normalizes audio output volume across different tracks to -14 LUFS."
           checked={loudnessNormalization}
           onChange={setLoudnessNormalization}
         />
         <Toggle
-          icon={<VolumeX size={20} />}
+          icon={<VolumeX size={22} />}
           label="Skip Silence"
           detail="Automatically skips silent intros, outros, and long pauses."
           checked={skipSilence}
           onChange={setSkipSilence}
         />
         <Toggle
-          icon={<BarChart2 size={20} />}
+          icon={<BarChart2 size={22} />}
           label="Show Stats for Nerds"
           detail="Codec, bitrate and sample rate under the artist in full-screen player, and Automix state."
           checked={showNerdStats}
@@ -402,13 +403,14 @@ export default function SettingsPage() {
   // Appearance group
   const renderAppearanceGroup = () => (
     <>
+      <h2 className={settingsUi.sectionHeader}>Appearance</h2>
       <section className={settingsUi.group}>
         <div className={settingsUi.rowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <SunMoon size={20} />
+            <SunMoon size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Theme Mode</span>
+            <span className="font-medium text-primary">Theme Mode</span>
             <span className={settingsUi.rowDetail}>Select application visual theme</span>
           </span>
           <div className={settingsUi.segmentedControl}>
@@ -441,10 +443,10 @@ export default function SettingsPage() {
 
         <div className={settingsUi.rowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <Type size={20} />
+            <Type size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>App Typeface</span>
+            <span className="font-medium text-primary">App Typeface</span>
             <span className={settingsUi.rowDetail}>Font typography used across the interface</span>
           </span>
           <div className={settingsUi.segmentedControl}>
@@ -473,28 +475,28 @@ export default function SettingsPage() {
         </div>
 
         <Toggle
-          icon={<Film size={20} />}
+          icon={<Film size={22} />}
           label="Animated Artwork"
           detail="Apple Music’s moving video covers in the full-screen player, albums, and playlists."
           checked={motion}
           onChange={setMotion}
         />
         <Toggle
-          icon={<Sparkles size={20} />}
+          icon={<Sparkles size={22} />}
           label="Artist Header Art"
           detail="Artist pages feature Apple Music’s high-resolution photography, logos, and ambient video banners."
           checked={artistArt}
           onChange={setArtistArt}
         />
         <Toggle
-          icon={<Palette size={20} />}
+          icon={<Palette size={22} />}
           label="Dynamic Artwork Tint"
           detail="Adapts background and player labels to match dominant album artwork colors."
           checked={dynamicTint}
           onChange={setDynamicTint}
         />
         <Toggle
-          icon={<EyeOff size={20} />}
+          icon={<EyeOff size={22} />}
           label="Reduce Motion"
           detail="Disables decorative animations and transitions for performance and power saving."
           checked={reduceAnimation}
@@ -510,44 +512,45 @@ export default function SettingsPage() {
   // Android-matched Content Preferences group
   const renderContentPreferencesGroup = () => (
     <>
+      <h2 className={settingsUi.sectionHeader}>Content Preferences</h2>
       <section className={settingsUi.group}>
         <Toggle
-          icon={<Video size={20} />}
+          icon={<Video size={22} />}
           label="Prefer music-only version"
           detail="Music videos play as their audio version, and the next track in the queue is converted ahead of time so Automix and crossfade work."
           checked={preferMusicOnly}
           onChange={setPreferMusicOnly}
         />
         <Toggle
-          icon={<History size={20} />}
+          icon={<History size={22} />}
           label="Hide Recents"
           detail="Hides the Recently Played shelf from the Home screen."
           checked={hideRecents}
           onChange={setHideRecents}
         />
         <Toggle
-          icon={<EyeOff size={20} />}
+          icon={<EyeOff size={22} />}
           label="Hide videos from Home"
           detail="Shelves of only videos go too. Search, artists and playlists still show them."
           checked={hideHomeVideos}
           onChange={setHideHomeVideos}
         />
         <Toggle
-          icon={<Sparkles size={20} />}
+          icon={<Sparkles size={22} />}
           label="Hide Top Picks for You"
           detail="Hides the Top Picks for You recommendation shelf from the Home screen."
           checked={hideTopPicks}
           onChange={setHideTopPicks}
         />
         <Toggle
-          icon={<Compass size={20} />}
+          icon={<Compass size={22} />}
           label="Hide Find Your Mood"
           detail="Hides the Find Your Mood genre and activity chips from the Home screen."
           checked={hideHomeMoods}
           onChange={setHideHomeMoods}
         />
         <Toggle
-          icon={<LayoutGrid size={20} />}
+          icon={<LayoutGrid size={22} />}
           label="Square video thumbnails"
           detail="Show music videos as squares everywhere, including the player."
           checked={squareVideoThumbnails}
@@ -563,13 +566,14 @@ export default function SettingsPage() {
   // Audio Quality group
   const renderAudioQualityGroup = () => (
     <>
+      <h2 className={settingsUi.sectionHeader}>Audio Quality</h2>
       <section className={settingsUi.group}>
         <label className={settingsUi.controlRowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <Radio size={20} />
+            <Radio size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Streaming Quality</span>
+            <span className="font-medium text-primary">Streaming Quality</span>
             <span className={settingsUi.rowDetail}>Preferred audio quality ceiling for playback</span>
           </span>
           <Select<StreamingQuality>
@@ -584,21 +588,21 @@ export default function SettingsPage() {
           />
         </label>
         <Toggle
-          icon={<Zap size={20} />}
+          icon={<Zap size={22} />}
           label="Direct Source Streaming"
           detail="Stream audio directly from verified edge CDN sources where available."
           checked={directSource}
           onChange={setDirectSource}
         />
         <Toggle
-          icon={<Music size={20} />}
+          icon={<Music size={22} />}
           label="Prefer Studio Audio Cuts"
           detail="Always prioritize studio album releases over music video uploads and live cuts."
           checked={preferAudioCuts}
           onChange={setPreferAudioCuts}
         />
         <Toggle
-          icon={<History size={20} />}
+          icon={<History size={22} />}
           label="Share Listening Activity to YouTube"
           detail={
             !ytStatsCapable
@@ -608,9 +612,14 @@ export default function SettingsPage() {
           checked={shareHistory}
           onChange={setShareHistory}
         />
-        <div className={settingsUi.integration}>
-          <SiApplemusic size={22} className="text-[#fa2d48] flex-shrink-0" />
-          <span className={settingsUi.integrationName}>Apple Music Metadata Access</span>
+        <div className={settingsUi.rowWithIcon}>
+          <span className={settingsUi.rowIcon}>
+            <SiApplemusic size={22} className="text-secondary" />
+          </span>
+          <span className={settingsUi.rowText}>
+            <span className="font-medium text-primary">Apple Music Metadata Access</span>
+            <span className={settingsUi.rowDetail}>Access public artist photography, animated covers, and lossless badges</span>
+          </span>
           {present ? <AppleMusicIntegration /> : <span className={settingsUi.value}>Needs host access</span>}
         </div>
       </section>
@@ -621,6 +630,7 @@ export default function SettingsPage() {
   // Lyrics group
   const renderLyricsGroup = () => (
     <>
+      <h2 className={settingsUi.sectionHeader}>Lyrics</h2>
       <section className={settingsUi.group}>
         <button className={`${settingsUi.integration} ${settingsUi.linkRow}`} onClick={() => setLyricsModal(true)}>
           <Quote size={22} className="text-secondary flex-shrink-0" />
@@ -631,7 +641,7 @@ export default function SettingsPage() {
           </span>
         </button>
         <div className={settingsUi.integration}>
-          <Sparkles size={22} className="text-green flex-shrink-0" />
+          <Sparkles size={22} className="text-secondary flex-shrink-0" />
           <span className={settingsUi.integrationName}>Syllable-by-Syllable Sync</span>
           <span className={settingsUi.value}>
             <span className="inline-flex items-center gap-1 text-green font-medium">
@@ -655,23 +665,24 @@ export default function SettingsPage() {
   // Storage & Cache group
   const renderStorageGroup = () => (
     <>
+      <h2 className={settingsUi.sectionHeader}>Storage & Cache</h2>
       <section className={settingsUi.group}>
         <div className={settingsUi.rowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <HardDrive size={20} />
+            <HardDrive size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Local Cache Storage</span>
+            <span className="font-medium text-primary">Local Cache Storage</span>
             <span className={settingsUi.rowDetail}>Estimated disk storage used by artwork, audio cuts, and queries</span>
           </span>
           <span className={settingsUi.value}>{storageEstimate ?? 'Calculating…'}</span>
         </div>
         <div className={settingsUi.rowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <Trash2 size={20} />
+            <Trash2 size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Clear Cache</span>
+            <span className="font-medium text-primary">Clear Cache</span>
             <span className={settingsUi.rowDetail}>Free up temporary storage and refresh cached assets</span>
           </span>
           <button
@@ -693,33 +704,34 @@ export default function SettingsPage() {
   // About group
   const renderAboutGroup = () => (
     <>
+      <h2 className={settingsUi.sectionHeader}>About BeatFlow</h2>
       <section className={settingsUi.group}>
         <div className={settingsUi.rowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <Layers size={20} />
+            <Layers size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Application</span>
+            <span className="font-medium text-primary">Application</span>
             <span className={settingsUi.rowDetail}>BeatFlow modern Apple Music client</span>
           </span>
           <span className={settingsUi.value}>{desktop ? 'Desktop App' : 'Web App'}</span>
         </div>
         <div className={settingsUi.rowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <Tag size={20} />
+            <Tag size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Version</span>
+            <span className="font-medium text-primary">Version</span>
             <span className={settingsUi.rowDetail}>Client build version</span>
           </span>
           <span className={settingsUi.value}>{desktop ? 'v0.1.0' : 'v1.0.0'}</span>
         </div>
         <div className={settingsUi.rowWithIcon}>
           <span className={settingsUi.rowIcon}>
-            <Cpu size={20} />
+            <Cpu size={22} />
           </span>
           <span className={settingsUi.rowText}>
-            <span>Engine</span>
+            <span className="font-medium text-primary">Engine</span>
             <span className={settingsUi.rowDetail}>Backend media & playback engine</span>
           </span>
           <span className={settingsUi.value}>

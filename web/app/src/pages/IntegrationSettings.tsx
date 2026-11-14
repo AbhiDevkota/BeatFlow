@@ -157,7 +157,7 @@ export function Toggle({
     <label className={icon ? settingsUi.controlRowWithIcon : settingsUi.controlRow}>
       {icon && <span className={settingsUi.rowIcon}>{icon}</span>}
       <span className={settingsUi.rowText}>
-        <span>{label}</span>
+        <span className="font-medium text-primary">{label}</span>
         {detail && <span className={settingsUi.rowDetail}>{detail}</span>}
       </span>
       <input type="checkbox" className={settingsUi.switch} checked={checked} onChange={(e) => onChange(e.currentTarget.checked)} />

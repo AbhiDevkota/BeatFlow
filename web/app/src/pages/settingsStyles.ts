@@ -23,7 +23,7 @@ export const settingsUi = {
   /** A row holding a switch, a select or a field: the whole row is its label. */
   controlRow: `${row} cursor-pointer gap-4`,
   controlRowWithIcon: `${rowWithIcon} cursor-pointer`,
-  rowText: 'flex flex-col gap-0.5 min-w-0',
+  rowText: 'flex flex-col gap-0.5 min-w-0 flex-1 text-start',
   rowDetail: 'type-callout text-secondary leading-normal',
   value: 'inline-flex items-center gap-1.5 text-right type-body-reduced text-secondary flex-shrink-0',
   dot: 'size-2 rounded-full bg-green',
@@ -66,7 +66,7 @@ export const settingsUi = {
 
   /** Minimal monochrome icon styling (no colored boxes, 22px) */
   minimalIcon: 'size-[22px] text-secondary group-hover:text-primary transition-colors flex-shrink-0',
-  rowIcon: 'size-[20px] text-secondary flex-shrink-0 mt-0.5',
+  rowIcon: 'size-[22px] text-secondary flex-shrink-0 flex items-center justify-center',
 
   /** Category navigation row */
   categoryRow: 'relative flex items-center justify-between w-full px-4 py-[12.5px] hover:bg-quaternary/40 cursor-pointer text-start transition-colors hairline-[52px] group',
