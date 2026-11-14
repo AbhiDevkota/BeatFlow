@@ -2,6 +2,7 @@ import { SabrStreamingAdapter } from 'googlevideo/sabr-streaming-adapter';
 import { buildSabrFormat } from 'googlevideo/utils';
 import shaka from 'shaka-player/dist/shaka-player.compiled';
 import { Constants, Utils, YT, type Innertube } from 'youtubei.js/web';
+import { isDesktopApp, desktopBridge } from '@bitchord/shared/bridge';
 import { timed, trackLog } from '../trackLog';
 import { botguard } from './botguard';
 import { ytAuthSnapshot } from '@/extension/useYtAuth';
@@ -341,30 +342,73 @@ export class YouTubeEngine {
         this.current = { videoId, client: 'WEB' as PlayerClientName, signed: false };
         this.direct = null;
 
-        this.audio.src = videoId;
-        try { this.audio.load(); } catch {}
-        if (startSec > 0) {
-          const applySeek = () => {
-            try {
-              this.audio.currentTime = startSec;
-            } catch {}
-          };
-          if (this.audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
-            applySeek();
-          } else {
-            this.audio.addEventListener('loadedmetadata', applySeek, { once: true });
+        let playUrl = videoId;
+        let localFileName: string | null = null;
+        if (videoId.startsWith('beatflow://local/')) {
+          localFileName = decodeURIComponent(videoId.replace(/^beatflow:\/\/local\//, ''));
+          playUrl = `http://127.0.0.1:51189/local/${encodeURIComponent(localFileName)}`;
+        } else if (videoId.includes('/local/')) {
+          const m = videoId.match(/\/local\/(.+)$/);
+          if (m && m[1]) {
+            localFileName = decodeURIComponent(m[1].split('?')[0] ?? '');
+            playUrl = `http://127.0.0.1:51189/local/${encodeURIComponent(localFileName)}`;
           }
         }
-        if (autoplay) {
-          await this.audio.play().catch((error: unknown) => {
-            if (error instanceof DOMException && error.name === 'NotAllowedError') {
-              trackLog.w('autoplay was blocked by the browser; waiting for a tap', videoId);
-            } else throw error;
-          });
-        }
-        await this.firstAudio(generation);
 
-        const cleanUrl = videoId.split('?')[0]?.toLowerCase() ?? '';
+        const applySeekAndPlay = async (srcUrl: string) => {
+          this.audio.src = srcUrl;
+          try { this.audio.load(); } catch {}
+          if (startSec > 0) {
+            const applySeek = () => {
+              try {
+                this.audio.currentTime = startSec;
+              } catch {}
+            };
+            if (this.audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+              applySeek();
+            } else {
+              this.audio.addEventListener('loadedmetadata', applySeek, { once: true });
+            }
+          }
+          if (autoplay) {
+            await this.audio.play().catch((error: unknown) => {
+              if (error instanceof DOMException && error.name === 'NotAllowedError') {
+                trackLog.w('autoplay was blocked by the browser; waiting for a tap', videoId);
+              } else throw error;
+            });
+          }
+          await this.firstAudio(generation);
+        };
+
+        try {
+          await applySeekAndPlay(playUrl);
+        } catch (loadErr) {
+          if (localFileName && isDesktopApp()) {
+            trackLog.w(`[Engine] Direct HTTP load failed (${String(loadErr)}); trying IPC readTrackBase64 fallback for ${localFileName}`);
+            try {
+              const res = await desktopBridge().call('downloads.readTrackBase64', { fileName: localFileName });
+              if (res && res.data) {
+                const binary = atob(res.data);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                  bytes[i] = binary.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], { type: res.mimeType || 'audio/mp4' });
+                const blobUrl = URL.createObjectURL(blob);
+                await applySeekAndPlay(blobUrl);
+              } else {
+                throw loadErr;
+              }
+            } catch (fallbackErr) {
+              trackLog.e(`[Engine] IPC readTrackBase64 fallback also failed: ${String(fallbackErr)}`);
+              throw loadErr;
+            }
+          } else {
+            throw loadErr;
+          }
+        }
+
+        const cleanUrl = (localFileName || videoId).split('?')[0]?.toLowerCase() ?? '';
         const ext = cleanUrl.split('.').pop() ?? '';
         const isDolby =
           ext === 'eac3' ||
@@ -386,14 +430,16 @@ export class YouTubeEngine {
               ? ext.toUpperCase()
               : 'Direct Audio';
 
+        const isLocal = Boolean(localFileName || videoId.startsWith('beatflow://local/'));
+
         return {
           videoId,
           title: '',
           author: '',
           durationSec: this.audio.duration || 0,
           thumbnails: [],
-          client: videoId.startsWith('beatflow://local/') ? ('BeatFlow Local' as any) : ('WEB' as PlayerClientName),
-          format: isDolby ? 'Dolby Atmos' : isLossless ? 'Lossless Audio' : videoId.startsWith('beatflow://') ? 'Local File' : 'Stream',
+          client: isLocal ? ('BeatFlow Local' as any) : ('WEB' as PlayerClientName),
+          format: isDolby ? 'Dolby Atmos' : isLossless ? 'Lossless Audio' : isLocal ? 'Local File' : 'Stream',
           stream: {
             codec: codecLabel,
             bitDepth,
@@ -402,7 +448,7 @@ export class YouTubeEngine {
             channels: isDolby ? 6 : 2,
             itag: null,
             mode: 'direct',
-            sourceName: videoId.startsWith('beatflow://local/') ? 'BeatFlow Local' : 'Direct Audio',
+            sourceName: isLocal ? 'On Device' : 'Direct Audio',
             qualityTier: isDolby ? 'DOLBY_ATMOS' : isLossless ? (bitDepth === 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS') : bitrateKbps >= 256 ? 'HIGH_QUALITY' : null,
           },
           loudnessDb: null,

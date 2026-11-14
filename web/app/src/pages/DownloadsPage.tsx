@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { isDesktopApp } from '@bitchord/shared/bridge';
 import { PageHeader } from '@/components/PageHeader';
+import { Select, type SelectOption } from '@/components/Select';
 import { SkeletonBlock, SkeletonLine } from '@/components/Skeleton';
 import { detailButton } from '@/components/music/DetailHeader';
 import { stateStyles } from '@/components/music/States';
@@ -100,23 +101,59 @@ function useNow(active: boolean): number {
   return now;
 }
 
+const SORT_OPTIONS: readonly SelectOption<SortKey>[] = [
+  { value: 'recent', label: 'Recently added' },
+  { value: 'title', label: 'Title' },
+  { value: 'artist', label: 'Artist' },
+  { value: 'size', label: 'Largest first' },
+];
+
 function HeroMosaic({ covers }: { covers: string[] }) {
+  const hasCovers = covers.length > 0;
+  const isCollage = covers.length >= 2;
+  const tiles: string[] = isCollage
+    ? covers.length >= 4
+      ? covers.slice(0, 4)
+      : covers.length === 3
+        ? [covers[0]!, covers[1]!, covers[2]!, covers[0]!]
+        : [covers[0]!, covers[1]!, covers[1]!, covers[0]!]
+    : [];
+
   return (
-    <div className="relative w-[270px] flex-none max-lg:w-[220px] max-md:w-[min(240px,62vw)]">
-      <div className="absolute inset-4 -z-1 rounded-full bg-key/25 blur-3xl" aria-hidden="true" />
-      {covers[0] ? (
+    <div className="relative w-[270px] self-start rounded-artwork-lg shadow-[0_10px_20px_0_var(--radiosityShadowColor)] [grid-area:artwork] max-lg:w-[220px] max-md:w-[min(270px,70vw)]">
+      {hasCovers ? (
         <>
-          <div className="absolute inset-0 -z-1 scale-90 opacity-35 blur-[28px] saturate-200" aria-hidden="true">
-            <img src={covers[0]} alt="" className="size-full rounded-artwork-lg object-cover" draggable={false} />
+          {/* Apple-style radiosity glow behind the artwork */}
+          <div className="absolute inset-0 -z-1 scale-88 opacity-30 blur-[20px] saturate-200" aria-hidden="true">
+            {isCollage ? (
+              <div className="grid aspect-square size-full grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden rounded-artwork-lg">
+                {tiles.map((c, i) => (
+                  <img key={i} src={c} alt="" className="size-full object-cover" draggable={false} />
+                ))}
+              </div>
+            ) : (
+              <img src={covers[0]} alt="" className="size-full rounded-artwork-lg object-cover" draggable={false} />
+            )}
           </div>
-          <div className="artwork-stroke relative aspect-square overflow-hidden rounded-artwork-lg shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
-            <img src={covers[0]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+
+          {/* Front mosaic artwork */}
+          <div className="artwork-stroke relative aspect-square size-full overflow-hidden rounded-artwork-lg shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
+            {isCollage ? (
+              <div className="grid size-full grid-cols-2 grid-rows-2 gap-0.5 bg-black/20">
+                {tiles.map((c, i) => (
+                  <img key={i} src={c} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+                ))}
+              </div>
+            ) : (
+              <img src={covers[0]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+            )}
           </div>
         </>
       ) : (
-        <div className="artwork-stroke relative grid aspect-square place-items-center overflow-hidden rounded-artwork-lg bg-gradient-to-br from-key via-key/75 to-key/35 shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
-          <span className="grid size-20 place-items-center rounded-full bg-white/15 text-white shadow-lg backdrop-blur-md">
-            <ArrowDown size={34} strokeWidth={2.2} />
+        /* Empty downloads state: red/key background with white download icon */
+        <div className="artwork-stroke relative grid aspect-square size-full place-items-center overflow-hidden rounded-artwork-lg bg-gradient-to-br from-key via-key/80 to-key/60 shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
+          <span className="grid size-20 place-items-center rounded-full bg-white/20 text-white shadow-lg backdrop-blur-md">
+            <Download size={36} strokeWidth={2.2} />
           </span>
         </div>
       )}
@@ -397,14 +434,30 @@ export default function DownloadsPage() {
 
   if (!initialized) return <DownloadsSkeleton />;
 
+  const activeDownloads = useDownloadsStore((s) => s.activeDownloads);
+  const activeList = useMemo(() => Object.values(activeDownloads), [activeDownloads]);
+
+  const covers = useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const item of downloaded) {
+      const url = item.thumbnail;
+      if (url && !seen.has(url)) {
+        seen.add(url);
+        list.push(url);
+      }
+    }
+    return list;
+  }, [downloaded]);
+
   const metaLine =
     tracks.length > 0
-      ? `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} · ${formatDuration(totalDurationSec)}`
+      ? `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} · ${formatDuration(totalDurationSec)} · ${formatBytes(totalBytes)}`
       : 'Songs you save for offline listening will live here.';
 
   return (
     <div className="pb-12">
-      <div className="mx-(--body-gutter) pt-6">
+      <div className="mx-(--body-gutter) pt-6 -mb-5 flex items-center">
         <button
           type="button"
           onClick={goBack}
@@ -416,34 +469,41 @@ export default function DownloadsPage() {
         </button>
       </div>
 
-      <section className="mx-(--body-gutter) mt-5 flex flex-col items-center gap-5 text-center max-md:items-center">
-        <div className="flex min-w-0 flex-col items-center">
-          <h1 className="type-header-emphasized">Downloads</h1>
+      <div className="mx-(--body-gutter) mb-8 grid grid-cols-[auto_minmax(0,1fr)] grid-rows-[auto_1fr_auto] gap-x-[34px] pt-11 [grid-template-areas:'artwork_headings'_'artwork_description'_'artwork_actions'] max-md:grid-cols-[1fr] max-md:grid-rows-[auto] max-md:justify-items-center max-md:pt-4 max-md:text-center max-md:[grid-template-areas:'artwork'_'headings'_'actions'_'description']">
+        <HeroMosaic covers={covers} />
+
+        <div className="flex flex-col pt-[37px] [grid-area:headings] max-md:items-center max-md:pt-5">
+          <h1 className="flex items-center type-large-title-emphasized leading-[30px] max-md:justify-center">
+            Downloads
+          </h1>
           <p className="mt-1 type-callout-emphasized text-secondary">{metaLine}</p>
-          {tracks.length > 0 && (
-            <div className="mt-5 flex items-center gap-3.5">
-              <button
-                type="button"
-                onClick={() => shuffleList(tracks, CONTEXT)}
-                className={`${detailButton.circle} transition-all active:scale-95`}
-                aria-label="Shuffle all downloads"
-                title="Shuffle all downloads"
-              >
-                <Shuffle size={18} strokeWidth={2.2} />
-              </button>
-              <button
-                type="button"
-                onClick={() => playList(tracks, 0, CONTEXT)}
-                className={detailButton.pill}
-                title="Play all downloads"
-              >
-                <Play size={17} fill="currentColor" />
-                <span>Play</span>
-              </button>
-            </div>
-          )}
         </div>
-      </section>
+
+        {tracks.length > 0 && (
+          <div className="mt-3.5 flex items-center gap-3.5 self-end [grid-area:actions]">
+            <button
+              type="button"
+              onClick={() => shuffleList(tracks, CONTEXT)}
+              className={`${detailButton.circle} transition-all active:scale-95`}
+              aria-label="Shuffle all downloads"
+              title="Shuffle all downloads"
+            >
+              <Shuffle size={18} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => playList(tracks, 0, CONTEXT)}
+              className={detailButton.pill}
+              title="Play all downloads"
+            >
+              <Play size={17} fill="currentColor" />
+              <span>Play</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {activeList.length > 0 && <ActiveDownloadsPanel downloads={activeList} />}
 
       {error && <RefreshError message={error} />}
 
@@ -476,22 +536,15 @@ export default function DownloadsPage() {
             )}
           </div>
 
-          <label className="inline-flex cursor-pointer items-center gap-1.5 type-callout-emphasized text-secondary">
-            <ArrowUpDown size={13} className="text-secondary" aria-hidden="true" />
-            <span className="sr-only">Sort downloads</span>
-            <select
+          <div className="flex items-center gap-1.5">
+            <ArrowUpDown size={14} className="text-secondary" aria-hidden="true" />
+            <Select<SortKey>
               value={sort}
-              onChange={(event) => setSort(event.target.value as SortKey)}
-              aria-label="Sort downloads"
-              className="cursor-pointer appearance-none bg-transparent pr-1 type-callout-emphasized text-primary focus:outline-none"
-            >
-              {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                <option key={key} value={key}>
-                  {SORT_LABELS[key]}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={SORT_OPTIONS}
+              onChange={setSort}
+              label="Sort downloads"
+            />
+          </div>
 
           <span className="ms-auto type-callout text-secondary">
             {filtersActive ? `${filtered.length} of ${tracks.length} songs` : `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}`}

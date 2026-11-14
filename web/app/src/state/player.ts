@@ -915,11 +915,12 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   if (
     isDesktopApp() &&
     !currentTrack.videoId.startsWith('beatflow://') &&
+    !currentTrack.videoId.includes('/local/') &&
     !partyHooks?.inParty()
   ) {
     try {
       const { useDownloadsStore, toTrackFromDownloaded } = await import('@/data/downloads/desktopDownloads');
-      const local = useDownloadsStore.getState().getLocalTrack(currentTrack.title, currentTrack.artists[0]?.name);
+      const local = useDownloadsStore.getState().getLocalTrack(currentTrack.title, currentTrack.artists[0]?.name, currentTrack.videoId);
       if (local) {
         const localTrack = toTrackFromDownloaded(local);
         const directTrack: Track = {

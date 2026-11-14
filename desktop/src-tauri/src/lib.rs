@@ -2054,10 +2054,11 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
 
-              let local_url = format!("beatflow://local/{}", file_name);
+              let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
+              let local_url = format!("http://127.0.0.1:{}/local/{}", port, url_encode(&file_name));
 
               let thumbnail = thumbnail_path_for(&thumbs_dir, stem)
-                .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("beatflow://thumbnail/{}", f)));
+                .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("http://127.0.0.1:{}/thumbnail/{}", port, url_encode(f))));
 
               let has_lyrics = lyrics_dir.join(format!("{}.lrc", stem)).exists()
                 || lyrics_dir.join(format!("{}.ttml", stem)).exists();
@@ -2220,7 +2221,8 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         let _ = fs::remove_file(old_root_mpd);
       }
 
-      let local_url = format!("beatflow://local/{}", file_name);
+      let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
+      let local_url = format!("http://127.0.0.1:{}/local/{}", port, url_encode(&file_name));
       Ok(json!({
         "success": true,
         "fileName": file_name,
@@ -2254,6 +2256,29 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         let _ = fs::remove_file(download_meta_path(&get_songs_dir(), stem));
       }
       Ok(json!({ "deleted": deleted, "fileName": file_name }))
+    }
+    "downloads.readTrackBase64" => {
+      let file_name = params.get("fileName").and_then(|v| v.as_str()).ok_or("Missing fileName")?;
+      let clean_file = file_name.split(['?', '#']).next().unwrap_or(file_name);
+      let decoded = url_decode(clean_file);
+      let songs_dir = get_songs_dir();
+      let target = if songs_dir.join(&decoded).exists() {
+        songs_dir.join(&decoded)
+      } else {
+        get_music_dir().join(&decoded)
+      };
+      if target.exists() && target.is_file() {
+        let bytes = fs::read(&target).map_err(|e| e.to_string())?;
+        let ext = target.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let mime = mime_for_ext(ext);
+        Ok(json!({
+          "base64": BASE64_STANDARD.encode(&bytes),
+          "mime": mime,
+          "size": bytes.len()
+        }))
+      } else {
+        Err("File not found".to_string())
+      }
     }
     "downloads.checkExists" => {
       let title_raw = params.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -2295,8 +2320,9 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
       }
 
+      let port = AUTH_SERVER_PORT.get().copied().unwrap_or(51189);
       let local_url = if found {
-        Some(format!("beatflow://local/{}", found_file))
+        Some(format!("http://127.0.0.1:{}/local/{}", port, url_encode(&found_file)))
       } else {
         None
       };
@@ -2994,9 +3020,121 @@ fn start_local_ipc_server(app_handle: tauri::AppHandle) {
 
           // Handle CORS OPTIONS
           if req_text.starts_with("OPTIONS ") {
-            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\n\r\n";
+            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS, HEAD\r\nAccess-Control-Allow-Headers: *\r\n\r\n";
             let _ = socket.write_all(resp.as_bytes()).await;
             return;
+          }
+
+          // Handle local song streaming and thumbnails over loopback HTTP
+          let is_get = req_text.starts_with("GET ");
+          let is_head = req_text.starts_with("HEAD ");
+          if is_get || is_head {
+            if let Some(pos) = req_text.find(" /local/") {
+              let after = &req_text[pos + 8..];
+              let path_end = after.find(" HTTP/").unwrap_or(after.len());
+              let raw_file = &after[..path_end];
+              let clean_file = raw_file.split(['?', '#']).next().unwrap_or(raw_file);
+              let file_name = url_decode(clean_file);
+              let songs_dir = get_songs_dir();
+              let target_file = if songs_dir.join(&file_name).exists() {
+                songs_dir.join(&file_name)
+              } else {
+                get_music_dir().join(&file_name)
+              };
+
+              if target_file.exists() && target_file.is_file() {
+                if let Ok(mut f) = std::fs::File::open(&target_file) {
+                  use std::io::{Seek, SeekFrom, Read};
+                  let file_size = f.metadata().map(|m| m.len()).unwrap_or(0);
+                  let ext = target_file.extension().and_then(|e| e.to_str()).unwrap_or("");
+                  let mime = mime_for_ext(ext);
+
+                  // Extract Range header if present
+                  let mut range_header: Option<String> = None;
+                  for line in req_text.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.to_lowercase().starts_with("range:") {
+                      if let Some(val) = trimmed.split(':').nth(1) {
+                        range_header = Some(val.trim().to_string());
+                        break;
+                      }
+                    }
+                  }
+
+                  if let Some(ref range_str) = range_header {
+                    if let Some(range_part) = range_str.strip_prefix("bytes=") {
+                      let parts: Vec<&str> = range_part.split('-').collect();
+                      let start: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+                      let requested_end: Option<u64> = parts.get(1).and_then(|s| s.parse().ok());
+                      let end = requested_end.unwrap_or(file_size.saturating_sub(1)).min(file_size.saturating_sub(1));
+
+                      if start <= end && start < file_size {
+                        let chunk_len = end - start + 1;
+                        let header = format!(
+                          "HTTP/1.1 206 Partial Content\r\nContent-Type: {}\r\nContent-Range: bytes {}-{}/{}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n\r\n",
+                          mime, start, end, file_size, chunk_len
+                        );
+                        let _ = socket.write_all(header.as_bytes()).await;
+                        if is_get {
+                          if f.seek(SeekFrom::Start(start)).is_ok() {
+                            let mut buffer = vec![0u8; chunk_len as usize];
+                            if f.read_exact(&mut buffer).is_ok() {
+                              let _ = socket.write_all(&buffer).await;
+                            }
+                          }
+                        }
+                        return;
+                      }
+                    }
+                  }
+
+                  let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n\r\n",
+                    mime, file_size
+                  );
+                  let _ = socket.write_all(header.as_bytes()).await;
+                  if is_get {
+                    let mut buffer = Vec::new();
+                    if f.read_to_end(&mut buffer).is_ok() {
+                      let _ = socket.write_all(&buffer).await;
+                    }
+                  }
+                  return;
+                }
+              }
+
+              let resp = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\n\r\n";
+              let _ = socket.write_all(resp.as_bytes()).await;
+              return;
+            }
+
+            if let Some(pos) = req_text.find(" /thumbnail/") {
+              let after = &req_text[pos + 12..];
+              let path_end = after.find(" HTTP/").unwrap_or(after.len());
+              let raw_file = &after[..path_end];
+              let clean_file = raw_file.split(['?', '#']).next().unwrap_or(raw_file);
+              let file_name = url_decode(clean_file);
+              let target_file = get_thumbnails_dir().join(&file_name);
+              if target_file.exists() && target_file.is_file() {
+                if let Ok(bytes) = fs::read(&target_file) {
+                  let ext = target_file.extension().and_then(|e| e.to_str()).unwrap_or("");
+                  let mime = if ext.eq_ignore_ascii_case("png") { "image/png" } else { "image/jpeg" };
+                  let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: public, max-age=86400\r\n\r\n",
+                    mime, bytes.len()
+                  );
+                  let _ = socket.write_all(header.as_bytes()).await;
+                  if is_get {
+                    let _ = socket.write_all(&bytes).await;
+                  }
+                  return;
+                }
+              }
+
+              let resp = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\n\r\n";
+              let _ = socket.write_all(resp.as_bytes()).await;
+              return;
+            }
           }
 
           // Handle POST /forward-arg (single instance forwarding)

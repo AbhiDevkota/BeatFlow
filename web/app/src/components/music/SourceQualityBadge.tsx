@@ -11,6 +11,7 @@ export interface SourceQualityBadgeProps {
   className?: string;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
+  borderless?: boolean;
 }
 
 /**
@@ -62,6 +63,7 @@ export function SourceQualityBadge({
   className = '',
   size = 'sm',
   showLabel = true,
+  borderless = false,
 }: SourceQualityBadgeProps) {
   const quality = parseSourceQuality(rawQuality);
   if (!quality) return null;
@@ -69,28 +71,46 @@ export function SourceQualityBadge({
   let icon: ReactNode;
   let label: string;
   let badgeStyles = '';
+  let borderlessColor = '';
 
   switch (quality) {
     case 'DOLBY_ATMOS':
       icon = <DolbyAtmosIcon size={size === 'lg' ? 16 : size === 'md' ? 14 : 12} />;
       label = 'Dolby Atmos';
       badgeStyles = 'bg-black/60 text-white border-white/20 shadow-sm';
+      borderlessColor = 'text-primary';
       break;
     case 'HI_RES_LOSSLESS':
       icon = <LosslessWaveIcon size={size === 'lg' ? 18 : size === 'md' ? 15 : 13} className="text-amber-400" />;
       label = 'Hi-Res Lossless';
       badgeStyles = 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      borderlessColor = 'text-amber-400';
       break;
     case 'LOSSLESS':
       icon = <LosslessWaveIcon size={size === 'lg' ? 18 : size === 'md' ? 15 : 13} />;
       label = 'Lossless';
       badgeStyles = 'bg-white/10 text-white border-white/20';
+      borderlessColor = 'text-secondary';
       break;
     case 'HIGH_QUALITY':
       icon = <Headphones size={size === 'lg' ? 14 : size === 'md' ? 12 : 10} />;
       label = 'High Quality';
       badgeStyles = 'bg-white/5 text-secondary border-white/10';
+      borderlessColor = 'text-secondary';
       break;
+  }
+
+  if (borderless) {
+    const textClass = size === 'lg' ? 'text-xs gap-1.5' : size === 'md' ? 'text-[11px] gap-1' : 'text-[10px] gap-1';
+    return (
+      <span
+        className={`inline-flex items-center font-medium tracking-tight select-none shrink-0 ${textClass} ${borderlessColor} ${className}`}
+        title={details || label}
+      >
+        {icon}
+        {showLabel && <span>{label}</span>}
+      </span>
+    );
   }
 
   const padding = size === 'lg' ? 'px-2.5 py-1 text-xs gap-1.5' : size === 'md' ? 'px-2 py-0.5 text-[11px] gap-1' : 'px-1.5 py-0.5 text-[10px] gap-1';

@@ -120,8 +120,9 @@ function Row({ track, variant, position, fallbackArtwork, downloadMeta, onPlayRo
   const unavailable = track.unavailable;
   const onPlay = () => (unavailable ? undefined : current ? togglePlay() : onPlayRow());
   const isDownloaded =
-    useDownloadsStore((s) => s.isDownloaded(track.title, track.artists[0]?.name)) ||
-    track.videoId.startsWith('beatflow://local');
+    useDownloadsStore((s) => s.isDownloaded(track.title, track.artists[0]?.name, track.videoId)) ||
+    track.videoId.startsWith('beatflow://local') ||
+    track.videoId.includes('/local/');
   // Downloads have their own thumbnail on disk, so they get the playlist's artwork column.
   const showArtwork = variant === 'playlist' || variant === 'downloads';
 
@@ -183,7 +184,11 @@ function Row({ track, variant, position, fallbackArtwork, downloadMeta, onPlayRo
               </span>
             )}
             {track.sourceQuality && (
-              <SourceQualityBadge quality={track.sourceQuality} size="sm" />
+              <SourceQualityBadge
+                quality={track.sourceQuality}
+                size="sm"
+                borderless={variant === 'downloads'}
+              />
             )}
           </div>
           {variant === 'album' && track.artists.length > 0 && (

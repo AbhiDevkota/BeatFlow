@@ -317,6 +317,10 @@ export interface BridgeMethods {
     params: { title?: string; artist?: string; fileName?: string };
     result: { exists: boolean; fileName: string | null; localUrl?: string | null };
   };
+  'downloads.readTrackBase64': {
+    params: { fileName: string };
+    result: { success: boolean; data: string; mimeType: string };
+  };
   'downloads.resolveSource': {
     params: { videoId?: string; title: string; artist?: string; durationSec?: number | null };
     result: { stream: any; artwork?: string | null } | null;
