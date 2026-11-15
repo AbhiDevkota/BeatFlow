@@ -111,6 +111,10 @@
   --animate-mood-lotus: mood-lotus 5s ease-in-out infinite alternate;
   --animate-mood-typing: mood-typing 2s steps(12, end) infinite;
   --animate-mood-cursor: mood-cursor 1s steps(2, start) infinite;
+  /* The one-line lyric strip's line change (PlayerLyrics.kt): the arriving line
+     slides up at full strength while the leaving one fades and slides up. */
+  --animate-lyric-strip-in: lyric-strip-in 0.34s cubic-bezier(0.4, 0, 0.2, 1) both;
+  --animate-lyric-strip-out: lyric-strip-out 0.34s cubic-bezier(0.4, 0, 0.2, 1) both;
 
   @keyframes menu-in {
     from {
@@ -136,6 +140,17 @@
   @keyframes fade-in {
     from {
       opacity: 0;
+    }
+  }
+  @keyframes lyric-strip-in {
+    from {
+      transform: translateY(35%);
+    }
+  }
+  @keyframes lyric-strip-out {
+    to {
+      opacity: 0;
+      transform: translateY(-35%);
     }
   }
   @keyframes enter {

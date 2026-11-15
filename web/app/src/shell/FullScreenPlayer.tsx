@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Maximize, Minimize, Volume1, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { useLocation } from 'react-router';
 import {
   BackwardIcon,
@@ -24,6 +24,8 @@ import { MotionArtwork } from '@/components/music/MotionArtwork';
 import { VideoSurface } from '@/components/music/VideoSurface';
 import { useTrackMotion } from '@/data/apple/motionArt';
 import { useLyrics } from '@/lyrics/useLyrics';
+import { LyricClock } from '@/lyrics/clock';
+import type { LyricLine } from '@/lyrics/model';
 import { sizedArtwork } from '@/lib/artwork';
 import { isDesktopApp } from '@/lib/platform';
 import { useContentSettings } from '@/lib/contentSettings';
@@ -297,77 +299,430 @@ function PlayerActionRow({
   );
 }
 
+/** The strip's intro and loading copy, the Android app's strings.xml word for word. */
+const STRIP_INTRO_LINES = [
+  'The beat is landing',
+  'The song is starting',
+  'Warming up',
+  'Setting the mood',
+  'Bass first, words later',
+  'Wait for it',
+  'Feel that build',
+  'Just the groove for now',
+  'The hook is on the way',
+  'Let it breathe',
+  'Cue the vocals',
+  'First notes in',
+];
+const STRIP_LOADING_LINES = [
+  'Getting the lyrics',
+  'Finding the words',
+  'Fetching the verses',
+  'Lyrics are loading',
+  'Checking the lyric sheet',
+  'Searching the songbook',
+  'Lining up the lyrics',
+  'Words are on the way',
+  'Checking the archives',
+  'Finding the right words',
+  'Lyrics are coming together',
+  'Almost found the words',
+];
+
+// PlayerLyrics.kt's strip, as constants: the sung line reads white at 78 % and
+// dims into its own end, the sweep's unsung words sit at 55 % under it,
+// instrumentals and the intro at 50 %, and a line change slides both lines up
+// over 340 ms.
+const STRIP_SUNG_ALPHA = 0.78;
+const STRIP_UNSUNG_ALPHA = 0.55;
+const STRIP_MUTED_ALPHA = 0.5;
+const STRIP_FADE_FRACTION = 0.28;
+const STRIP_FADE_MIN_MS = 160;
+const STRIP_FADE_MAX_MS = 700;
+const STRIP_TRANSITION_MS = 340;
+const STRIP_UNAVAILABLE_HOLD_MS = 5000;
+const STRIP_UNAVAILABLE_FADE_MS = 900;
+
+/** One moment of the strip: what is drawn, and what animates when it changes. */
+interface StripEntry {
+  kind: 'line' | 'intro' | 'instrumental' | 'unsynced' | 'loading' | 'unavailable';
+  /** Animation identity: a change of key slides the old entry up and out. */
+  key: string;
+  text: string;
+  /** The sung line itself, when the kind is 'line': words drive the sweep. */
+  line?: LyricLine;
+  /** The line's index in the sheet, for the dim's end. */
+  index?: number;
+  /** Whether the entry arrived over another one, and so slides in. */
+  animated?: boolean;
+  /** The dim the entry was last drawn at, baked in when it leaves. */
+  alpha?: number;
+  /** How far each word had been swept when the entry left. */
+  wordModes?: ('before' | 'sweep' | 'after')[];
+}
+
+/** A copy line picked by the track, so the pick is stable for the track. */
+function stripPick(catalog: string[], key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  return catalog[Math.abs(hash) % catalog.length]!;
+}
+
+/** The beamed double note the strip raises during instrumentals (BeatFlowIcons.Instrumental). */
+function InstrumentalNote({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path
+        fillRule="evenodd"
+        d="M19.952 1.651a.75.75 0 0 1 .298.599V16.303a3 3 0 0 1-2.176 2.884l-1.32.377a2.553 2.553 0 1 1-1.403-4.909l2.311-.66a1.5 1.5 0 0 0 1.088-1.442V6.994l-9 2.572v9.737a3 3 0 0 1-2.176 2.884l-1.32.377a2.553 2.553 0 1 1-1.402-4.909l2.31-.66a1.5 1.5 0 0 0 1.088-1.442V5.25a.75.75 0 0 1 .544-.721l10.5-3a.75.75 0 0 1 .658.122Z"
+      />
+    </svg>
+  );
+}
+
+/** "Lyrics not available": held a few seconds so it registers, then left to fade; the slot stays. */
+function StripUnavailable({ trackKey }: { trackKey: string }) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    setVisible(true);
+    const timer = setTimeout(() => setVisible(false), STRIP_UNAVAILABLE_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [trackKey]);
+  return (
+    <span
+      className="truncate"
+      style={{
+        color: `rgba(255, 255, 255, ${STRIP_UNSUNG_ALPHA})`,
+        opacity: visible ? 1 : 0,
+        transition: `opacity ${STRIP_UNAVAILABLE_FADE_MS}ms linear`,
+      }}
+    >
+      Lyrics not available
+    </span>
+  );
+}
+
+/** The animated text of one strip entry: the line or a stand-in, truncated to the strip. */
+function StripEntryText({
+  entry: e,
+  mode,
+  lineBoxRef,
+  trackKey,
+  reduceAnim,
+}: {
+  entry: StripEntry;
+  mode: 'active' | 'out';
+  lineBoxRef?: RefObject<HTMLSpanElement | null>;
+  trackKey: string;
+  reduceAnim: boolean;
+}) {
+  const words = e.kind === 'line' ? (e.line?.words ?? []) : [];
+  // The dim bakes into the color rather than the opacity, so the leaving
+  // entry's own fade reads as a continuation rather than a flash.
+  const dim = e.alpha ?? STRIP_SUNG_ALPHA;
+  const color =
+    e.kind === 'line'
+      ? `rgba(255, 255, 255, ${dim})`
+      : e.kind === 'unsynced'
+        ? 'rgba(255, 255, 255, 1)'
+        : e.kind === 'intro' || e.kind === 'instrumental'
+          ? `rgba(255, 255, 255, ${STRIP_MUTED_ALPHA})`
+          : `rgba(255, 255, 255, ${STRIP_UNSUNG_ALPHA})`;
+  const animation = reduceAnim ? '' : mode === 'out' ? 'animate-lyric-strip-out' : e.animated ? 'animate-lyric-strip-in' : '';
+
+  return (
+    <span
+      ref={mode === 'active' ? lineBoxRef : undefined}
+      data-entry={mode === 'active' ? e.key : undefined}
+      className={`max-w-full truncate type-[500_16px/20px] ${
+        mode === 'out' ? 'absolute inset-y-0 left-0 flex items-center' : ''
+      } ${animation}`}
+      style={words.length ? undefined : { color }}
+    >
+      {words.length
+        ? words.map((w, i) => {
+            // An arriving entry starts unsung; its first drawn frame is one
+            // rAF away. A leaving one keeps the sweep as it stood, its sung
+            // words at the baked dim, the rest at the unsung dim under it.
+            const at =
+              mode === 'active'
+                ? STRIP_UNSUNG_ALPHA * STRIP_SUNG_ALPHA
+                : (e.wordModes?.[i] ?? null) === 'after'
+                  ? dim
+                  : STRIP_UNSUNG_ALPHA * dim;
+            return (
+              <span key={i} data-word className="whitespace-pre" style={{ color: `rgba(255, 255, 255, ${at.toFixed(3)})` }}>
+                {(i > 0 ? ' ' : '') + w.text}
+              </span>
+            );
+          })
+        : e.kind === 'unavailable' ? (
+            <StripUnavailable trackKey={trackKey} />
+          ) : (
+            e.text
+          )}
+    </span>
+  );
+}
+
 /**
- * The lyric preview (the Android app's now-playing card): the line being sung,
- * in a quiet glass card under the names and above the seek line, and a tap
- * opens the full lyrics. A skeleton holds the card's space while the lookup
- * runs; when a track has no lyrics at all the card leaves without a trace.
+ * The lyric strip (the Android app's CurrentLyricStrip): the line being sung,
+ * one plain line of text directly above the scrubber, a tap opening the full
+ * lyrics. The line slides up and out as the song moves, dims into its own end,
+ * and word-synced lines sweep a karaoke boundary across themselves. Before the
+ * first sung line and through instrumental breaks the strip raises the beamed
+ * note; while the lookup runs it shows one of the loading lines, and a lookup
+ * that came back empty shows "Lyrics not available" briefly, then fades.
  */
 function LyricsPreview({ onOpen }: { onOpen: () => void }) {
   const lyrics = useLyrics();
-  const result = lyrics.data;
-  // Only sung lines: during an instrumental stretch the last one keeps showing.
-  const lines = useMemo(() => result?.lines.filter((l) => l.text.trim()) ?? [], [result]);
-  const [index, setIndex] = useState(-1);
+  const lines = useMemo(() => lyrics.data?.lines ?? [], [lyrics.data]);
+  const isSynced = useMemo(() => lines.some((l) => l.timeMs > 0), [lines]);
+  const mixing = usePlayer((s) => s.mixing);
+  const trackKey = usePlayer((s) => s.nowPlaying?.videoId ?? '');
+  const durationMs = usePlayer((s) => Math.round((s.nowPlaying?.durationSec ?? 0) * 1000));
+  const reduceAnim = useMediaQuery('(prefers-reduced-motion: reduce)');
+  // One copy line per track, the way Android remembers a pick for the track.
+  const introLine = useMemo(() => stripPick(STRIP_INTRO_LINES, trackKey), [trackKey]);
+  const loadingLine = useMemo(() => stripPick(STRIP_LOADING_LINES, trackKey), [trackKey]);
 
-  // The line at the playhead, found per frame but re-rendered only when it changes.
+  const [entry, setEntry] = useState<StripEntry | null>(null);
+  const [leaving, setLeaving] = useState<StripEntry | null>(null);
+  const entryRef = useRef<StripEntry | null>(null);
+  const leavingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The frame loop draws through these: the active entry's line box and its
+  // word spans, recollected whenever the entry they belong to changes.
+  const lineBoxRef = useRef<HTMLSpanElement | null>(null);
+  const wordEls = useRef<(HTMLSpanElement | null)[]>([]);
+  const wordModes = useRef<('before' | 'sweep' | 'after' | null)[]>([]);
+  const wordsStale = useRef(true);
+  const alphaRef = useRef(STRIP_SUNG_ALPHA);
+  // Whether the previous render was in the synced world: entering it again
+  // after a stands-in (or a track with none) means the remembered entry was
+  // never on screen, so it must not slide out as if it had been.
+  const wasSyncedRef = useRef(false);
   useEffect(() => {
-    if (!lines.length) return;
+    if (!isSynced) {
+      wasSyncedRef.current = false;
+      // Out of the synced world the stands-ins draw instead; drop the line
+      // state so re-entering never flashes the old track's last line.
+      setEntry(null);
+      setLeaving(null);
+    }
+  }, [isSynced]);
+
+  // The line at the steered clock's playhead: picked per frame, drawn per
+  // frame, and re-rendered only when the line itself changes.
+  useEffect(() => {
+    if (!isSynced) return;
+    const audio = getAudio();
+    if (!audio) return;
+    const clock = new LyricClock((mixing ? getPlayhead()?.sec ?? audio.currentTime : audio.currentTime) * 1000);
+    const firstSung = lines.findIndex((l) => l.text.length !== 0);
+    if (!wasSyncedRef.current) {
+      // Fresh into the synced world: whatever the ref remembers was never
+      // drawn here, so the first line arrives without an outgoing one.
+      entryRef.current = null;
+      wasSyncedRef.current = true;
+    }
+    let discontinuity = 0;
+    let lastSec = audio.currentTime;
     let frame = 0;
-    let last = -2;
-    const tick = () => {
-      const head = getPlayhead();
-      const sec = head?.sec ?? getAudio()?.currentTime ?? 0;
-      const ms = sec * 1000;
-      let lo = 0;
-      let hi = lines.length - 1;
-      let found = -1;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (lines[mid]!.timeMs <= ms) {
-          found = mid;
-          lo = mid + 1;
+
+    const advance = (next: StripEntry) => {
+      const prev = entryRef.current;
+      if (prev) {
+        // The outgoing entry keeps the dim it was last drawn at, and how far
+        // each of its words had been swept, so it slides off as it looked.
+        setLeaving({ ...prev, alpha: alphaRef.current, wordModes: wordModes.current.slice() as ('before' | 'sweep' | 'after')[] });
+        if (leavingTimer.current) clearTimeout(leavingTimer.current);
+        leavingTimer.current = setTimeout(
+          () => setLeaving((l) => (l && l.key === prev.key ? null : l)),
+          reduceAnim ? 0 : STRIP_TRANSITION_MS,
+        );
+      }
+      entryRef.current = next;
+      wordsStale.current = true;
+      setEntry({ ...next, animated: !!prev });
+    };
+
+    const collect = () => {
+      const box = lineBoxRef.current;
+      const ent = entryRef.current;
+      wordEls.current =
+        box && ent?.kind === 'line' && ent.line?.words.length && box.dataset.entry === ent.key
+          ? Array.from(box.querySelectorAll<HTMLSpanElement>('[data-word]'))
+          : [];
+      wordModes.current = wordEls.current.map(() => null);
+      wordsStale.current = false;
+    };
+
+    /** The line's own fade window: a fraction of its length, bounded. */
+    const dimOf = (index: number, ms: number) => {
+      const start = lines[index]?.timeMs ?? 0;
+      const end = lines[index + 1]?.timeMs ?? (durationMs > start ? durationMs : start + 4000);
+      const fade = Math.min(STRIP_FADE_MAX_MS, Math.max(STRIP_FADE_MIN_MS, (end - start) * STRIP_FADE_FRACTION));
+      return STRIP_SUNG_ALPHA * Math.min(1, Math.max(0, (end - ms) / fade));
+    };
+
+    const draw = (ms: number) => {
+      const ent = entryRef.current;
+      const box = lineBoxRef.current;
+      if (!ent || ent.kind !== 'line' || !ent.line || ent.index == null || !box) return;
+      const alpha = dimOf(ent.index, ms);
+      alphaRef.current = alpha;
+      if (!ent.line.words.length) {
+        box.style.color = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
+        return;
+      }
+      if (wordsStale.current) collect();
+      const sung = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
+      const unsung = `rgba(255, 255, 255, ${(STRIP_UNSUNG_ALPHA * alpha).toFixed(3)})`;
+      for (let i = 0; i < wordEls.current.length; i++) {
+        const el = wordEls.current[i];
+        const word = ent.line.words[i];
+        if (!el || !word) continue;
+        const mode = wordModes.current[i];
+        if (word.endMs <= ms) {
+          // Sung: a plain color. The alpha moves continuously, so the color
+          // itself writes every frame; the resets write only on mode change.
+          if (mode !== 'after') {
+            wordModes.current[i] = 'after';
+            el.style.backgroundImage = 'none';
+            el.style.backgroundClip = '';
+            el.style.setProperty('-webkit-background-clip', '');
+          }
+          el.style.color = sung;
+        } else if (word.startMs <= ms) {
+          // Being sung: the boundary crosses the word's own width, feathered
+          // ahead of itself, the steady cut the panel's sweep draws.
+          const f = Math.min(1, Math.max(0, (ms - word.startMs) / Math.max(1, word.endMs - word.startMs)));
+          wordModes.current[i] = 'sweep';
+          el.style.color = 'transparent';
+          el.style.setProperty('-webkit-background-clip', 'text');
+          el.style.backgroundClip = 'text';
+          el.style.backgroundImage = `linear-gradient(90deg, ${sung} 0%, ${sung} ${(f * 100).toFixed(1)}%, ${unsung} ${Math.min(100, f * 100 + 12).toFixed(1)}%)`;
+        } else if (mode !== 'before') {
+          wordModes.current[i] = 'before';
+          el.style.backgroundImage = 'none';
+          el.style.backgroundClip = '';
+          el.style.setProperty('-webkit-background-clip', '');
+          el.style.color = unsung;
         } else {
-          hi = mid - 1;
+          el.style.color = unsung;
         }
       }
-      if (found !== last) {
-        last = found;
-        setIndex(found);
+    };
+
+    const step = (ms: number) => {
+      // The line at the playhead, as Android picks it: the last line begun.
+      let index = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i]!.timeMs > ms) break;
+        index = i;
+      }
+      const current = index >= 0 ? (lines[index] ?? null) : null;
+      const instrumental = current === null || current.text.length === 0;
+      const intro = instrumental && firstSung >= 0 && index < firstSung;
+      const kind = instrumental ? (intro ? 'intro' : 'instrumental') : 'line';
+      const text = instrumental ? (intro ? introLine : 'Instrumental') : current!.text;
+      const key = `${kind}#${index}#${text}`;
+      if (entryRef.current?.key !== key) advance({ kind, key, text, line: current ?? undefined, index });
+      draw(ms);
+    };
+
+    const tick = () => {
+      const now = performance.now();
+      if (mixing) {
+        // A loop mix plays the song from a deck while its element sits paused:
+        // follow the mix's playhead, which loops and moves at the ramped tempo.
+        const sec = getPlayhead()?.sec ?? lastSec;
+        if (sec < lastSec - 0.15 || sec > lastSec + 1) discontinuity++;
+        lastSec = sec;
+        step(clock.frame(now, Math.trunc(sec * 1000), now, discontinuity));
+      } else {
+        step(clock.frame(now, Math.trunc(audio.currentTime * 1000), now, discontinuity));
       }
       frame = requestAnimationFrame(tick);
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [lines]);
 
-  if (!lines.length) {
-    return lyrics.isFetching ? (
-      <div className="mt-[clamp(16px,2.6vh,24px)] flex flex-col gap-2 rounded-[14px] bg-white/8 px-4 py-2.5">
-        <div className="h-2.5 w-14 animate-pulse rounded-full bg-white/20" />
-        <div className="h-3.5 w-3/5 animate-pulse rounded-full bg-white/20" />
-      </div>
-    ) : null;
+    if (mixing) {
+      frame = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(frame);
+    }
+    const hold = () => {
+      cancelAnimationFrame(frame);
+      clock.hold(audio.currentTime * 1000, performance.now());
+      // Draw once at the held reading, so a seek while paused lands at once.
+      step(audio.currentTime * 1000);
+    };
+    const resume = () => {
+      cancelAnimationFrame(frame);
+      clock.restart();
+      frame = requestAnimationFrame(tick);
+    };
+    const onSeeking = () => {
+      discontinuity++;
+      if (audio.paused) hold();
+    };
+    audio.addEventListener('seeking', onSeeking);
+    audio.addEventListener('seeked', onSeeking);
+    audio.addEventListener('pause', hold);
+    audio.addEventListener('play', resume);
+    if (audio.paused) hold();
+    else resume();
+    return () => {
+      cancelAnimationFrame(frame);
+      audio.removeEventListener('seeking', onSeeking);
+      audio.removeEventListener('seeked', onSeeking);
+      audio.removeEventListener('pause', hold);
+      audio.removeEventListener('play', resume);
+    };
+  }, [isSynced, lines, mixing, reduceAnim, introLine, durationMs]);
+
+  // Without synced lines the strip shows its stands-in states straight from
+  // the lookup, as Android swaps its branch without a transition.
+  let derived: StripEntry | null = null;
+  if (!isSynced) {
+    if (lyrics.data === undefined) {
+      if (lyrics.isError) derived = { kind: 'unavailable', key: 'unavailable', text: 'Lyrics not available' };
+      else if (lyrics.fetchStatus === 'fetching') derived = { kind: 'loading', key: 'loading', text: loadingLine };
+    } else if (lyrics.data === null || lines.length === 0) {
+      derived = { kind: 'unavailable', key: 'unavailable', text: 'Lyrics not available' };
+    } else {
+      // Unsynced lyrics have no "now": the strip offers the way in instead.
+      derived = { kind: 'unsynced', key: 'unsynced', text: 'Lyrics' };
+    }
   }
 
-  // Unsynced lyrics have no "now": the card shows where the sheet starts.
-  const current = result?.synced ? (index >= 0 ? lines[Math.min(index, lines.length - 1)]! : lines[0]!) : lines[0]!;
+  const active = isSynced ? entry : derived;
+  const leavingShown = isSynced ? leaving : null;
+  const note = active?.kind === 'intro' || active?.kind === 'instrumental' || active?.kind === 'unsynced';
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Open lyrics"
-      className="group mt-[clamp(16px,2.6vh,24px)] flex w-full min-w-0 flex-col gap-1.5 rounded-[14px] bg-white/8 px-4 py-2.5 text-left backdrop-blur-md transition-[background-color,transform] duration-150 hover:bg-white/12 active:scale-[0.98]"
-    >
-      <span className="flex items-center gap-1 type-[600_10px/12px] uppercase tracking-widest text-white/45">
-        Lyrics
-        <ChevronRight size={12} className="transition-transform duration-150 group-hover:translate-x-0.5" />
-      </span>
-      <span key={index} className="truncate animate-fade-in type-[500_15px/20px] text-white/90">
-        {current.text}
-      </span>
-    </button>
+    // The slot holds its height whatever the strip shows, so a track change
+    // never reflows the names above or the scrubber below.
+    <div className="h-8">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Open lyrics"
+        className="flex h-full w-full min-w-0 cursor-pointer items-center rounded-lg text-left"
+      >
+        {note && <InstrumentalNote className="size-4 shrink-0 text-white" />}
+        {note && <span className="w-1.5 shrink-0" />}
+        <span className="relative min-w-0">
+          {leavingShown && <StripEntryText entry={leavingShown} mode="out" trackKey={trackKey} reduceAnim={reduceAnim} />}
+          {active && <StripEntryText entry={active} mode="active" lineBoxRef={lineBoxRef} trackKey={trackKey} reduceAnim={reduceAnim} />}
+        </span>
+        {active && (
+          <>
+            <span className="w-1.5 shrink-0" />
+            <ChevronRight size={14} className="shrink-0 text-white/50" aria-hidden="true" />
+          </>
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -1461,9 +1816,9 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
             '[--art:min(38vw,calc(100dvh-240px),560px)]'
           : column || video
             ? '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
-            // With the panels paused the lyric preview joins the column (narrow
-            // windows): the artwork's budget pays for its card.
-            : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-420px),420px)]'
+            // With the panels paused the lyric strip joins the column (narrow
+            // windows): its fixed 32px slot comes out of the artwork's budget.
+            : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-380px),420px)]'
       }`}
       role="dialog"
       aria-modal="true"
