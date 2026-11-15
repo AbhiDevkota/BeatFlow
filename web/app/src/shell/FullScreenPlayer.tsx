@@ -483,6 +483,9 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
   const lines = useMemo(() => lyrics.data?.lines ?? [], [lyrics.data]);
   const isSynced = useMemo(() => lines.some((l) => l.timeMs > 0), [lines]);
   const mixing = usePlayer((s) => s.mixing);
+  // Bumped whenever the audio element in front changes (crossfades swap decks);
+  // the strip rebinds its clock and listeners with it, as the panel does.
+  const deck = usePlayer((s) => s.deck);
   const trackKey = usePlayer((s) => s.nowPlaying?.videoId ?? '');
   const durationMs = usePlayer((s) => Math.round((s.nowPlaying?.durationSec ?? 0) * 1000));
   const reduceAnim = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -501,6 +504,12 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
   const wordModes = useRef<('before' | 'sweep' | 'after' | null)[]>([]);
   const wordsStale = useRef(true);
   const alphaRef = useRef(STRIP_SUNG_ALPHA);
+  // Boundary hysteresis, so a clock hovering over a line's start can't slide
+  // the strip back and forth: a revert to the line just left is held off for
+  // a moment, and a declared jump (a seek, a mix wrap) lifts the hold.
+  const flapPrevKey = useRef('');
+  const flapAt = useRef(0);
+  const jumped = useRef(false);
   // Whether the previous render was in the synced world: entering it again
   // after a stands-in (or a track with none) means the remembered entry was
   // never on screen, so it must not slide out as if it had been.
@@ -643,7 +652,17 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
       const kind = instrumental ? (intro ? 'intro' : 'instrumental') : 'line';
       const text = instrumental ? (intro ? introLine : 'Instrumental') : current!.text;
       const key = `${kind}#${index}#${text}`;
-      if (entryRef.current?.key !== key) advance({ kind, key, text, line: current ?? undefined, index });
+      if (entryRef.current?.key !== key) {
+        const now = performance.now();
+        if (!jumped.current && key === flapPrevKey.current && now - flapAt.current < 1500) {
+          // A revert to the line just left, within the hold: ignore it.
+        } else {
+          flapPrevKey.current = entryRef.current?.key ?? '';
+          flapAt.current = now;
+          jumped.current = false;
+          advance({ kind, key, text, line: current ?? undefined, index });
+        }
+      }
       draw(ms);
     };
 
@@ -653,7 +672,10 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
         // A loop mix plays the song from a deck while its element sits paused:
         // follow the mix's playhead, which loops and moves at the ramped tempo.
         const sec = getPlayhead()?.sec ?? lastSec;
-        if (sec < lastSec - 0.15 || sec > lastSec + 1) discontinuity++;
+        if (sec < lastSec - 0.15 || sec > lastSec + 1) {
+          discontinuity++;
+          jumped.current = true;
+        }
         lastSec = sec;
         step(clock.frame(now, Math.trunc(sec * 1000), now, discontinuity));
       } else {
@@ -679,6 +701,7 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
     };
     const onSeeking = () => {
       discontinuity++;
+      jumped.current = true;
       if (audio.paused) hold();
     };
     audio.addEventListener('seeking', onSeeking);
@@ -694,7 +717,7 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
       audio.removeEventListener('pause', hold);
       audio.removeEventListener('play', resume);
     };
-  }, [isSynced, lines, mixing, reduceAnim, introLine, durationMs]);
+  }, [isSynced, lines, mixing, deck, reduceAnim, introLine, durationMs]);
 
   // Without synced lines the strip shows its stands-in states straight from
   // the lookup, as Android swaps its branch without a transition.
@@ -717,9 +740,9 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
 
   return (
     // The slot holds its height whatever the strip shows, so a track change
-    // never reflows the names above or the scrubber below. Nudged down 6px
-    // into the scrubber's dead space, as the Android strip is.
-    <div className="h-8 translate-y-1.5">
+    // never reflows the names above or the scrubber below. Nudged down into
+    // the scrubber's dead space, as the Android strip is, only a touch lower.
+    <div className="h-8 translate-y-2.5">
       <button
         type="button"
         onClick={onOpen}
