@@ -298,10 +298,10 @@ function PlayerActionRow({
 }
 
 /**
- * The phone's lyric preview (Spotify's now-playing card): the line being sung,
- * in a quiet glass card above the seek line, and a tap opens the full lyrics.
- * A skeleton holds the card's space while the lookup runs; when a track has no
- * lyrics at all the card leaves without a trace.
+ * The lyric preview (the Android app's now-playing card): the line being sung,
+ * in a quiet glass card under the names and above the seek line, and a tap
+ * opens the full lyrics. A skeleton holds the card's space while the lookup
+ * runs; when a track has no lyrics at all the card leaves without a trace.
  */
 function LyricsPreview({ onOpen }: { onOpen: () => void }) {
   const lyrics = useLyrics();
@@ -1400,9 +1400,16 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     </div>
   );
 
-  /** The scrubber, transport, volume and the panel toggles — the foot of the cluster. */
+  /** The scrubber, transport, volume and the panel toggles — the foot of the cluster, with the lyric preview on its head. */
   const panelControls = (
     <div ref={panelControlsRef} className="flex flex-col will-change-transform">
+      {/* The Android app's lyric preview: under the names, above the seek line,
+          while no panel is open and no video fills the window. */}
+      {!column && !video && (
+        <div ref={previewRef}>
+          <LyricsPreview onOpen={() => togglePanel('lyrics')} />
+        </div>
+      )}
       <div ref={scrubberMorphRef} className="will-change-transform">
         <Scrubber />
       </div>
@@ -1442,14 +1449,6 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       )}
     </>
   );
-
-  /** The phone's lyric preview: narrow windows only, and only with no panel open. */
-  const previewSlot =
-    !wide && !column && !video ? (
-      <div ref={previewRef}>
-        <LyricsPreview onOpen={() => togglePanel('lyrics')} />
-      </div>
-    ) : null;
 
   return (
     <div
@@ -1598,7 +1597,6 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           {/* The names + actions and the controls: beside the artwork while the
               panels are paused, under it once lyrics or Up Next is open. */}
           {!shifted && panelInfo}
-          {previewSlot}
           {!shifted && panelControls}
         </section>
 
@@ -1610,10 +1608,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
         {/* The panels' paused home: the names + controls stand in the right half. */}
         {shifted && (
-          <div
-            ref={sideColumnRef}
-            className="flex min-h-0 flex-col justify-center gap-y-[clamp(20px,3.2vh,32px)] self-stretch will-change-transform"
-          >
+          <div ref={sideColumnRef} className="flex min-h-0 flex-col justify-center self-stretch will-change-transform">
             {panelInfo}
             {panelControls}
           </div>
