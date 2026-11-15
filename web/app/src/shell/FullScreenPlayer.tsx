@@ -743,6 +743,18 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     // Measure LIVE coordinates of miniplayer elements for pixel-perfect retrieval
     const { pill: livePill, art: liveArt, info: liveInfo, trans: liveTrans, scrub: liveScrub } = getMiniCoords();
 
+    // A drag release leaves the sheet translated/scaled by the gesture. The
+    // morph targets are computed in the sheet's own untransformed layout
+    // space — the card and its children are laid out there — so neutralize
+    // the drag transform while measuring. It is restored right after and
+    // handed to the sheet spring below; all of this happens in this one
+    // task, so no intermediate frame paints and nothing on screen jumps.
+    const dragTransform = sheetEl ? sheetEl.style.transform : '';
+    if (sheetEl && dragTransform) {
+      sheetEl.style.transition = 'none';
+      sheetEl.style.transform = '';
+    }
+
     const sheetRect = sheetEl ? sheetEl.getBoundingClientRect() : new DOMRect(0, 0, window.innerWidth, window.innerHeight);
     const fullWidth = sheetRect.width || window.innerWidth;
     const fullHeight = sheetRect.height || window.innerHeight;
@@ -751,6 +763,13 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const fullInfo = infoEl?.getBoundingClientRect();
     const fullTrans = transEl?.getBoundingClientRect();
     const fullScrub = scrubEl?.getBoundingClientRect();
+
+    if (sheetEl && dragTransform) {
+      // Give the gesture back before the spring reads it, so the recede runs
+      // from exactly where the pointer left the sheet.
+      sheetEl.style.transition = 'none';
+      sheetEl.style.transform = dragTransform;
+    }
 
     const cardDx = livePill.left - sheetRect.left;
     const cardDy = livePill.top - sheetRect.top;
