@@ -340,6 +340,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
   // Animation & gesture refs
   const sheetRef = useRef<HTMLDivElement>(null);
+  const cardBgRef = useRef<HTMLDivElement>(null);
   const artworkMorphRef = useRef<HTMLDivElement>(null);
   const infoMorphRef = useRef<HTMLDivElement>(null);
   const titleActionsRef = useRef<HTMLDivElement>(null);
@@ -350,17 +351,19 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const headerRef = useRef<HTMLDivElement>(null);
 
   const savedCoords = useRef<{
-    miniPill: DOMRect | null;
-    miniArt: DOMRect | null;
-    miniInfo: DOMRect | null;
-    fullArt: DOMRect | null;
-    fullInfo: DOMRect | null;
+    card: { dx: number; dy: number; sx: number; sy: number; rx: number; ry: number } | null;
+    art: { dx: number; dy: number; scale: number; r: number } | null;
+    info: { dx: number; dy: number; scale: number } | null;
+    trans: { dx: number; dy: number; scale: number } | null;
+    scrub: { dx: number; dy: number; sx: number } | null;
+    actions: { dx: number; dy: number; scale: number } | null;
   }>({
-    miniPill: null,
-    miniArt: null,
-    miniInfo: null,
-    fullArt: null,
-    fullInfo: null,
+    card: null,
+    art: null,
+    info: null,
+    trans: null,
+    scrub: null,
+    actions: null,
   });
 
   const phaseRef = useRef<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
@@ -413,6 +416,9 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const pillEl = document.getElementById('miniplayer-pill');
     const artEl = document.getElementById('miniplayer-artwork');
     const infoEl = document.getElementById('miniplayer-info');
+    const transEl = document.getElementById('miniplayer-transport');
+    const scrubEl = document.getElementById('miniplayer-scrubber');
+    const actionsEl = document.getElementById('miniplayer-actions');
 
     const pillRect = pillEl?.getBoundingClientRect();
     const validPill = pillRect && pillRect.width > 0 && pillRect.height > 0;
@@ -434,12 +440,24 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       ? infoEl.getBoundingClientRect()
       : new DOMRect(pill.left + 60, pill.top + 11, Math.min(220, pill.width - 120), 34);
 
-    return { pill, art, info };
+    const trans = transEl && transEl.getBoundingClientRect().width > 0
+      ? transEl.getBoundingClientRect()
+      : new DOMRect(pill.left + 16, pill.top + 8, 160, 40);
+
+    const scrub = scrubEl && scrubEl.getBoundingClientRect().width > 0
+      ? scrubEl.getBoundingClientRect()
+      : new DOMRect(pill.left + 60, pill.bottom - 8, Math.min(220, pill.width - 120), 4);
+
+    const actions = actionsEl && actionsEl.getBoundingClientRect().width > 0
+      ? actionsEl.getBoundingClientRect()
+      : new DOMRect(pill.right - 140, pill.top + 10, 130, 36);
+
+    return { pill, art, info, trans, scrub, actions };
   };
 
   // Hardware-accelerated Apple Matched-Geometry FLIP Expansion on Mount
   useLayoutEffect(() => {
-    const sheetEl = sheetRef.current;
+    const cardBgEl = cardBgRef.current;
     const artEl = artworkMorphRef.current;
     const infoEl = infoMorphRef.current;
     const transEl = transportMorphRef.current;
@@ -449,70 +467,95 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const headerEl = headerRef.current;
     const sideEl = sideColumnRef.current;
 
-    if (!sheetEl) return;
+    if (!cardBgEl || !artEl || !infoEl || !transEl || !scrubEl || !extraEl) return;
 
-    const { pill: miniPill, art: miniArt, info: miniInfo } = getMiniCoords();
+    const { pill: miniPill, art: miniArt, info: miniInfo, trans: miniTrans, scrub: miniScrub, actions: miniActions } = getMiniCoords();
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
 
     // Measure full-screen elements
-    const fullArt = artEl?.getBoundingClientRect() ?? null;
-    const fullInfo = infoEl?.getBoundingClientRect() ?? null;
+    const fullArt = artEl.getBoundingClientRect();
+    const fullInfo = infoEl.getBoundingClientRect();
+    const fullTrans = transEl.getBoundingClientRect();
+    const fullScrub = scrubEl.getBoundingClientRect();
+    const fullActions = extraEl.getBoundingClientRect();
+
+    // 1. Calculate deltas for Card Background
+    const cardDx = miniPill.left;
+    const cardDy = miniPill.top;
+    const cardScaleX = Math.max(0.01, miniPill.width / vw);
+    const cardScaleY = Math.max(0.01, miniPill.height / vh);
+    const rx = 28 / cardScaleX;
+    const ry = 28 / cardScaleY;
+
+    // 2. Calculate deltas for Artwork
+    const artDx = miniArt.left - fullArt.left;
+    const dyArt = miniArt.top - fullArt.top;
+    const artScale = Math.max(0.01, miniArt.width / fullArt.width);
+    const artRadius = 6 / artScale;
+
+    // 3. Calculate deltas for Title & Artist
+    const infoDx = miniInfo.left - fullInfo.left;
+    const dyInfo = miniInfo.top - fullInfo.top;
+    const infoScale = Math.min(1, Math.max(0.45, miniInfo.height / fullInfo.height));
+
+    // 4. Calculate deltas for Transport Controls
+    const transDx = (miniTrans.left + miniTrans.width / 2) - (fullTrans.left + fullTrans.width / 2);
+    const dyTrans = (miniTrans.top + miniTrans.height / 2) - (fullTrans.top + fullTrans.height / 2);
+    const transScale = Math.min(1, Math.max(0.65, miniTrans.height / fullTrans.height));
+
+    // 5. Calculate deltas for Scrubber
+    const scrubDx = miniScrub.left - fullScrub.left;
+    const dyScrub = miniScrub.top - fullScrub.top;
+    const scrubScaleX = Math.max(0.01, miniScrub.width / fullScrub.width);
+
+    // 6. Calculate deltas for Actions
+    const actionsDx = (miniActions.left + miniActions.width / 2) - (fullActions.left + fullActions.width / 2);
+    const dyActions = (miniActions.top + miniActions.height / 2) - (fullActions.top + fullActions.height / 2);
+    const actionsScale = 0.8;
 
     savedCoords.current = {
-      miniPill,
-      miniArt,
-      miniInfo,
-      fullArt,
-      fullInfo,
+      card: { dx: cardDx, dy: cardDy, sx: cardScaleX, sy: cardScaleY, rx, ry },
+      art: { dx: artDx, dy: dyArt, scale: artScale, r: artRadius },
+      info: { dx: infoDx, dy: dyInfo, scale: infoScale },
+      trans: { dx: transDx, dy: dyTrans, scale: transScale },
+      scrub: { dx: scrubDx, dy: dyScrub, sx: scrubScaleX },
+      actions: { dx: actionsDx, dy: dyActions, scale: actionsScale },
     };
 
-    const sheetDy = Math.max(0, miniPill.top);
+    // Apply Inverted state (t=0)
+    cardBgEl.style.transition = 'none';
+    cardBgEl.style.transformOrigin = '0 0';
+    cardBgEl.style.transform = `translate3d(${cardDx}px, ${cardDy}px, 0) scale(${cardScaleX}, ${cardScaleY})`;
+    cardBgEl.style.borderRadius = `${rx}px / ${ry}px`;
+    cardBgEl.style.overflow = 'hidden';
 
-    // 1. Initial Inverted FLIP state
-    sheetEl.style.transition = 'none';
-    sheetEl.style.transform = `translate3d(0, ${sheetDy}px, 0)`;
-    sheetEl.style.borderRadius = '28px';
+    artEl.style.transition = 'none';
+    artEl.style.transformOrigin = '0 0';
+    artEl.style.transform = `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`;
+    artEl.style.borderRadius = `${artRadius}px`;
 
-    if (artEl && fullArt && fullArt.width > 0) {
-      const dx = miniArt.left - fullArt.left;
-      const dy = miniArt.top - (fullArt.top + sheetDy);
-      const scale = miniArt.width / fullArt.width;
-      artEl.style.transition = 'none';
-      artEl.style.transformOrigin = '0 0';
-      artEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
-      artEl.style.borderRadius = '6px';
-    }
+    infoEl.style.transition = 'none';
+    infoEl.style.transformOrigin = '0 0';
+    infoEl.style.transform = `translate3d(${infoDx}px, ${dyInfo}px, 0) scale(${infoScale})`;
 
-    if (infoEl && fullInfo && fullInfo.width > 0) {
-      const dx = miniInfo.left - fullInfo.left;
-      const dy = miniInfo.top - (fullInfo.top + sheetDy);
-      const scale = Math.min(1, Math.max(0.55, miniInfo.height / fullInfo.height));
-      infoEl.style.transition = 'none';
-      infoEl.style.transformOrigin = '0 0';
-      infoEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
-      infoEl.style.opacity = '0.9';
-    }
+    transEl.style.transition = 'none';
+    transEl.style.transformOrigin = 'center center';
+    transEl.style.transform = `translate3d(${transDx}px, ${dyTrans}px, 0) scale(${transScale})`;
 
-    if (scrubEl) {
-      scrubEl.style.transition = 'none';
-      scrubEl.style.transform = 'translate3d(0, 32px, 0)';
-      scrubEl.style.opacity = '0';
-    }
+    scrubEl.style.transition = 'none';
+    scrubEl.style.transformOrigin = '0 0';
+    scrubEl.style.transform = `translate3d(${scrubDx}px, ${dyScrub}px, 0) scale(${scrubScaleX}, 0.5)`;
 
-    if (transEl) {
-      transEl.style.transition = 'none';
-      transEl.style.transform = 'translate3d(0, 44px, 0)';
-      transEl.style.opacity = '0';
-    }
-
-    if (extraEl) {
-      extraEl.style.transition = 'none';
-      extraEl.style.transform = 'translate3d(0, 56px, 0)';
-      extraEl.style.opacity = '0';
-    }
+    extraEl.style.transition = 'none';
+    extraEl.style.transformOrigin = 'center center';
+    extraEl.style.transform = `translate3d(${actionsDx}px, ${dyActions}px, 0) scale(${actionsScale})`;
+    extraEl.style.opacity = '0.7';
 
     if (actionsEl) {
       actionsEl.style.transition = 'none';
-      actionsEl.style.transform = 'translate3d(0, 16px, 0)';
+      actionsEl.style.transform = 'translate3d(0, 14px, 0)';
       actionsEl.style.opacity = '0';
     }
 
@@ -529,63 +572,50 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     }
 
     // Force reflow
-    void sheetEl.offsetHeight;
+    void cardBgEl.offsetHeight;
 
-    // 2. Animate to full-screen identity with Apple's fluid spring curve
+    // Trigger Play Animation (t=1)
     const easeApple = 'cubic-bezier(0.25, 1, 0.35, 1)';
     const rafId = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         phaseRef.current = 'expanding';
         setPhase('expanding');
 
-        sheetEl.style.transition = `transform 440ms ${easeApple}, border-radius 440ms ease-out`;
-        sheetEl.style.transform = 'translate3d(0, 0, 0)';
-        sheetEl.style.borderRadius = '0px';
+        cardBgEl.style.transition = `transform 460ms ${easeApple}, border-radius 460ms ease-out`;
+        cardBgEl.style.transform = 'translate3d(0, 0, 0) scale(1, 1)';
+        cardBgEl.style.borderRadius = '0px';
 
-        if (artEl) {
-          artEl.style.transition = `transform 440ms ${easeApple}, border-radius 440ms ease-out`;
-          artEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
-          artEl.style.borderRadius = '22px';
-        }
+        artEl.style.transition = `transform 460ms ${easeApple}, border-radius 460ms ease-out`;
+        artEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        artEl.style.borderRadius = '22px';
 
-        if (infoEl) {
-          infoEl.style.transition = `transform 440ms ${easeApple}, opacity 360ms ease-out`;
-          infoEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
-          infoEl.style.opacity = '1';
-        }
+        infoEl.style.transition = `transform 460ms ${easeApple}, opacity 360ms ease-out`;
+        infoEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
 
-        if (scrubEl) {
-          scrubEl.style.transition = `transform 420ms ${easeApple} 40ms, opacity 320ms ease-out 40ms`;
-          scrubEl.style.transform = 'translate3d(0, 0, 0)';
-          scrubEl.style.opacity = '1';
-        }
+        transEl.style.transition = `transform 460ms ${easeApple}`;
+        transEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
 
-        if (transEl) {
-          transEl.style.transition = `transform 440ms ${easeApple} 70ms, opacity 340ms ease-out 70ms`;
-          transEl.style.transform = 'translate3d(0, 0, 0)';
-          transEl.style.opacity = '1';
-        }
+        scrubEl.style.transition = `transform 460ms ${easeApple}`;
+        scrubEl.style.transform = 'translate3d(0, 0, 0) scale(1, 1)';
+
+        extraEl.style.transition = `transform 460ms ${easeApple}, opacity 360ms ease-out`;
+        extraEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        extraEl.style.opacity = '1';
 
         if (actionsEl) {
-          actionsEl.style.transition = `transform 420ms ${easeApple} 80ms, opacity 320ms ease-out 80ms`;
+          actionsEl.style.transition = `transform 420ms ${easeApple} 80ms, opacity 340ms ease-out 80ms`;
           actionsEl.style.transform = 'translate3d(0, 0, 0)';
           actionsEl.style.opacity = '1';
         }
 
-        if (extraEl) {
-          extraEl.style.transition = `transform 460ms ${easeApple} 100ms, opacity 360ms ease-out 100ms`;
-          extraEl.style.transform = 'translate3d(0, 0, 0)';
-          extraEl.style.opacity = '1';
-        }
-
         if (headerEl) {
-          headerEl.style.transition = `transform 380ms ${easeApple} 60ms, opacity 300ms ease-out 60ms`;
+          headerEl.style.transition = `transform 380ms ${easeApple} 80ms, opacity 320ms ease-out 80ms`;
           headerEl.style.transform = 'translate3d(0, 0, 0)';
           headerEl.style.opacity = '1';
         }
 
         if (sideEl) {
-          sideEl.style.transition = `transform 420ms ${easeApple} 90ms, opacity 340ms ease-out 90ms`;
+          sideEl.style.transition = `transform 420ms ${easeApple} 100ms, opacity 340ms ease-out 100ms`;
           sideEl.style.transform = 'translate3d(0, 0, 0)';
           sideEl.style.opacity = '1';
         }
@@ -595,34 +625,21 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const timer = setTimeout(() => {
       phaseRef.current = 'expanded';
       setPhase('expanded');
-      sheetEl.style.transition = '';
-      sheetEl.style.transform = '';
-      sheetEl.style.borderRadius = '';
-      if (artEl) {
-        artEl.style.transition = '';
-        artEl.style.transform = '';
-        artEl.style.borderRadius = '';
-      }
-      if (infoEl) {
-        infoEl.style.transition = '';
-        infoEl.style.transform = '';
-        infoEl.style.opacity = '';
-      }
-      if (transEl) {
-        transEl.style.transition = '';
-        transEl.style.transform = '';
-        transEl.style.opacity = '';
-      }
-      if (scrubEl) {
-        scrubEl.style.transition = '';
-        scrubEl.style.transform = '';
-        scrubEl.style.opacity = '';
-      }
-      if (extraEl) {
-        extraEl.style.transition = '';
-        extraEl.style.transform = '';
-        extraEl.style.opacity = '';
-      }
+      cardBgEl.style.transition = '';
+      cardBgEl.style.transform = '';
+      cardBgEl.style.borderRadius = '';
+      artEl.style.transition = '';
+      artEl.style.transform = '';
+      artEl.style.borderRadius = '';
+      infoEl.style.transition = '';
+      infoEl.style.transform = '';
+      transEl.style.transition = '';
+      transEl.style.transform = '';
+      scrubEl.style.transition = '';
+      scrubEl.style.transform = '';
+      extraEl.style.transition = '';
+      extraEl.style.transform = '';
+      extraEl.style.opacity = '';
       if (actionsEl) {
         actionsEl.style.transition = '';
         actionsEl.style.transform = '';
@@ -652,7 +669,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     phaseRef.current = 'collapsing';
     setPhase('collapsing');
 
-    const sheetEl = sheetRef.current;
+    const cardBgEl = cardBgRef.current;
     const artEl = artworkMorphRef.current;
     const infoEl = infoMorphRef.current;
     const transEl = transportMorphRef.current;
@@ -661,41 +678,66 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const actionsEl = titleActionsRef.current;
     const headerEl = headerRef.current;
     const sideEl = sideColumnRef.current;
-
-    const { pill: miniPill, art: miniArt, info: miniInfo } = getMiniCoords();
+    const sheetEl = sheetRef.current;
 
     const collapseEase = 'cubic-bezier(0.32, 0.72, 0, 1)';
-    const sheetDy = Math.max(0, miniPill.top);
+    const coords = savedCoords.current;
 
-    // Controls glide down and fade out
-    if (headerEl) {
-      headerEl.style.transition = 'transform 160ms ease-out, opacity 160ms ease-out';
-      headerEl.style.transform = 'translate3d(0, -16px, 0)';
-      headerEl.style.opacity = '0';
+    if (sheetEl) {
+      sheetEl.style.transition = `transform 400ms ${collapseEase}, border-radius 400ms ease-out`;
+      sheetEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
+      sheetEl.style.borderRadius = '0px';
+    }
+
+    if (coords.card && cardBgEl) {
+      cardBgEl.style.transition = `transform 400ms ${collapseEase}, border-radius 400ms ease-out`;
+      cardBgEl.style.transformOrigin = '0 0';
+      cardBgEl.style.transform = `translate3d(${coords.card.dx}px, ${coords.card.dy}px, 0) scale(${coords.card.sx}, ${coords.card.sy})`;
+      cardBgEl.style.borderRadius = `${coords.card.rx}px / ${coords.card.ry}px`;
+    }
+
+    if (coords.art && artEl) {
+      artEl.style.transition = `transform 400ms ${collapseEase}, border-radius 380ms ease-out`;
+      artEl.style.transformOrigin = '0 0';
+      artEl.style.transform = `translate3d(${coords.art.dx}px, ${coords.art.dy}px, 0) scale(${coords.art.scale})`;
+      artEl.style.borderRadius = `${coords.art.r}px`;
+    }
+
+    if (coords.info && infoEl) {
+      infoEl.style.transition = `transform 380ms ${collapseEase}`;
+      infoEl.style.transformOrigin = '0 0';
+      infoEl.style.transform = `translate3d(${coords.info.dx}px, ${coords.info.dy}px, 0) scale(${coords.info.scale})`;
+    }
+
+    if (coords.trans && transEl) {
+      transEl.style.transition = `transform 380ms ${collapseEase}`;
+      transEl.style.transformOrigin = 'center center';
+      transEl.style.transform = `translate3d(${coords.trans.dx}px, ${coords.trans.dy}px, 0) scale(${coords.trans.scale})`;
+    }
+
+    if (coords.scrub && scrubEl) {
+      scrubEl.style.transition = `transform 380ms ${collapseEase}`;
+      scrubEl.style.transformOrigin = '0 0';
+      scrubEl.style.transform = `translate3d(${coords.scrub.dx}px, ${coords.scrub.dy}px, 0) scale(${coords.scrub.sx}, 0.5)`;
+    }
+
+    if (coords.actions && extraEl) {
+      extraEl.style.transition = `transform 380ms ${collapseEase}, opacity 280ms ease-out`;
+      extraEl.style.transformOrigin = 'center center';
+      extraEl.style.transform = `translate3d(${coords.actions.dx}px, ${coords.actions.dy}px, 0) scale(${coords.actions.scale})`;
+      extraEl.style.opacity = '0.7';
     }
 
     if (actionsEl) {
       actionsEl.style.transition = 'transform 180ms ease-out, opacity 160ms ease-out';
-      actionsEl.style.transform = 'translate3d(0, 16px, 0)';
+      actionsEl.style.transform = 'translate3d(0, 14px, 0)';
       actionsEl.style.opacity = '0';
     }
 
-    if (extraEl) {
-      extraEl.style.transition = 'transform 180ms ease-out, opacity 180ms ease-out';
-      extraEl.style.transform = 'translate3d(0, 30px, 0)';
-      extraEl.style.opacity = '0';
-    }
-
-    if (transEl) {
-      transEl.style.transition = 'transform 200ms ease-out, opacity 200ms ease-out';
-      transEl.style.transform = 'translate3d(0, 30px, 0)';
-      transEl.style.opacity = '0';
-    }
-
-    if (scrubEl) {
-      scrubEl.style.transition = 'transform 220ms ease-out, opacity 200ms ease-out';
-      scrubEl.style.transform = 'translate3d(0, 24px, 0)';
-      scrubEl.style.opacity = '0';
+    if (headerEl) {
+      headerEl.style.transition = 'transform 160ms ease-out, opacity 160ms ease-out';
+      headerEl.style.transform = 'translate3d(0, -20px, 0)';
+      headerEl.style.opacity = '0';
     }
 
     if (sideEl) {
@@ -703,40 +745,10 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       sideEl.style.opacity = '0';
     }
 
-    // Artwork flies back down into miniplayer artwork
-    if (artEl && savedCoords.current.fullArt && savedCoords.current.fullArt.width > 0) {
-      const fullArt = savedCoords.current.fullArt;
-      const dx = miniArt.left - fullArt.left;
-      const dy = miniArt.top - (fullArt.top + sheetDy);
-      const scale = miniArt.width / fullArt.width;
-      artEl.style.transformOrigin = '0 0';
-      artEl.style.transition = `transform 360ms ${collapseEase}, border-radius 360ms ease-out`;
-      artEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
-      artEl.style.borderRadius = '6px';
-    }
-
-    // Info flies back down into miniplayer LCD
-    if (infoEl && savedCoords.current.fullInfo && savedCoords.current.fullInfo.width > 0) {
-      const fullInfo = savedCoords.current.fullInfo;
-      const dx = miniInfo.left - fullInfo.left;
-      const dy = miniInfo.top - (fullInfo.top + sheetDy);
-      const scale = Math.min(1, Math.max(0.55, miniInfo.height / fullInfo.height));
-      infoEl.style.transformOrigin = '0 0';
-      infoEl.style.transition = `transform 340ms ${collapseEase}`;
-      infoEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`;
-    }
-
-    // Sheet slides down to miniplayer pill
-    if (sheetEl) {
-      sheetEl.style.transition = `transform 360ms ${collapseEase}, border-radius 360ms ease-out`;
-      sheetEl.style.transform = `translate3d(0, ${sheetDy}px, 0)`;
-      sheetEl.style.borderRadius = '28px';
-    }
-
     // Seamless handoff: return PlayerBar visibility as collapse finishes landing
     const handoffTimer = setTimeout(() => {
       setFullScreen(false);
-    }, 240);
+    }, 280);
 
     if (collapseTimer.current) clearTimeout(collapseTimer.current);
     collapseTimer.current = setTimeout(() => {
@@ -745,7 +757,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       phaseRef.current = 'collapsed';
       setPhase('collapsed');
       onDismissedRef.current?.();
-    }, 360);
+    }, 400);
   }, [setFullScreen]);
 
   // Synchronize when open prop changes
@@ -822,8 +834,10 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
     if (drag.isDragging && sheetRef.current) {
       const pullY = Math.max(0, dy);
+      const pullScale = Math.max(0.92, 1 - pullY / 2400);
       sheetRef.current.style.transition = 'none';
-      sheetRef.current.style.transform = `translate3d(0, ${pullY}px, 0)`;
+      sheetRef.current.style.transform = `translate3d(0, ${pullY}px, 0) scale(${pullScale})`;
+      sheetRef.current.style.borderRadius = `${Math.min(28, (pullY / 120) * 28)}px`;
     }
   };
 
@@ -845,12 +859,13 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     }
 
     if (wasDragging) {
-      if (dy > 100) {
+      if (dy > 90) {
         startCollapse();
       } else if (sheetRef.current) {
         const easeApple = 'cubic-bezier(0.25, 1, 0.35, 1)';
-        sheetRef.current.style.transition = `transform 300ms ${easeApple}`;
-        sheetRef.current.style.transform = 'translate3d(0, 0, 0)';
+        sheetRef.current.style.transition = `transform 300ms ${easeApple}, border-radius 300ms ease-out`;
+        sheetRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        sheetRef.current.style.borderRadius = '0px';
       }
     }
   };
@@ -895,16 +910,20 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       onKeyDown={wake}
       style={theater && playing && idle ? { cursor: 'none' } : undefined}
     >
-      {/* Ambient Apple Music blurred backdrop and inner highlight */}
-      <MeshBackdrop artworkUrl={nowPlaying.artworkUrl} playing={playing} />
-      {theater && (
-        <div className="absolute inset-0 animate-fade-in bg-black">
-          <VideoSurface fit="contain" className="size-full" />
-        </div>
-      )}
-
-      {/* Subtle glass inner highlight */}
-      <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_0_rgba(0,0,0,0.3)]" />
+      {/* Background card that expands from the miniplayer pill */}
+      <div
+        ref={cardBgRef}
+        className="pointer-events-none absolute inset-0 will-change-transform shadow-[0_16px_50px_rgba(0,0,0,0.5)]"
+      >
+        <MeshBackdrop artworkUrl={nowPlaying.artworkUrl} playing={playing} />
+        {theater && (
+          <div className="absolute inset-0 animate-fade-in bg-black">
+            <VideoSurface fit="contain" className="size-full" />
+          </div>
+        )}
+        {/* Subtle glass inner highlight */}
+        <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_0_rgba(0,0,0,0.3)]" />
+      </div>
 
       {/* Top Header Row (minimize chevron, gesture grabber, video quality & full screen) */}
       <div

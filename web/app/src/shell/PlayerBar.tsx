@@ -102,6 +102,7 @@ export function PlayerBar() {
         </div>
 
         <div
+          id="miniplayer-actions"
           className="group/actions relative flex items-center justify-end gap-[9px]"
           data-volume-open={volumeOpen || undefined}
           onPointerLeave={() => setVolumeOpen(false)}
