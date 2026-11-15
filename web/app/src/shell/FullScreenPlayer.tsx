@@ -64,10 +64,10 @@ function useMediaQuery(query: string): boolean {
 }
 
 /** The seek line under the track's names: thicker on hover, with the times beneath its ends. */
-function Scrubber() {
+function Scrubber({ shifted }: { shifted?: boolean }) {
   const { bar, elapsed, remaining, mixLabel, dragging, handlers } = useScrubber();
   return (
-    <div className="group/scrub mt-3.5" data-dragging={dragging || undefined}>
+    <div className={`group/scrub ${shifted ? 'mt-[clamp(14px,2.2vh,22px)]' : 'mt-3.5'}`} data-dragging={dragging || undefined}>
       {/* A taller hit area than the line it carries. */}
       <div className="group/hit flex h-4 cursor-pointer touch-none items-center" {...handlers}>
         <div
@@ -103,7 +103,7 @@ const toggle = `${transportButton} size-9 text-tertiary aria-pressed:text-primar
 const skip = `${transportButton} size-12 text-primary`;
 
 /** Shuffle, previous, play/pause, next, repeat matching outer artwork/scrubber alignment. */
-function Transport() {
+function Transport({ shifted }: { shifted?: boolean }) {
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
   const playing = usePlayer((s) => s.status === 'playing' || s.status === 'buffering');
   const isBuffering = usePlayer((s) => s.status === 'buffering' || s.status === 'loading');
@@ -113,7 +113,7 @@ function Transport() {
   const { togglePlay, next, previous, toggleShuffle, cycleRepeat } = usePlayer.getState();
 
   return (
-    <div className="mt-[clamp(10px,1.8vh,18px)] flex h-14 w-full items-center justify-between">
+    <div className={`${shifted ? 'mt-[clamp(20px,3.2vh,34px)]' : 'mt-[clamp(10px,1.8vh,18px)]'} flex h-14 w-full items-center justify-between`}>
       <div className="grid size-9 place-items-center">
         <button className={toggle} aria-label="Shuffle" aria-pressed={shuffle} onClick={toggleShuffle}>
           <ShuffleIcon size={26} />
@@ -159,7 +159,7 @@ function Transport() {
 }
 
 /** Android-style horizontal volume bar aligned with Previous and Next controls */
-function PlayerVolumeBar() {
+function PlayerVolumeBar({ shifted }: { shifted?: boolean }) {
   const volume = usePlayer((s) => s.volume);
   const muted = usePlayer((s) => s.muted);
   const setVolume = usePlayer((s) => s.setVolume);
@@ -179,7 +179,7 @@ function PlayerVolumeBar() {
   }, [isDragging]);
 
   return (
-    <div className="mt-[clamp(10px,1.8vh,18px)] flex h-8 w-full items-center justify-between">
+    <div className={`${shifted ? 'mt-[clamp(20px,3.2vh,34px)]' : 'mt-[clamp(10px,1.8vh,18px)]'} flex h-8 w-full items-center justify-between`}>
       {/* Left spacer matching shuffle (size-9) */}
       <div className="size-9 shrink-0" aria-hidden="true" />
 
@@ -256,14 +256,16 @@ function PlayerActionRow({
   showQueue,
   onToggleLyrics,
   onToggleQueue,
+  shifted,
 }: {
   showLyrics: boolean;
   showQueue: boolean;
   onToggleLyrics: () => void;
   onToggleQueue: () => void;
+  shifted?: boolean;
 }) {
   return (
-    <div className="mt-[clamp(12px,2vh,20px)] flex h-10 w-full items-center justify-between">
+    <div className={`${shifted ? 'mt-[clamp(20px,3.2vh,34px)]' : 'mt-[clamp(12px,2vh,20px)]'} flex h-10 w-full items-center justify-between`}>
       <div className="grid size-9 place-items-center">
         <button
           type="button"
@@ -1823,20 +1825,21 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
         </div>
       )}
       <div ref={scrubberMorphRef} className="will-change-transform">
-        <Scrubber />
+        <Scrubber shifted={shifted} />
       </div>
 
       <div ref={transportMorphRef} className="will-change-transform">
-        <Transport />
+        <Transport shifted={shifted} />
       </div>
 
       <div ref={extraControlsRef} className="flex flex-col will-change-transform">
-        <PlayerVolumeBar />
+        <PlayerVolumeBar shifted={shifted} />
         <PlayerActionRow
           showLyrics={showLyrics}
           showQueue={showQueue}
           onToggleLyrics={() => togglePanel('lyrics')}
           onToggleQueue={() => togglePanel('queue')}
+          shifted={shifted}
         />
       </div>
     </div>
@@ -2020,7 +2023,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
         {/* The panels' paused home: the names + controls stand in the right half. */}
         {shifted && (
-          <div ref={sideColumnRef} className="flex min-h-0 flex-col justify-center self-stretch will-change-transform">
+          <div ref={sideColumnRef} className="flex min-h-0 flex-col justify-center self-stretch will-change-transform gap-[clamp(18px,2.8vh,32px)]">
             {panelInfo}
             {panelControls}
           </div>
