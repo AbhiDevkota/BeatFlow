@@ -468,9 +468,13 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const rx = 28 / cardScaleX;
     const ry = 28 / cardScaleY;
 
-    // 2. Calculate deltas for Artwork
-    const artDx = miniArt.left - fullArt.left;
-    const dyArt = miniArt.top - fullArt.top;
+    // 2. Calculate deltas for Artwork (center-to-center for rock-solid scaling alignment)
+    const fullArtCenterX = fullArt.left + fullArt.width / 2;
+    const fullArtCenterY = fullArt.top + fullArt.height / 2;
+    const miniArtCenterX = miniArt.left + miniArt.width / 2;
+    const miniArtCenterY = miniArt.top + miniArt.height / 2;
+    const artDx = miniArtCenterX - fullArtCenterX;
+    const dyArt = miniArtCenterY - fullArtCenterY;
     const artScale = Math.max(0.01, miniArt.width / Math.max(1, fullArt.width));
     const artRadius = 6 / artScale;
 
@@ -489,13 +493,24 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const dyScrub = miniScrub.top - fullScrub.top;
     const scrubScaleX = Math.max(0.01, miniScrub.width / fullScrub.width);
 
-    // Anchor transform origins
+    // Synchronously set initial transforms before first browser paint so no frame-0 flash occurs
     cardBgEl.style.transformOrigin = '0 0';
     cardBgEl.style.overflow = 'hidden';
-    artEl.style.transformOrigin = '0 0';
+    cardBgEl.style.transform = `translate3d(${cardDx}px, ${cardDy}px, 0) scale(${cardScaleX}, ${cardScaleY})`;
+    cardBgEl.style.borderRadius = `${rx}px / ${ry}px`;
+
+    artEl.style.transformOrigin = 'center center';
+    artEl.style.transform = `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`;
+    artEl.style.borderRadius = `${artRadius}px`;
+
     infoEl.style.transformOrigin = '0 0';
+    infoEl.style.transform = `translate3d(${infoDx}px, ${dyInfo}px, 0) scale(${infoScale})`;
+
     transEl.style.transformOrigin = 'center center';
+    transEl.style.transform = `translate3d(${transDx}px, ${dyTrans}px, 0) scale(${transScale})`;
+
     scrubEl.style.transformOrigin = '0 0';
+    scrubEl.style.transform = `translate3d(${scrubDx}px, ${dyScrub}px, 0) scale(${scrubScaleX}, 0.5)`;
 
     phaseRef.current = 'expanding';
 
@@ -528,10 +543,12 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           {
             transform: `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`,
             borderRadius: `${artRadius}px`,
+            transformOrigin: 'center center',
           },
           {
             transform: 'translate3d(0, 0, 0) scale(1)',
             borderRadius: '22px',
+            transformOrigin: 'center center',
           },
         ],
         animOpts
@@ -609,6 +626,14 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
     const timer = setTimeout(() => {
       phaseRef.current = 'expanded';
+      // Reset inline transforms so responsive CSS layout takes over cleanly
+      artEl.style.transform = '';
+      artEl.style.borderRadius = '';
+      cardBgEl.style.transform = '';
+      cardBgEl.style.borderRadius = '';
+      infoEl.style.transform = '';
+      transEl.style.transform = '';
+      scrubEl.style.transform = '';
     }, 640);
 
     return () => {
@@ -687,22 +712,28 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     }
 
     if (artEl && fullArt) {
-      const artDx = liveArt.left - fullArt.left;
-      const dyArt = liveArt.top - fullArt.top;
+      const liveArtCenterX = liveArt.left + liveArt.width / 2;
+      const liveArtCenterY = liveArt.top + liveArt.height / 2;
+      const fullArtCenterX = fullArt.left + fullArt.width / 2;
+      const fullArtCenterY = fullArt.top + fullArt.height / 2;
+      const artDx = liveArtCenterX - fullArtCenterX;
+      const dyArt = liveArtCenterY - fullArtCenterY;
       const artScale = Math.max(0.01, liveArt.width / Math.max(1, fullArt.width));
       const artRadius = 6 / artScale;
 
-      artEl.style.transformOrigin = '0 0';
+      artEl.style.transformOrigin = 'center center';
       activeAnims.current.push(
         artEl.animate(
           [
             {
               transform: 'translate3d(0, 0, 0) scale(1)',
               borderRadius: '22px',
+              transformOrigin: 'center center',
             },
             {
               transform: `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`,
               borderRadius: `${artRadius}px`,
+              transformOrigin: 'center center',
             },
           ],
           collapseOpts
@@ -989,24 +1020,19 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
         <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_0_rgba(0,0,0,0.3)]" />
       </div>
 
-      {/* Top Header Row (minimize chevron, gesture grabber, video quality & full screen) */}
+      {/* Top Header Row (minimize chevron, video quality & full screen) */}
       <div
         ref={headerRef}
-        className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4 will-change-transform [&_button]:pointer-events-auto"
+        className="pointer-events-none absolute inset-x-0 top-3 z-10 flex items-center justify-between px-6 pt-3 pb-2 will-change-transform [&_button]:pointer-events-auto"
       >
         <button
           ref={close}
-          className={`${corner} size-9 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white/90 hover:text-white flex items-center justify-center transition-all backdrop-blur-md shadow-sm`}
+          className="relative z-1 grid size-9 place-items-center text-white/70 hover:text-white active:scale-90 transition-[color,transform] duration-150"
           aria-label="Minimize"
           onClick={startCollapse}
         >
-          <ChevronDown size={22} strokeWidth={2.5} />
+          <ChevronDown size={26} strokeWidth={2.4} />
         </button>
-
-        {/* Top grabber indicator matching Apple sheet gesture */}
-        <div className="pointer-events-none flex justify-center opacity-70">
-          <div className="h-1.5 w-10 rounded-full bg-white/35 backdrop-blur-md shadow-xs" />
-        </div>
 
         <div className="flex items-center gap-2">
           {video && <VideoQuality className={`relative z-1${hidden}`} />}

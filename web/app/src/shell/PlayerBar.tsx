@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { sizedArtwork } from '@/lib/artwork';
 import { meshPalette } from '@/lib/meshPalette';
 import { BeatLoader } from '@/components/music/BeatLoader';
 import {
@@ -37,7 +38,11 @@ export function PlayerBar() {
   const hasTrack = usePlayer((s) => s.nowPlaying !== null);
 
   useEffect(() => {
-    if (artworkUrl) void meshPalette(artworkUrl);
+    if (artworkUrl) {
+      void meshPalette(artworkUrl);
+      const img = new Image();
+      img.src = sizedArtwork(artworkUrl, 1024);
+    }
   }, [artworkUrl]);
   const videoId = usePlayer((s) => s.nowPlaying?.canonicalVideoId ?? getCanonicalVideoId(s.nowPlaying));
   // The queue's entry for what's playing: the track menu needs the full track.
