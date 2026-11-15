@@ -784,6 +784,19 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           collapseOpts
         )
       );
+
+      // The ambient dissolves into the page as the card lands: the page's own
+      // colour takes over gradually underneath the pill's glass, instead of
+      // snapping in the frame the sheet unmounts. Linear reads smoothest for
+      // a pure colour crossfade.
+      activeAnims.current.push(
+        cardBgEl.animate([{ opacity: 1 }, { opacity: 0 }], {
+          duration: 360,
+          delay: 240,
+          easing: 'linear',
+          fill: 'both',
+        })
+      );
     }
 
     if (artEl && fullArt) {
@@ -867,6 +880,17 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       );
     }
 
+    // The landed content hands off to the pill's own copies, fading out in
+    // step with the pill's fade-in (its handoff starts at 420ms). The two
+    // crossfade — the artwork pixel-for-pixel — instead of the sheet's copies
+    // vanishing at unmount while the pill is still arriving.
+    const handoffFade = { duration: 160, delay: 420, easing: 'ease-out', fill: 'both' as FillMode };
+    for (const morphEl of [artEl, infoEl, transEl, scrubEl]) {
+      if (morphEl) {
+        activeAnims.current.push(morphEl.animate([{ opacity: 1 }, { opacity: 0 }], handoffFade));
+      }
+    }
+
     // Secondary controls fade out gracefully
     if (extraEl) {
       activeAnims.current.push(
@@ -924,6 +948,9 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     }, 420);
 
     if (collapseTimer.current) clearTimeout(collapseTimer.current);
+    // Unmount after the dissolve finishes, never during it: the ambient is
+    // gone by 600ms and the pill's own fade-in lands by 620ms, so removal at
+    // 640ms takes nothing visible away.
     collapseTimer.current = setTimeout(() => {
       collapseTimer.current = null;
       if (handoffTimer.current) clearTimeout(handoffTimer.current);
@@ -931,7 +958,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       setFullScreen(false);
       phaseRef.current = 'collapsed';
       onDismissedRef.current?.();
-    }, 500);
+    }, 640);
   }, [setFullScreen, clearExpandTimers]);
 
   // Synchronize when open prop changes. A layout effect, so a re-expand's
