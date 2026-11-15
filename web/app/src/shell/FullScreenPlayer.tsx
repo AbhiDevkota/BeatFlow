@@ -292,6 +292,15 @@ const chrome = `absolute z-1 ${chromeButton}`;
 /** How long the pointer can rest before a playing music video hides its controls. */
 const IDLE_MS = 3000;
 
+/**
+ * Apple's sheet curve, shared by the expand and the collapse morphs: the pill
+ * and the full player then read as one sheet travelling both ways.
+ */
+const SHEET_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+
+/** How many frames the expand may wait for a measurable miniplayer before giving up. */
+const EXPAND_MAX_RETRIES = 12;
+
 export interface FullScreenPlayerProps {
   open?: boolean;
   onDismissed?: () => void;
@@ -352,6 +361,11 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const phaseRef = useRef<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
   const activeAnims = useRef<Animation[]>([]);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The pill-restoring handoff of a collapse; cleared when a re-expand takes over.
+  const handoffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The expand's settle timeout and its "miniplayer not measurable yet" retry frame.
+  const expandSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expandRetryFrame = useRef(0);
   const onDismissedRef = useRef(onDismissed);
 
   useEffect(() => {
@@ -433,22 +447,83 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     return { pill, art, info, trans, scrub };
   };
 
-  // Hardware-accelerated Apple Matched-Geometry FLIP Expansion on Mount via Web Animations API
-  useLayoutEffect(() => {
+  // Drop the expand's pending settle timeout and retry frame, if any.
+  const clearExpandTimers = useCallback(() => {
+    if (expandSettleTimer.current) {
+      clearTimeout(expandSettleTimer.current);
+      expandSettleTimer.current = null;
+    }
+    if (expandRetryFrame.current) {
+      cancelAnimationFrame(expandRetryFrame.current);
+      expandRetryFrame.current = 0;
+    }
+  }, []);
+
+  // Drop a collapse's pending pill handoff and unmount, if any.
+  const clearCollapseTimers = useCallback(() => {
+    if (collapseTimer.current) {
+      clearTimeout(collapseTimer.current);
+      collapseTimer.current = null;
+    }
+    if (handoffTimer.current) {
+      clearTimeout(handoffTimer.current);
+      handoffTimer.current = null;
+    }
+  }, []);
+
+  /**
+   * The Apple matched-geometry FLIP expansion: the pill's card, thumbnail,
+   * names, transport and seek line fly from the miniplayer's live coordinates
+   * into the full player, via the Web Animations API. Runs on mount, and
+   * whenever the player re-opens while still mounted (the thumbnail clicked
+   * while a collapse is still finishing), so the thumbnail always flies the
+   * way it does on the way down. If the miniplayer cannot be measured yet —
+   * the first layout may still be settling, notably in the desktop's webview —
+   * it retries over the next frames instead of silently skipping the morph.
+   */
+  const runExpand = useCallback((attempt = 0) => {
     const cardBgEl = cardBgRef.current;
     const artEl = artworkMorphRef.current;
     const infoEl = infoMorphRef.current;
     const transEl = transportMorphRef.current;
     const scrubEl = scrubberMorphRef.current;
-    const extraEl = extraControlsRef.current;
-    const actionsEl = titleActionsRef.current;
-    const headerEl = headerRef.current;
-    const sideEl = sideColumnRef.current;
     const sheetEl = sheetRef.current;
 
-    if (!cardBgEl || !artEl || !infoEl || !transEl || !scrubEl || !sheetEl) return;
+    if (!cardBgEl || !artEl || !infoEl || !transEl || !scrubEl || !sheetEl) {
+      // Not laid out yet: try the next frame rather than losing the morph.
+      if (attempt < EXPAND_MAX_RETRIES) {
+        expandRetryFrame.current = requestAnimationFrame(() => runExpand(attempt + 1));
+      }
+      return;
+    }
+
+    // Start from a clean slate: a re-open mid-collapse (or a StrictMode
+    // remount) leaves fill-both animations and inline transforms behind, and
+    // those would corrupt both the measurement and the frame-0 positioning.
+    activeAnims.current.forEach((a) => {
+      try { a.cancel(); } catch { /* ignore */ }
+    });
+    activeAnims.current = [];
+    clearExpandTimers();
+    clearCollapseTimers();
+    sheetEl.style.transition = '';
+    cardBgEl.style.transform = '';
+    cardBgEl.style.borderRadius = '';
+    artEl.style.transform = '';
+    artEl.style.borderRadius = '';
+    infoEl.style.transform = '';
+    transEl.style.transform = '';
+    scrubEl.style.transform = '';
 
     const { pill: miniPill, art: miniArt, info: miniInfo, trans: miniTrans, scrub: miniScrub } = getMiniCoords();
+
+    if (miniPill.width <= 0 || miniPill.height <= 0) {
+      // The pill is not measurable yet: retry over the next frames.
+      if (attempt < EXPAND_MAX_RETRIES) {
+        expandRetryFrame.current = requestAnimationFrame(() => runExpand(attempt + 1));
+      }
+      return;
+    }
 
     const sheetRect = sheetEl.getBoundingClientRect();
     const fullWidth = sheetRect.width || window.innerWidth;
@@ -514,15 +589,8 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
 
     phaseRef.current = 'expanding';
 
-    // Cancel any previous animations
-    activeAnims.current.forEach((a) => {
-      try { a.cancel(); } catch { /* ignore */ }
-    });
-    activeAnims.current = [];
-
-    // Trigger Play Animation (t=1): Luxurious 620ms Apple fluid spring via WAAPI
-    const easeApple = 'cubic-bezier(0.22, 1, 0.36, 1)';
-    const animOpts = { duration: 620, easing: easeApple, fill: 'both' as FillMode };
+    // Trigger Play Animation (t=1): the shared Apple sheet curve, both directions
+    const animOpts = { duration: 620, easing: SHEET_EASE, fill: 'both' as FillMode };
 
     activeAnims.current.push(
       cardBgEl.animate(
@@ -576,56 +644,57 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       )
     );
 
-    if (headerEl) {
+    if (headerRef.current) {
       activeAnims.current.push(
-        headerEl.animate(
+        headerRef.current.animate(
           [
             { transform: 'translate3d(0, -20px, 0)', opacity: 0 },
             { transform: 'translate3d(0, 0, 0)', opacity: 1 },
           ],
-          { duration: 480, delay: 80, easing: easeApple, fill: 'both' }
+          { duration: 480, delay: 80, easing: SHEET_EASE, fill: 'both' }
         )
       );
     }
 
-    if (extraEl) {
+    if (extraControlsRef.current) {
       activeAnims.current.push(
-        extraEl.animate(
+        extraControlsRef.current.animate(
           [
             { transform: 'translate3d(0, 24px, 0)', opacity: 0 },
             { transform: 'translate3d(0, 0, 0)', opacity: 1 },
           ],
-          { duration: 540, delay: 100, easing: easeApple, fill: 'both' }
+          { duration: 540, delay: 100, easing: SHEET_EASE, fill: 'both' }
         )
       );
     }
 
-    if (actionsEl) {
+    if (titleActionsRef.current) {
       activeAnims.current.push(
-        actionsEl.animate(
+        titleActionsRef.current.animate(
           [
             { transform: 'translate3d(0, 14px, 0)', opacity: 0 },
             { transform: 'translate3d(0, 0, 0)', opacity: 1 },
           ],
-          { duration: 500, delay: 80, easing: easeApple, fill: 'both' }
+          { duration: 500, delay: 80, easing: SHEET_EASE, fill: 'both' }
         )
       );
     }
 
-    if (sideEl) {
+    if (sideColumnRef.current) {
       activeAnims.current.push(
-        sideEl.animate(
+        sideColumnRef.current.animate(
           [
             { transform: 'translate3d(24px, 0, 0)', opacity: 0 },
             { transform: 'translate3d(0, 0, 0)', opacity: 1 },
           ],
-          { duration: 520, delay: 100, easing: easeApple, fill: 'both' }
+          { duration: 520, delay: 100, easing: SHEET_EASE, fill: 'both' }
         )
       );
     }
 
-    const timer = setTimeout(() => {
+    expandSettleTimer.current = setTimeout(() => {
       phaseRef.current = 'expanded';
+      expandSettleTimer.current = null;
       // Reset inline transforms so responsive CSS layout takes over cleanly
       artEl.style.transform = '';
       artEl.style.borderRadius = '';
@@ -635,17 +704,23 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       transEl.style.transform = '';
       scrubEl.style.transform = '';
     }, 640);
+  }, [clearCollapseTimers, clearExpandTimers]);
 
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
+  // The expansion plays when the player mounts up from the miniplayer pill.
+  useLayoutEffect(() => {
+    runExpand();
+    return clearExpandTimers;
+  }, [runExpand, clearExpandTimers]);
 
   // Collapse / Minimize Animation with Symmetrical Apple Return
   const startCollapse = useCallback(() => {
     if (phaseRef.current === 'collapsing' || phaseRef.current === 'collapsed') return;
     phaseRef.current = 'collapsing';
 
+    // A collapse started mid-expand must not inherit the expand's settle timer
+    // (which would clear the flight's inline styles under the collapse) or its
+    // pending retry frames.
+    clearExpandTimers();
     const cardBgEl = cardBgRef.current;
     const artEl = artworkMorphRef.current;
     const infoEl = infoMorphRef.current;
@@ -663,7 +738,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     });
     activeAnims.current = [];
 
-    const collapseEase = 'cubic-bezier(0.32, 0.72, 0, 1)';
+    const collapseEase = SHEET_EASE;
 
     // Measure LIVE coordinates of miniplayer elements for pixel-perfect retrieval
     const { pill: livePill, art: liveArt, info: liveInfo, trans: liveTrans, scrub: liveScrub } = getMiniCoords();
@@ -842,25 +917,40 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     }
 
     // Seamless handoff: return PlayerBar visibility as collapse finishes landing
-    const handoffTimer = setTimeout(() => {
+    if (handoffTimer.current) clearTimeout(handoffTimer.current);
+    handoffTimer.current = setTimeout(() => {
+      handoffTimer.current = null;
       setFullScreen(false);
     }, 420);
 
     if (collapseTimer.current) clearTimeout(collapseTimer.current);
     collapseTimer.current = setTimeout(() => {
-      clearTimeout(handoffTimer);
+      collapseTimer.current = null;
+      if (handoffTimer.current) clearTimeout(handoffTimer.current);
+      handoffTimer.current = null;
       setFullScreen(false);
       phaseRef.current = 'collapsed';
       onDismissedRef.current?.();
     }, 500);
-  }, [setFullScreen]);
+  }, [setFullScreen, clearExpandTimers]);
 
-  // Synchronize when open prop changes
-  useEffect(() => {
-    if (!open && (phaseRef.current === 'expanded' || phaseRef.current === 'expanding')) {
+  // Synchronize when open prop changes. A layout effect, so a re-expand's
+  // frame-0 positioning lands before the browser paints (no full-size flash).
+  useLayoutEffect(() => {
+    if (open) {
+      // Re-opened while still mounted — the thumbnail clicked while a collapse
+      // was still finishing: cancel the pending dismissal and fly back up,
+      // instead of letting the collapse snap the player shut un-animated.
+      if (phaseRef.current === 'collapsing' || phaseRef.current === 'collapsed') {
+        clearCollapseTimers();
+        runExpand();
+      }
+      return;
+    }
+    if (phaseRef.current === 'expanded' || phaseRef.current === 'expanding') {
       startCollapse();
     }
-  }, [open, startCollapse]);
+  }, [open, runExpand, startCollapse, clearCollapseTimers]);
 
   // A title, artist or album link went somewhere: get out of the way so the page shows.
   useEffect(() => {
