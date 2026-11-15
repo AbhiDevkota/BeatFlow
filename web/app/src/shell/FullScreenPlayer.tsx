@@ -48,6 +48,18 @@ function useBrowserFullScreen(): boolean {
   );
 }
 
+/** A CSS media query as reactive state, so layout choices can drive FLIP morphs. */
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia(query).matches,
+  );
+}
+
 /** The seek line under the track's names: thicker on hover, with the times beneath its ends. */
 function Scrubber() {
   const { bar, elapsed, remaining, mixLabel, dragging, handlers } = useScrubber();
@@ -306,6 +318,14 @@ export interface FullScreenPlayerProps {
   onDismissed?: () => void;
 }
 
+/** Live geometry of the panel-dock morph's moving blocks; null when not rendered or display:none. */
+interface PanelRects {
+  art: DOMRect | null;
+  info: DOMRect | null;
+  controls: DOMRect | null;
+  stats: DOMRect | null;
+}
+
 /**
  * The full-screen player (report §7): the artwork on the left with the
  * track's names, the seek line and the transport under it; the lyrics, the
@@ -342,6 +362,8 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const browserFullScreen = useBrowserFullScreen();
+  // Tailwind's md breakpoint: wide enough to dock the names/controls beside the lyrics.
+  const wide = useMediaQuery('(min-width: 768px)');
   const close = useRef<HTMLButtonElement>(null);
   // Whether this player put the page in the browser's full screen, so closing it leaves it again.
   const enteredBrowserFullScreen = useRef(false);
@@ -368,22 +390,65 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const expandRetryFrame = useRef(0);
   const onDismissedRef = useRef(onDismissed);
 
+  // Panel dock/undock morph: the names+actions row and the scrubber/transport
+  // stack swap between the artwork column and the lyrics column, FLIP-animated.
+  const panelInfoRef = useRef<HTMLDivElement>(null);
+  const panelControlsRef = useRef<HTMLDivElement>(null);
+  const panelStatsRef = useRef<HTMLDivElement>(null);
+  const panelFromRects = useRef<PanelRects | null>(null);
+  const panelFlipPending = useRef(false);
+
   useEffect(() => {
     onDismissedRef.current = onDismissed;
   }, [onDismissed]);
+
+  const capturePanelRects = useCallback((): PanelRects => {
+    const rect = (ref: { current: HTMLElement | null }): DOMRect | null => {
+      const el = ref.current;
+      // display:none (the artwork on a narrow lyrics layout) has no boxes.
+      return el && el.getClientRects().length > 0 ? el.getBoundingClientRect() : null;
+    };
+    return {
+      art: rect(artworkMorphRef),
+      info: rect(panelInfoRef),
+      controls: rect(panelControlsRef),
+      stats: rect(panelStatsRef),
+    };
+  }, []);
+
+  /**
+   * Snapshot the panel blocks' live geometry just before a toggle re-renders,
+   * so the morph can fly them from their old home to the new one. A flip
+   * still in flight holds transforms; release them first so the snapshot
+   * reads the true layout. Nothing paints in between: capture, state flip
+   * and re-render all happen inside this one task.
+   */
+  const beginPanelFlip = useCallback(() => {
+    if (phaseRef.current !== 'expanded' || !wide) return;
+    activeAnims.current.forEach((a) => {
+      try { a.cancel(); } catch { /* ignore */ }
+    });
+    activeAnims.current = [];
+    panelFromRects.current = capturePanelRects();
+    panelFlipPending.current = true;
+  }, [capturePanelRects, wide]);
 
   // The column follows the toggle alone: whether this track has lyrics, and
   // from which provider, is the panel's own business to say.
   const showLyrics = panel === 'lyrics';
   const showQueue = panel === 'queue';
   const togglePanel = (p: 'lyrics' | 'queue') => {
+    beginPanelFlip();
     picked.current = true;
     setPanel((on) => (on === p ? null : p));
   };
 
   useEffect(() => {
-    if (video && !picked.current) setPanel(null);
-  }, [video]);
+    if (video && !picked.current) {
+      beginPanelFlip();
+      setPanel(null);
+    }
+  }, [video, beginPanelFlip]);
 
   const wake = () => {
     setIdle(false);
@@ -711,6 +776,60 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     runExpand();
     return clearExpandTimers;
   }, [runExpand, clearExpandTimers]);
+
+  /**
+   * The panel dock/undock morph: the names+actions row and the scrubber,
+   * transport, volume and action stack trade places with the lyrics — up
+   * into the right column when a panel opens, back under the artwork when
+   * it closes — flying along FLIP-measured transforms so the whole cluster
+   * reads as one continuously moving sheet, Apple's lyrics layout both ways.
+   */
+  const runPanelFlip = useCallback(() => {
+    if (phaseRef.current !== 'expanded') return;
+    const from = panelFromRects.current;
+    panelFromRects.current = null;
+    if (!from) return;
+
+    // Release transforms held over from a previous flip before measuring.
+    activeAnims.current.forEach((a) => {
+      try { a.cancel(); } catch { /* ignore */ }
+    });
+    activeAnims.current = [];
+
+    const to = capturePanelRects();
+    const pairs: Array<[HTMLElement | null, DOMRect | null, DOMRect | null, number]> = [
+      [artworkMorphRef.current, from.art, to.art, 0],
+      [panelInfoRef.current, from.info, to.info, 30],
+      [panelControlsRef.current, from.controls, to.controls, 60],
+      [panelStatsRef.current, from.stats, to.stats, 60],
+    ];
+
+    const opts = { duration: 480, easing: SHEET_EASE, fill: 'both' as FillMode };
+    for (const [el, a, b, delay] of pairs) {
+      if (!el || !a || !b) continue;
+      const dx = a.left + a.width / 2 - (b.left + b.width / 2);
+      const dy = a.top + a.height / 2 - (b.top + b.height / 2);
+      const sx = a.width / Math.max(1, b.width);
+      const sy = a.height / Math.max(1, b.height);
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(sx - 1) < 0.01 && Math.abs(sy - 1) < 0.01) continue;
+      activeAnims.current.push(
+        el.animate(
+          [
+            { transform: `translate3d(${dx}px, ${dy}px, 0) scale(${sx}, ${sy})`, transformOrigin: 'center center' },
+            { transform: 'translate3d(0, 0, 0) scale(1, 1)', transformOrigin: 'center center' },
+          ],
+          { ...opts, delay }
+        )
+      );
+    }
+  }, [capturePanelRects]);
+
+  // A toggle's re-render has placed the blocks in their new home: fly them in.
+  useLayoutEffect(() => {
+    if (!panelFlipPending.current) return;
+    panelFlipPending.current = false;
+    runPanelFlip();
+  });
 
   // Collapse / Minimize Animation with Symmetrical Apple Return
   const startCollapse = useCallback(() => {
@@ -1120,15 +1239,127 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const column = showLyrics || showQueue;
   // A music video on its own fills the window.
   const theater = video && !column;
+  // Wide enough to dock the names and controls into the lyrics column, Apple's layout: the artwork stands alone on the left.
+  const docked = column && wide;
   // ...and hides the controls and the pointer while it plays undisturbed.
   const hidden = theater && playing && idle ? ' pointer-events-none opacity-0' : '';
   const corner = `${chrome} transition-[background-color,color,opacity] duration-300${hidden}`;
+
+  /**
+   * The names + actions row, with two homes: under the artwork by default,
+   * the head of the lyrics column when docked. One element, one ref — the
+   * toggle re-parents it and the FLIP carries it across, so it reads as the
+   * same block travelling, not two swapping.
+   */
+  const panelInfo = (
+    <div
+      ref={panelInfoRef}
+      className={
+        docked || theater
+          ? 'flex items-center gap-4 will-change-transform'
+          : `flex items-center gap-4 will-change-transform mt-[clamp(20px,3.2vh,32px)]${column ? ' max-md:mt-0' : ''}`
+      }
+    >
+      {/* Apple Music large bold title and artist */}
+      <div ref={infoMorphRef} className="flex min-w-0 flex-1 flex-col gap-1 will-change-transform">
+        <div className="flex min-w-0 items-center gap-2">
+          <PageLink
+            className={`min-w-0 max-w-full self-start truncate type-[700_22px/28px] md:type-[700_26px/32px] tracking-tight text-white drop-shadow-sm ${pageLink}`}
+            href={albumHref(album?.id ?? null)}
+            resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
+          >
+            {title}
+          </PageLink>
+          {track?.explicit && <ExplicitBadge size={15} />}
+        </div>
+        <span className="truncate type-[500_15px/20px] md:type-[500_17px/22px] text-white/70 tracking-normal">
+          {artist && <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} className={pageLink} />}
+          {artist && album?.name && ' — '}
+          {album?.name && (
+            <PageLink
+              className={pageLink}
+              href={albumHref(album.id ?? null)}
+              resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
+            >
+              {album.name}
+            </PageLink>
+          )}
+        </span>
+        {/* With a panel docked the stats stay under the artwork instead. */}
+        {!docked && <NerdStats />}
+      </div>
+
+      <div ref={titleActionsRef} className="flex items-center gap-2 will-change-transform">
+        <FavoriteButton
+          videoId={nowPlaying.videoId}
+          className="grid size-9 flex-none place-items-center rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white transition-all shadow-sm"
+          size={18}
+        />
+        {track && (
+          <TrackMenu
+            track={track}
+            className="grid size-9 flex-none place-items-center rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white transition-all shadow-sm"
+            placement="above-end"
+          />
+        )}
+      </div>
+    </div>
+  );
+
+  /** The scrubber, transport, volume and the panel toggles — the foot of the cluster. */
+  const panelControls = (
+    <div ref={panelControlsRef} className="flex flex-col will-change-transform">
+      <div ref={scrubberMorphRef} className="will-change-transform">
+        <Scrubber />
+      </div>
+
+      <div ref={transportMorphRef} className="will-change-transform">
+        <Transport />
+      </div>
+
+      <div ref={extraControlsRef} className="flex flex-col will-change-transform">
+        <PlayerVolumeBar />
+        <PlayerActionRow
+          showLyrics={showLyrics}
+          showQueue={showQueue}
+          onToggleLyrics={() => togglePanel('lyrics')}
+          onToggleQueue={() => togglePanel('queue')}
+        />
+      </div>
+    </div>
+  );
+
+  /** The lyrics or Up Next, as the right column's own content. */
+  const panelContent = (
+    <>
+      {showLyrics && (
+        <section className="flex size-full min-h-0 animate-fade-in" aria-label="Lyrics">
+          <LyricsPanel variant="full" />
+        </section>
+      )}
+      {showQueue && (
+        // Up Next in the right-hand column: the side panel's list, laid out as a column.
+        <section
+          className="flex size-full min-h-0 animate-fade-in flex-col [mask-image:linear-gradient(180deg,#000_calc(100%-80px),transparent)]"
+          aria-label="Up Next"
+        >
+          <UpNext />
+        </section>
+      )}
+    </>
+  );
 
   return (
     <div
       ref={sheetRef}
       // Over everything but menus and dialogs, which portal above it. Pure GPU compositor layer for 120 FPS.
-      className="fixed inset-0 z-[calc(var(--z-contextual-menus)-2)] isolate overflow-hidden text-primary will-change-transform [--art:min(35vw,calc(100dvh-310px),520px)] motion-reduce:transition-none max-md:[--art:min(86vw,calc(100dvh-340px),420px)]"
+      className={`fixed inset-0 z-[calc(var(--z-contextual-menus)-2)] isolate overflow-hidden text-primary will-change-transform motion-reduce:transition-none ${
+        docked
+          ? // With a panel docked the controls live in the right column, so the
+            // artwork earns a little more room; the FLIP blooms it bigger.
+            '[--art:min(37vw,calc(100dvh-240px),560px)]'
+          : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label="Now Playing"
@@ -1249,88 +1480,28 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
             </div>
           </div>
 
-          <div className="flex flex-col">
-            <div className={`flex items-center gap-4${theater ? '' : ' mt-[clamp(20px,3.2vh,32px)]'}${column ? ' max-md:mt-0' : ''}`}>
-              {/* Apple Music large bold title and artist */}
-              <div ref={infoMorphRef} className="flex min-w-0 flex-1 flex-col gap-1 will-change-transform">
-                <div className="flex min-w-0 items-center gap-2">
-                  <PageLink
-                    className={`min-w-0 max-w-full self-start truncate type-[700_22px/28px] md:type-[700_26px/32px] tracking-tight text-white drop-shadow-sm ${pageLink}`}
-                    href={albumHref(album?.id ?? null)}
-                    resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
-                  >
-                    {title}
-                  </PageLink>
-                  {track?.explicit && <ExplicitBadge size={15} />}
-                </div>
-                <span className="truncate type-[500_15px/20px] md:type-[500_17px/22px] text-white/70 tracking-normal">
-                  {artist && <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} className={pageLink} />}
-                  {artist && album?.name && ' — '}
-                  {album?.name && (
-                    <PageLink
-                      className={pageLink}
-                      href={albumHref(album.id ?? null)}
-                      resolve={() => albumPageFor(videoId, album, [title, artist].filter(Boolean).join(' '))}
-                    >
-                      {album.name}
-                    </PageLink>
-                  )}
-                </span>
-                <NerdStats />
-              </div>
-
-              <div ref={titleActionsRef} className="flex items-center gap-2 will-change-transform">
-                <FavoriteButton
-                  videoId={nowPlaying.videoId}
-                  className="grid size-9 flex-none place-items-center rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white transition-all shadow-sm"
-                  size={18}
-                />
-                {track && (
-                  <TrackMenu
-                    track={track}
-                    className="grid size-9 flex-none place-items-center rounded-full bg-white/10 hover:bg-white/20 active:scale-90 text-white transition-all shadow-sm"
-                    placement="above-end"
-                  />
-                )}
-              </div>
+          {/* With a panel docked, the stats stay behind under the artwork on their own. */}
+          {docked && (
+            <div ref={panelStatsRef} className="mt-4 w-full min-w-0 will-change-transform">
+              <NerdStats />
             </div>
+          )}
 
-            <div ref={scrubberMorphRef} className="will-change-transform">
-              <Scrubber />
-            </div>
-
-            <div ref={transportMorphRef} className="will-change-transform">
-              <Transport />
-            </div>
-
-            <div ref={extraControlsRef} className="flex flex-col will-change-transform">
-              <PlayerVolumeBar />
-              <PlayerActionRow
-                showLyrics={showLyrics}
-                showQueue={showQueue}
-                onToggleLyrics={() => togglePanel('lyrics')}
-                onToggleQueue={() => togglePanel('queue')}
-              />
-            </div>
-          </div>
+          {/* The names + actions and the controls: under the artwork by default;
+              when a panel is docked they live in the lyrics column instead. */}
+          {!docked && panelInfo}
+          {!docked && panelControls}
         </section>
 
         {column && (
-          <div ref={sideColumnRef} className="flex min-h-0 self-stretch will-change-transform">
-            {showLyrics && (
-              <section className="flex size-full min-h-0 animate-fade-in" aria-label="Lyrics">
-                <LyricsPanel variant="full" />
-              </section>
-            )}
-            {showQueue && (
-              // Up Next in the right-hand column: the side panel's list, laid out as a column.
-              <section
-                className="flex size-full min-h-0 animate-fade-in flex-col [mask-image:linear-gradient(180deg,#000_calc(100%-80px),transparent)]"
-                aria-label="Up Next"
-              >
-                <UpNext />
-              </section>
-            )}
+          <div
+            ref={sideColumnRef}
+            className={docked ? 'flex min-h-0 flex-col self-stretch will-change-transform' : 'flex min-h-0 self-stretch will-change-transform'}
+          >
+            {docked && panelInfo}
+            {docked && <div className="flex min-h-0 min-w-0 flex-1">{panelContent}</div>}
+            {!docked && panelContent}
+            {docked && panelControls}
           </div>
         )}
       </div>
