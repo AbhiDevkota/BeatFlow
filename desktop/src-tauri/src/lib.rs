@@ -727,6 +727,18 @@ pub fn get_thumbnails_dir() -> PathBuf {
   dir
 }
 
+pub fn get_thumbnails_image_dir() -> PathBuf {
+  let dir = get_thumbnails_dir().join("image");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
+pub fn get_thumbnails_art_dir() -> PathBuf {
+  let dir = get_thumbnails_dir().join("art");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
 pub fn get_connector_dir() -> PathBuf {
   let dir = get_music_dir().join("connector");
   let _ = fs::create_dir_all(&dir);
@@ -859,20 +871,64 @@ fn mime_for_ext(ext: &str) -> &'static str {
   }
 }
 
-/// The saved cover for a download. Hosts answer with JPEG, PNG or WebP
-/// depending on what the addon or YouTube served, so all three are looked for.
+/// The saved cover for a download. Checked in `thumbnails/image/` first,
+/// falling back to the legacy `thumbnails/` root.
 fn thumbnail_path_for(thumbs_dir: &Path, stem: &str) -> Option<PathBuf> {
-  ["jpg", "jpeg", "png", "webp"]
-    .iter()
-    .map(|ext| thumbs_dir.join(format!("{}.{}", stem, ext)))
-    .find(|path| path.exists())
+  let exts = ["jpg", "jpeg", "png", "webp"];
+  for ext in &exts {
+    let p = thumbs_dir.join("image").join(format!("{}.{}", stem, ext));
+    if p.exists() {
+      return Some(p);
+    }
+  }
+  for ext in &exts {
+    let p = thumbs_dir.join(format!("{}.{}", stem, ext));
+    if p.exists() {
+      return Some(p);
+    }
+  }
+  None
 }
 
+/// The saved animated cover for a download. Checked in `thumbnails/art/` first,
+/// falling back to the legacy `thumbnails/` root.
 fn animated_thumbnail_path_for(thumbs_dir: &Path, stem: &str) -> Option<PathBuf> {
-  ["mp4", "webm"]
-    .iter()
-    .map(|ext| thumbs_dir.join(format!("{}.{}", stem, ext)))
-    .find(|path| path.exists())
+  let exts = ["mp4", "webm"];
+  for ext in &exts {
+    let p = thumbs_dir.join("art").join(format!("{}.{}", stem, ext));
+    if p.exists() {
+      return Some(p);
+    }
+  }
+  for ext in &exts {
+    let p = thumbs_dir.join(format!("{}.{}", stem, ext));
+    if p.exists() {
+      return Some(p);
+    }
+  }
+  None
+}
+
+fn resolve_thumbnail_file(name: &str) -> PathBuf {
+  let clean = name.trim_start_matches('/').replace('\\', "/");
+  let thumbs_dir = get_thumbnails_dir();
+  // 1. Direct path inside thumbnails (e.g. image/foo.jpg or art/foo.mp4)
+  let direct = thumbs_dir.join(&clean);
+  if direct.exists() && direct.is_file() {
+    return direct;
+  }
+  // 2. Check thumbnails/image/name
+  let in_image = get_thumbnails_image_dir().join(&clean);
+  if in_image.exists() && in_image.is_file() {
+    return in_image;
+  }
+  // 3. Check thumbnails/art/name
+  let in_art = get_thumbnails_art_dir().join(&clean);
+  if in_art.exists() && in_art.is_file() {
+    return in_art;
+  }
+  // 4. Fallback to direct path
+  direct
 }
 
 fn image_mime_for(path: &Path) -> &'static str {
@@ -2055,6 +2111,8 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         "songsPath": get_songs_dir().to_string_lossy(),
         "lyricsPath": get_lyrics_dir().to_string_lossy(),
         "thumbnailsPath": get_thumbnails_dir().to_string_lossy(),
+        "thumbnailsImagePath": get_thumbnails_image_dir().to_string_lossy(),
+        "thumbnailsArtPath": get_thumbnails_art_dir().to_string_lossy(),
         "connectorPath": get_connector_dir().to_string_lossy(),
         "configPath": get_config_dir().to_string_lossy(),
         "cachePath": get_cache_dir().to_string_lossy(),
@@ -2069,6 +2127,8 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         "songs" => get_songs_dir(),
         "lyrics" => get_lyrics_dir(),
         "thumbnails" => get_thumbnails_dir(),
+        "thumbnails/image" | "thumbnails-image" | "image" => get_thumbnails_image_dir(),
+        "thumbnails/art" | "thumbnails-art" | "art" => get_thumbnails_art_dir(),
         "connector" => get_connector_dir(),
         "config" => get_config_dir(),
         "cache" => get_cache_dir(),
@@ -2156,6 +2216,37 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
       }
 
+      // Auto-migrate thumbnails into image/ and art/ subfolders
+      let thumbs_image_dir = get_thumbnails_image_dir();
+      let thumbs_art_dir = get_thumbnails_art_dir();
+      if let Ok(entries) = fs::read_dir(&thumbs_dir) {
+        for entry in entries.flatten() {
+          let path = entry.path();
+          if path.is_file() {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ["jpg", "jpeg", "png", "webp"].iter().any(|&x| x.eq_ignore_ascii_case(ext)) {
+              if let Some(name) = path.file_name() {
+                let dest = thumbs_image_dir.join(name);
+                if !dest.exists() {
+                  let _ = fs::rename(&path, &dest);
+                } else {
+                  let _ = fs::remove_file(&path);
+                }
+              }
+            } else if ["mp4", "webm"].iter().any(|&x| x.eq_ignore_ascii_case(ext)) {
+              if let Some(name) = path.file_name() {
+                let dest = thumbs_art_dir.join(name);
+                if !dest.exists() {
+                  let _ = fs::rename(&path, &dest);
+                } else {
+                  let _ = fs::remove_file(&path);
+                }
+              }
+            }
+          }
+        }
+      }
+
       let mut items = Vec::new();
       if let Ok(entries) = fs::read_dir(&songs_dir) {
         for entry in entries.flatten() {
@@ -2186,10 +2277,24 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
               let local_url = format!("http://127.0.0.1:{}/local/{}", port, url_encode(&file_name));
 
               let thumbnail = thumbnail_path_for(&thumbs_dir, stem)
-                .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("http://127.0.0.1:{}/thumbnail/{}", port, url_encode(f))));
+                .and_then(|path| {
+                  if let Ok(rel) = path.strip_prefix(&thumbs_dir) {
+                    let rel_str = rel.to_string_lossy().replace('\\', "/");
+                    Some(format!("http://127.0.0.1:{}/thumbnail/{}", port, rel_str))
+                  } else {
+                    path.file_name().and_then(|f| f.to_str()).map(|f| format!("http://127.0.0.1:{}/thumbnail/{}", port, url_encode(f)))
+                  }
+                });
 
               let animated_thumbnail = animated_thumbnail_path_for(&thumbs_dir, stem)
-                .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("http://127.0.0.1:{}/thumbnail/{}", port, url_encode(f))));
+                .and_then(|path| {
+                  if let Ok(rel) = path.strip_prefix(&thumbs_dir) {
+                    let rel_str = rel.to_string_lossy().replace('\\', "/");
+                    Some(format!("http://127.0.0.1:{}/thumbnail/{}", port, rel_str))
+                  } else {
+                    path.file_name().and_then(|f| f.to_str()).map(|f| format!("http://127.0.0.1:{}/thumbnail/{}", port, url_encode(f)))
+                  }
+                });
 
               let has_lyrics = lyrics_dir.join(format!("{}.lrc", stem)).exists()
                 || lyrics_dir.join(format!("{}.ttml", stem)).exists();
@@ -2306,12 +2411,16 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
             _ => "jpg",
           };
           if let Ok(t_bytes) = t_resp.bytes().await {
+            let thumbs_image_dir = get_thumbnails_image_dir();
+            let thumbs_dir = get_thumbnails_dir();
             for old in ["jpg", "jpeg", "png", "webp"] {
               if old != ext {
-                let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.{}", file_stem, old)));
+                let _ = fs::remove_file(thumbs_image_dir.join(format!("{}.{}", file_stem, old)));
+                let _ = fs::remove_file(thumbs_dir.join(format!("{}.{}", file_stem, old)));
               }
             }
-            let _ = fs::write(get_thumbnails_dir().join(format!("{}.{}", file_stem, ext)), &t_bytes);
+            let _ = fs::write(thumbs_image_dir.join(format!("{}.{}", file_stem, ext)), &t_bytes);
+            let _ = fs::remove_file(thumbs_dir.join(format!("{}.{}", file_stem, ext)));
             // Embed the cover (and metadata) into the MP4, BeatFlow-prod style.
             if effective_ext == "m4a" {
               let _ = tag_audio_file(&file_path, title_raw, artist_raw, album, Some(&t_bytes));
@@ -2320,14 +2429,16 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
       }
 
-      // If animated artwork is provided, download and save it in the thumbnails folder
+      // If animated artwork is provided, download and save it in the thumbnails/art folder
       if let Some(anim_url) = animated_art_url && !anim_url.is_empty() {
-        let anim_dest = get_thumbnails_dir().join(format!("{}.mp4", file_stem));
+        let anim_dest = get_thumbnails_art_dir().join(format!("{}.mp4", file_stem));
         println!("[Rust Bridge] Downloading animated artwork for '{}' from: {}", file_stem, anim_url);
         if let Err(e) = download_animated_artwork(anim_url, &anim_dest).await {
           println!("[Rust Bridge] Warning: failed to download animated artwork: {}", e);
         } else {
           println!("[Rust Bridge] Successfully saved animated artwork to {:?}", anim_dest);
+          let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.mp4", file_stem)));
+          let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.webm", file_stem)));
         }
       }
 
@@ -2392,8 +2503,16 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }
       let stem = Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
       if !stem.is_empty() {
-        for ext in ["jpg", "jpeg", "png", "webp", "mp4", "webm"] {
-          let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.{}", stem, ext)));
+        let thumbs_image_dir = get_thumbnails_image_dir();
+        let thumbs_art_dir = get_thumbnails_art_dir();
+        let thumbs_dir = get_thumbnails_dir();
+        for ext in ["jpg", "jpeg", "png", "webp"] {
+          let _ = fs::remove_file(thumbs_image_dir.join(format!("{}.{}", stem, ext)));
+          let _ = fs::remove_file(thumbs_dir.join(format!("{}.{}", stem, ext)));
+        }
+        for ext in ["mp4", "webm"] {
+          let _ = fs::remove_file(thumbs_art_dir.join(format!("{}.{}", stem, ext)));
+          let _ = fs::remove_file(thumbs_dir.join(format!("{}.{}", stem, ext)));
         }
         let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.lrc", stem)));
         let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.ttml", stem)));
@@ -3263,7 +3382,7 @@ fn start_local_ipc_server(app_handle: tauri::AppHandle) {
               let raw_file = &after[..path_end];
               let clean_file = raw_file.split(['?', '#']).next().unwrap_or(raw_file);
               let file_name = url_decode(clean_file);
-              let target_file = get_thumbnails_dir().join(&file_name);
+              let target_file = resolve_thumbnail_file(&file_name);
               if target_file.exists() && target_file.is_file() {
                 if let Ok(bytes) = fs::read(&target_file) {
                   let mime = image_mime_for(&target_file);
@@ -3681,7 +3800,7 @@ pub fn run() {
           };
           let clean_file = raw_file.split(['?', '#']).next().unwrap_or(raw_file);
           let file_name = url_decode(clean_file);
-          let target_file = get_thumbnails_dir().join(&file_name);
+          let target_file = resolve_thumbnail_file(&file_name);
           if target_file.exists() && target_file.is_file() {
             if let Ok(bytes) = fs::read(&target_file) {
               let resp = tauri::http::Response::builder()

@@ -27,6 +27,8 @@ export interface DownloadsFolderInfo {
   songsPath?: string;
   lyricsPath?: string;
   thumbnailsPath?: string;
+  thumbnailsImagePath?: string;
+  thumbnailsArtPath?: string;
   connectorPath?: string;
   configPath?: string;
   cachePath?: string;
