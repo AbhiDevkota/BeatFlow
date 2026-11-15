@@ -318,7 +318,7 @@ export interface FullScreenPlayerProps {
   onDismissed?: () => void;
 }
 
-/** Live geometry of the panel-dock morph's moving blocks; null when not rendered or display:none. */
+/** Live geometry of the panel pause/resume morph's moving blocks; null when not rendered or display:none. */
 interface PanelRects {
   art: DOMRect | null;
   info: DOMRect | null;
@@ -362,7 +362,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const browserFullScreen = useBrowserFullScreen();
-  // Tailwind's md breakpoint: wide enough to dock the names/controls beside the lyrics.
+  // Tailwind's md breakpoint: wide enough for the names/controls to stand beside the artwork.
   const wide = useMediaQuery('(min-width: 768px)');
   const close = useRef<HTMLButtonElement>(null);
   // Whether this player put the page in the browser's full screen, so closing it leaves it again.
@@ -390,8 +390,8 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const expandRetryFrame = useRef(0);
   const onDismissedRef = useRef(onDismissed);
 
-  // Panel dock/undock morph: the names+actions row and the scrubber/transport
-  // stack swap between the artwork column and the lyrics column, FLIP-animated.
+  // Panel pause/resume morph: the names+actions row and the scrubber/transport
+  // stack swap between the artwork column and the screen's right half, FLIP-animated.
   const panelInfoRef = useRef<HTMLDivElement>(null);
   const panelControlsRef = useRef<HTMLDivElement>(null);
   const panelStatsRef = useRef<HTMLDivElement>(null);
@@ -778,11 +778,12 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   }, [runExpand, clearExpandTimers]);
 
   /**
-   * The panel dock/undock morph: the names+actions row and the scrubber,
-   * transport, volume and action stack trade places with the lyrics — up
-   * into the right column when a panel opens, back under the artwork when
-   * it closes — flying along FLIP-measured transforms so the whole cluster
-   * reads as one continuously moving sheet, Apple's lyrics layout both ways.
+   * The panel pause/resume morph: the names+actions row and the scrubber,
+   * transport, volume and action stack trade the screen's right half for the
+   * spot under the artwork — opening lyrics or Up Next tucks them back under
+   * it, closing them sends them out to the right again — flying along
+   * FLIP-measured transforms so the whole cluster reads as one continuously
+   * moving sheet, both ways.
    */
   const runPanelFlip = useCallback(() => {
     if (phaseRef.current !== 'expanded') return;
@@ -1239,23 +1240,26 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const column = showLyrics || showQueue;
   // A music video on its own fills the window.
   const theater = video && !column;
-  // Wide enough to dock the names and controls into the lyrics column, Apple's layout: the artwork stands alone on the left.
-  const docked = column && wide;
+  // While both panels are paused on a wide window, the names and controls stand
+  // in the right half beside the artwork; lyrics or Up Next claims that half
+  // back and tucks them under the artwork again.
+  const shifted = !column && !video && wide;
   // ...and hides the controls and the pointer while it plays undisturbed.
   const hidden = theater && playing && idle ? ' pointer-events-none opacity-0' : '';
   const corner = `${chrome} transition-[background-color,color,opacity] duration-300${hidden}`;
 
   /**
-   * The names + actions row, with two homes: under the artwork by default,
-   * the head of the lyrics column when docked. One element, one ref — the
-   * toggle re-parents it and the FLIP carries it across, so it reads as the
-   * same block travelling, not two swapping.
+   * The names + actions row, with two homes: under the artwork while a panel
+   * is open (and by default on narrow windows), in the right half while the
+   * panels are paused. One element, one ref — the toggle re-parents it and
+   * the FLIP carries it across, so it reads as the same block travelling,
+   * not two swapping.
    */
   const panelInfo = (
     <div
       ref={panelInfoRef}
       className={
-        docked || theater
+        shifted || theater
           ? 'flex items-center gap-4 will-change-transform'
           : `flex items-center gap-4 will-change-transform mt-[clamp(20px,3.2vh,32px)]${column ? ' max-md:mt-0' : ''}`
       }
@@ -1285,8 +1289,8 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
             </PageLink>
           )}
         </span>
-        {/* With a panel docked the stats stay under the artwork instead. */}
-        {!docked && <NerdStats />}
+        {/* When shifted the stats stay under the artwork instead. */}
+        {!shifted && <NerdStats />}
       </div>
 
       <div ref={titleActionsRef} className="flex items-center gap-2 will-change-transform">
@@ -1354,10 +1358,10 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       ref={sheetRef}
       // Over everything but menus and dialogs, which portal above it. Pure GPU compositor layer for 120 FPS.
       className={`fixed inset-0 z-[calc(var(--z-contextual-menus)-2)] isolate overflow-hidden text-primary will-change-transform motion-reduce:transition-none ${
-        docked
-          ? // With a panel docked the controls live in the right column, so the
-            // artwork earns a little more room; the FLIP blooms it bigger.
-            '[--art:min(37vw,calc(100dvh-240px),560px)]'
+        shifted
+          ? // With the panels paused the artwork has the left half to itself, so
+            // it earns a little more room; the FLIP blooms it bigger and lower.
+            '[--art:min(38vw,calc(100dvh-240px),560px)]'
           : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
       }`}
       role="dialog"
@@ -1423,7 +1427,9 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
             : `grid h-full items-center justify-center gap-x-[clamp(48px,7vw,144px)] px-[clamp(24px,9vw,144px)] py-16 max-md:px-6 max-md:pb-18 ${
                 column
                   ? 'grid-cols-[var(--art)_minmax(0,38vw)] max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-[minmax(0,1fr)_auto] max-md:items-stretch max-md:gap-y-4'
-                  : 'grid-cols-[var(--art)]'
+                  : shifted
+                    ? 'grid-cols-[var(--art)_minmax(0,38vw)]'
+                    : 'grid-cols-[var(--art)]'
               }`
         }
         data-lyrics={column || undefined}
@@ -1480,28 +1486,33 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
             </div>
           </div>
 
-          {/* With a panel docked, the stats stay behind under the artwork on their own. */}
-          {docked && (
-            <div ref={panelStatsRef} className="mt-4 w-full min-w-0 will-change-transform">
+          {/* With the panels paused, the stats stay behind under the artwork on their own. */}
+          {shifted && (
+            <div ref={panelStatsRef} className="mt-4 w-full min-w-0 animate-fade-in empty:hidden will-change-transform">
               <NerdStats />
             </div>
           )}
 
-          {/* The names + actions and the controls: under the artwork by default;
-              when a panel is docked they live in the lyrics column instead. */}
-          {!docked && panelInfo}
-          {!docked && panelControls}
+          {/* The names + actions and the controls: beside the artwork while the
+              panels are paused, under it once lyrics or Up Next is open. */}
+          {!shifted && panelInfo}
+          {!shifted && panelControls}
         </section>
 
         {column && (
+          <div ref={sideColumnRef} className="flex min-h-0 self-stretch will-change-transform">
+            {panelContent}
+          </div>
+        )}
+
+        {/* The panels' paused home: the names + controls stand in the right half. */}
+        {shifted && (
           <div
             ref={sideColumnRef}
-            className={docked ? 'flex min-h-0 flex-col self-stretch will-change-transform' : 'flex min-h-0 self-stretch will-change-transform'}
+            className="flex min-h-0 flex-col justify-center gap-y-[clamp(20px,3.2vh,32px)] self-stretch will-change-transform"
           >
-            {docked && panelInfo}
-            {docked && <div className="flex min-h-0 min-w-0 flex-1">{panelContent}</div>}
-            {!docked && panelContent}
-            {docked && panelControls}
+            {panelInfo}
+            {panelControls}
           </div>
         )}
       </div>
