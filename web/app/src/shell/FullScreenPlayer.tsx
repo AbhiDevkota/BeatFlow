@@ -350,6 +350,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const headerRef = useRef<HTMLDivElement>(null);
 
   const phaseRef = useRef<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
+  const activeAnims = useRef<Animation[]>([]);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDismissedRef = useRef(onDismissed);
 
@@ -395,13 +396,13 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    const pillEl = document.getElementById('miniplayer-pill');
-    const artEl = document.getElementById('miniplayer-artwork');
-    const infoEl = document.getElementById('miniplayer-info');
-    const transEl = document.getElementById('miniplayer-transport');
-    const scrubEl = document.getElementById('miniplayer-scrubber');
+    const miniPillEl = document.getElementById('miniplayer-pill');
+    const miniArtEl = document.getElementById('miniplayer-artwork');
+    const miniInfoEl = document.getElementById('miniplayer-info');
+    const miniTransEl = document.getElementById('miniplayer-transport');
+    const miniScrubEl = document.getElementById('miniplayer-scrubber');
 
-    const pillRect = pillEl?.getBoundingClientRect();
+    const pillRect = miniPillEl?.getBoundingClientRect();
     const validPill = pillRect && pillRect.width > 0 && pillRect.height > 0;
 
     const pill = validPill
@@ -413,26 +414,26 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           56,
         );
 
-    const art = artEl && artEl.getBoundingClientRect().width > 0
-      ? artEl.getBoundingClientRect()
+    const art = miniArtEl && miniArtEl.getBoundingClientRect().width > 0
+      ? miniArtEl.getBoundingClientRect()
       : new DOMRect(pill.left + 200, pill.top + 11, 34, 34);
 
-    const info = infoEl && infoEl.getBoundingClientRect().width > 0
-      ? infoEl.getBoundingClientRect()
+    const info = miniInfoEl && miniInfoEl.getBoundingClientRect().width > 0
+      ? miniInfoEl.getBoundingClientRect()
       : new DOMRect(pill.left + 242, pill.top + 11, Math.min(240, pill.width - 390), 34);
 
-    const trans = transEl && transEl.getBoundingClientRect().width > 0
-      ? transEl.getBoundingClientRect()
+    const trans = miniTransEl && miniTransEl.getBoundingClientRect().width > 0
+      ? miniTransEl.getBoundingClientRect()
       : new DOMRect(pill.left + 16, pill.top + 8, 170, 40);
 
-    const scrub = scrubEl && scrubEl.getBoundingClientRect().width > 0
-      ? scrubEl.getBoundingClientRect()
+    const scrub = miniScrubEl && miniScrubEl.getBoundingClientRect().width > 0
+      ? miniScrubEl.getBoundingClientRect()
       : new DOMRect(pill.left + 200, pill.bottom - 8, Math.min(280, pill.width - 340), 4);
 
     return { pill, art, info, trans, scrub };
   };
 
-  // Hardware-accelerated Apple Matched-Geometry FLIP Expansion on Mount
+  // Hardware-accelerated Apple Matched-Geometry FLIP Expansion on Mount via Web Animations API
   useLayoutEffect(() => {
     const cardBgEl = cardBgRef.current;
     const artEl = artworkMorphRef.current;
@@ -470,161 +471,147 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     // 2. Calculate deltas for Artwork
     const artDx = miniArt.left - fullArt.left;
     const dyArt = miniArt.top - fullArt.top;
-    const artScale = Math.max(0.01, miniArt.width / fullArt.width);
+    const artScale = Math.max(0.01, miniArt.width / Math.max(1, fullArt.width));
     const artRadius = 6 / artScale;
 
     // 3. Calculate deltas for Title & Artist
     const infoDx = miniInfo.left - fullInfo.left;
     const dyInfo = miniInfo.top - fullInfo.top;
-    const infoScale = Math.min(1, Math.max(0.45, miniInfo.height / fullInfo.height));
+    const infoScale = Math.min(1, Math.max(0.45, miniInfo.height / Math.max(1, fullInfo.height)));
 
     // 4. Calculate deltas for Transport Controls
     const transDx = (miniTrans.left + miniTrans.width / 2) - (fullTrans.left + fullTrans.width / 2);
     const dyTrans = (miniTrans.top + miniTrans.height / 2) - (fullTrans.top + fullTrans.height / 2);
-    const transScale = Math.min(1, Math.max(0.35, miniTrans.width / fullTrans.width));
+    const transScale = Math.min(1, Math.max(0.35, miniTrans.width / Math.max(1, fullTrans.width)));
 
     // 5. Calculate deltas for Scrubber
     const scrubDx = miniScrub.left - fullScrub.left;
     const dyScrub = miniScrub.top - fullScrub.top;
     const scrubScaleX = Math.max(0.01, miniScrub.width / fullScrub.width);
 
-    // Apply Inverted state (t=0)
-    cardBgEl.style.transition = 'none';
+    // Anchor transform origins
     cardBgEl.style.transformOrigin = '0 0';
-    cardBgEl.style.transform = `translate3d(${cardDx}px, ${cardDy}px, 0) scale(${cardScaleX}, ${cardScaleY})`;
-    cardBgEl.style.borderRadius = `${rx}px / ${ry}px`;
     cardBgEl.style.overflow = 'hidden';
-
-    artEl.style.transition = 'none';
     artEl.style.transformOrigin = '0 0';
-    artEl.style.transform = `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`;
-    artEl.style.borderRadius = `${artRadius}px`;
-
-    infoEl.style.transition = 'none';
     infoEl.style.transformOrigin = '0 0';
-    infoEl.style.transform = `translate3d(${infoDx}px, ${dyInfo}px, 0) scale(${infoScale})`;
-
-    transEl.style.transition = 'none';
     transEl.style.transformOrigin = 'center center';
-    transEl.style.transform = `translate3d(${transDx}px, ${dyTrans}px, 0) scale(${transScale})`;
-
-    scrubEl.style.transition = 'none';
     scrubEl.style.transformOrigin = '0 0';
-    scrubEl.style.transform = `translate3d(${scrubDx}px, ${dyScrub}px, 0) scale(${scrubScaleX}, 0.5)`;
+
+    phaseRef.current = 'expanding';
+
+    // Cancel any previous animations
+    activeAnims.current.forEach((a) => {
+      try { a.cancel(); } catch { /* ignore */ }
+    });
+    activeAnims.current = [];
+
+    // Trigger Play Animation (t=1): Luxurious 620ms Apple fluid spring via WAAPI
+    const easeApple = 'cubic-bezier(0.22, 1, 0.36, 1)';
+    const animOpts = { duration: 620, easing: easeApple, fill: 'both' as FillMode };
+
+    activeAnims.current.push(
+      cardBgEl.animate(
+        [
+          {
+            transform: `translate3d(${cardDx}px, ${cardDy}px, 0) scale(${cardScaleX}, ${cardScaleY})`,
+            borderRadius: `${rx}px / ${ry}px`,
+          },
+          {
+            transform: 'translate3d(0, 0, 0) scale(1, 1)',
+            borderRadius: '0px',
+          },
+        ],
+        animOpts
+      ),
+      artEl.animate(
+        [
+          {
+            transform: `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`,
+            borderRadius: `${artRadius}px`,
+          },
+          {
+            transform: 'translate3d(0, 0, 0) scale(1)',
+            borderRadius: '22px',
+          },
+        ],
+        animOpts
+      ),
+      infoEl.animate(
+        [
+          { transform: `translate3d(${infoDx}px, ${dyInfo}px, 0) scale(${infoScale})` },
+          { transform: 'translate3d(0, 0, 0) scale(1)' },
+        ],
+        animOpts
+      ),
+      transEl.animate(
+        [
+          { transform: `translate3d(${transDx}px, ${dyTrans}px, 0) scale(${transScale})` },
+          { transform: 'translate3d(0, 0, 0) scale(1)' },
+        ],
+        animOpts
+      ),
+      scrubEl.animate(
+        [
+          { transform: `translate3d(${scrubDx}px, ${dyScrub}px, 0) scale(${scrubScaleX}, 0.5)` },
+          { transform: 'translate3d(0, 0, 0) scale(1, 1)' },
+        ],
+        animOpts
+      )
+    );
+
+    if (headerEl) {
+      activeAnims.current.push(
+        headerEl.animate(
+          [
+            { transform: 'translate3d(0, -20px, 0)', opacity: 0 },
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+          ],
+          { duration: 480, delay: 80, easing: easeApple, fill: 'both' }
+        )
+      );
+    }
 
     if (extraEl) {
-      extraEl.style.transition = 'none';
-      extraEl.style.transform = 'translate3d(0, 24px, 0)';
-      extraEl.style.opacity = '0';
+      activeAnims.current.push(
+        extraEl.animate(
+          [
+            { transform: 'translate3d(0, 24px, 0)', opacity: 0 },
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+          ],
+          { duration: 540, delay: 100, easing: easeApple, fill: 'both' }
+        )
+      );
     }
 
     if (actionsEl) {
-      actionsEl.style.transition = 'none';
-      actionsEl.style.transform = 'translate3d(0, 14px, 0)';
-      actionsEl.style.opacity = '0';
-    }
-
-    if (headerEl) {
-      headerEl.style.transition = 'none';
-      headerEl.style.transform = 'translate3d(0, -20px, 0)';
-      headerEl.style.opacity = '0';
+      activeAnims.current.push(
+        actionsEl.animate(
+          [
+            { transform: 'translate3d(0, 14px, 0)', opacity: 0 },
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+          ],
+          { duration: 500, delay: 80, easing: easeApple, fill: 'both' }
+        )
+      );
     }
 
     if (sideEl) {
-      sideEl.style.transition = 'none';
-      sideEl.style.transform = 'translate3d(24px, 0, 0)';
-      sideEl.style.opacity = '0';
+      activeAnims.current.push(
+        sideEl.animate(
+          [
+            { transform: 'translate3d(24px, 0, 0)', opacity: 0 },
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+          ],
+          { duration: 520, delay: 100, easing: easeApple, fill: 'both' }
+        )
+      );
     }
-
-    // Force layout flush so browser renders the initial inverted frame
-    void cardBgEl.offsetHeight;
-    void artEl.offsetHeight;
-
-    // Trigger Play Animation (t=1): Luxurious 620ms Apple fluid spring
-    const easeApple = 'cubic-bezier(0.22, 1, 0.36, 1)';
-    const rafId = requestAnimationFrame(() => {
-      phaseRef.current = 'expanding';
-
-      cardBgEl.style.transition = `transform 620ms ${easeApple}, border-radius 620ms ease-out`;
-      cardBgEl.style.transform = 'translate3d(0, 0, 0) scale(1, 1)';
-      cardBgEl.style.borderRadius = '0px';
-
-      artEl.style.transition = `transform 620ms ${easeApple}, border-radius 620ms ease-out`;
-      artEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
-      artEl.style.borderRadius = '22px';
-
-      infoEl.style.transition = `transform 620ms ${easeApple}`;
-      infoEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
-
-      transEl.style.transition = `transform 620ms ${easeApple}`;
-      transEl.style.transform = 'translate3d(0, 0, 0) scale(1)';
-
-      scrubEl.style.transition = `transform 620ms ${easeApple}`;
-      scrubEl.style.transform = 'translate3d(0, 0, 0) scale(1, 1)';
-
-      if (extraEl) {
-        extraEl.style.transition = `transform 540ms ${easeApple} 100ms, opacity 440ms ease-out 100ms`;
-        extraEl.style.transform = 'translate3d(0, 0, 0)';
-        extraEl.style.opacity = '1';
-      }
-
-      if (actionsEl) {
-        actionsEl.style.transition = `transform 500ms ${easeApple} 80ms, opacity 400ms ease-out 80ms`;
-        actionsEl.style.transform = 'translate3d(0, 0, 0)';
-        actionsEl.style.opacity = '1';
-      }
-
-      if (headerEl) {
-        headerEl.style.transition = `transform 480ms ${easeApple} 80ms, opacity 380ms ease-out 80ms`;
-        headerEl.style.transform = 'translate3d(0, 0, 0)';
-        headerEl.style.opacity = '1';
-      }
-
-      if (sideEl) {
-        sideEl.style.transition = `transform 520ms ${easeApple} 100ms, opacity 420ms ease-out 100ms`;
-        sideEl.style.transform = 'translate3d(0, 0, 0)';
-        sideEl.style.opacity = '1';
-      }
-    });
 
     const timer = setTimeout(() => {
       phaseRef.current = 'expanded';
-      cardBgEl.style.transition = '';
-      cardBgEl.style.transform = '';
-      cardBgEl.style.borderRadius = '';
-      artEl.style.transition = '';
-      artEl.style.transform = '';
-      artEl.style.borderRadius = '';
-      infoEl.style.transition = '';
-      infoEl.style.transform = '';
-      transEl.style.transition = '';
-      transEl.style.transform = '';
-      scrubEl.style.transition = '';
-      scrubEl.style.transform = '';
-      if (extraEl) {
-        extraEl.style.transition = '';
-        extraEl.style.transform = '';
-        extraEl.style.opacity = '';
-      }
-      if (actionsEl) {
-        actionsEl.style.transition = '';
-        actionsEl.style.transform = '';
-        actionsEl.style.opacity = '';
-      }
-      if (headerEl) {
-        headerEl.style.transition = '';
-        headerEl.style.transform = '';
-        headerEl.style.opacity = '';
-      }
-      if (sideEl) {
-        sideEl.style.transition = '';
-        sideEl.style.transform = '';
-        sideEl.style.opacity = '';
-      }
-    }, 660);
+    }, 640);
 
     return () => {
-      cancelAnimationFrame(rafId);
       clearTimeout(timer);
     };
   }, []);
@@ -644,6 +631,12 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const headerEl = headerRef.current;
     const sideEl = sideColumnRef.current;
     const sheetEl = sheetRef.current;
+
+    // Cancel any active expand animations
+    activeAnims.current.forEach((a) => {
+      try { a.cancel(); } catch { /* ignore */ }
+    });
+    activeAnims.current = [];
 
     const collapseEase = 'cubic-bezier(0.32, 0.72, 0, 1)';
 
@@ -672,77 +665,149 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
       sheetEl.style.borderRadius = '0px';
     }
 
+    const collapseOpts = { duration: 500, easing: collapseEase, fill: 'both' as FillMode };
+
     if (cardBgEl) {
-      cardBgEl.style.transition = `transform 500ms ${collapseEase}, border-radius 500ms ease-out`;
       cardBgEl.style.transformOrigin = '0 0';
-      cardBgEl.style.transform = `translate3d(${cardDx}px, ${cardDy}px, 0) scale(${cardScaleX}, ${cardScaleY})`;
-      cardBgEl.style.borderRadius = `${rx}px / ${ry}px`;
+      activeAnims.current.push(
+        cardBgEl.animate(
+          [
+            {
+              transform: 'translate3d(0, 0, 0) scale(1, 1)',
+              borderRadius: '0px',
+            },
+            {
+              transform: `translate3d(${cardDx}px, ${cardDy}px, 0) scale(${cardScaleX}, ${cardScaleY})`,
+              borderRadius: `${rx}px / ${ry}px`,
+            },
+          ],
+          collapseOpts
+        )
+      );
     }
 
     if (artEl && fullArt) {
       const artDx = liveArt.left - fullArt.left;
       const dyArt = liveArt.top - fullArt.top;
-      const artScale = Math.max(0.01, liveArt.width / fullArt.width);
+      const artScale = Math.max(0.01, liveArt.width / Math.max(1, fullArt.width));
       const artRadius = 6 / artScale;
 
-      artEl.style.transition = `transform 500ms ${collapseEase}, border-radius 480ms ease-out`;
       artEl.style.transformOrigin = '0 0';
-      artEl.style.transform = `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`;
-      artEl.style.borderRadius = `${artRadius}px`;
+      activeAnims.current.push(
+        artEl.animate(
+          [
+            {
+              transform: 'translate3d(0, 0, 0) scale(1)',
+              borderRadius: '22px',
+            },
+            {
+              transform: `translate3d(${artDx}px, ${dyArt}px, 0) scale(${artScale})`,
+              borderRadius: `${artRadius}px`,
+            },
+          ],
+          collapseOpts
+        )
+      );
     }
 
     if (infoEl && fullInfo) {
       const infoDx = liveInfo.left - fullInfo.left;
       const dyInfo = liveInfo.top - fullInfo.top;
-      const infoScale = Math.min(1, Math.max(0.45, liveInfo.height / fullInfo.height));
+      const infoScale = Math.min(1, Math.max(0.45, liveInfo.height / Math.max(1, fullInfo.height)));
 
-      infoEl.style.transition = `transform 480ms ${collapseEase}`;
       infoEl.style.transformOrigin = '0 0';
-      infoEl.style.transform = `translate3d(${infoDx}px, ${dyInfo}px, 0) scale(${infoScale})`;
+      activeAnims.current.push(
+        infoEl.animate(
+          [
+            { transform: 'translate3d(0, 0, 0) scale(1)' },
+            { transform: `translate3d(${infoDx}px, ${dyInfo}px, 0) scale(${infoScale})` },
+          ],
+          { duration: 480, easing: collapseEase, fill: 'both' }
+        )
+      );
     }
 
     if (transEl && fullTrans) {
       const transDx = (liveTrans.left + liveTrans.width / 2) - (fullTrans.left + fullTrans.width / 2);
       const dyTrans = (liveTrans.top + liveTrans.height / 2) - (fullTrans.top + fullTrans.height / 2);
-      const transScale = Math.min(1, Math.max(0.35, liveTrans.width / fullTrans.width));
+      const transScale = Math.min(1, Math.max(0.35, liveTrans.width / Math.max(1, fullTrans.width)));
 
-      transEl.style.transition = `transform 480ms ${collapseEase}`;
       transEl.style.transformOrigin = 'center center';
-      transEl.style.transform = `translate3d(${transDx}px, ${dyTrans}px, 0) scale(${transScale})`;
+      activeAnims.current.push(
+        transEl.animate(
+          [
+            { transform: 'translate3d(0, 0, 0) scale(1)' },
+            { transform: `translate3d(${transDx}px, ${dyTrans}px, 0) scale(${transScale})` },
+          ],
+          { duration: 480, easing: collapseEase, fill: 'both' }
+        )
+      );
     }
 
     if (scrubEl && fullScrub) {
       const scrubDx = liveScrub.left - fullScrub.left;
       const dyScrub = liveScrub.top - fullScrub.top;
-      const scrubScaleX = Math.max(0.01, liveScrub.width / fullScrub.width);
+      const scrubScaleX = Math.max(0.01, liveScrub.width / Math.max(1, fullScrub.width));
 
-      scrubEl.style.transition = `transform 480ms ${collapseEase}`;
       scrubEl.style.transformOrigin = '0 0';
-      scrubEl.style.transform = `translate3d(${scrubDx}px, ${dyScrub}px, 0) scale(${scrubScaleX}, 0.5)`;
+      activeAnims.current.push(
+        scrubEl.animate(
+          [
+            { transform: 'translate3d(0, 0, 0) scale(1, 1)' },
+            { transform: `translate3d(${scrubDx}px, ${dyScrub}px, 0) scale(${scrubScaleX}, 0.5)` },
+          ],
+          { duration: 480, easing: collapseEase, fill: 'both' }
+        )
+      );
     }
 
     // Secondary controls fade out gracefully
     if (extraEl) {
-      extraEl.style.transition = 'transform 200ms ease-out, opacity 180ms ease-out';
-      extraEl.style.transform = 'translate3d(0, 16px, 0)';
-      extraEl.style.opacity = '0';
+      activeAnims.current.push(
+        extraEl.animate(
+          [
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+            { transform: 'translate3d(0, 16px, 0)', opacity: 0 },
+          ],
+          { duration: 180, easing: 'ease-out', fill: 'both' }
+        )
+      );
     }
 
     if (actionsEl) {
-      actionsEl.style.transition = 'transform 180ms ease-out, opacity 160ms ease-out';
-      actionsEl.style.transform = 'translate3d(0, 14px, 0)';
-      actionsEl.style.opacity = '0';
+      activeAnims.current.push(
+        actionsEl.animate(
+          [
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+            { transform: 'translate3d(0, 14px, 0)', opacity: 0 },
+          ],
+          { duration: 160, easing: 'ease-out', fill: 'both' }
+        )
+      );
     }
 
     if (headerEl) {
-      headerEl.style.transition = 'transform 180ms ease-out, opacity 180ms ease-out';
-      headerEl.style.transform = 'translate3d(0, -20px, 0)';
-      headerEl.style.opacity = '0';
+      activeAnims.current.push(
+        headerEl.animate(
+          [
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+            { transform: 'translate3d(0, -20px, 0)', opacity: 0 },
+          ],
+          { duration: 180, easing: 'ease-out', fill: 'both' }
+        )
+      );
     }
 
     if (sideEl) {
-      sideEl.style.transition = 'opacity 180ms ease-out';
-      sideEl.style.opacity = '0';
+      activeAnims.current.push(
+        sideEl.animate(
+          [
+            { opacity: 1 },
+            { opacity: 0 },
+          ],
+          { duration: 180, easing: 'ease-out', fill: 'both' }
+        )
+      );
     }
 
     // Seamless handoff: return PlayerBar visibility as collapse finishes landing
