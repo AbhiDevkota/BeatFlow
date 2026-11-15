@@ -168,6 +168,14 @@ export function AppShell() {
     }
   }, [fullScreen]);
 
+  // Warm up FullScreenPlayer chunk in the background after app shell mounts
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void import('./FullScreenPlayer');
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleFullScreenDismissed = useCallback(() => {
     setFullScreenMounted(false);
   }, []);
