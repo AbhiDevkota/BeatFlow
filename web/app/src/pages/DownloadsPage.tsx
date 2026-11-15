@@ -109,52 +109,101 @@ const SORT_OPTIONS: readonly SelectOption<SortKey>[] = [
 ];
 
 function HeroMosaic({ covers }: { covers: string[] }) {
-  const hasCovers = covers.length > 0;
-  const isCollage = covers.length >= 2;
-  const tiles: string[] = isCollage
-    ? covers.length >= 4
-      ? covers.slice(0, 4)
-      : covers.length === 3
-        ? [covers[0]!, covers[1]!, covers[2]!, covers[0]!]
-        : [covers[0]!, covers[1]!, covers[1]!, covers[0]!]
-    : [];
+  const count = covers.length;
+  const hasCovers = count > 0;
 
   return (
     <div className="relative w-[270px] self-start rounded-artwork-lg shadow-[0_10px_20px_0_var(--radiosityShadowColor)] [grid-area:artwork] max-lg:w-[220px] max-md:w-[min(270px,70vw)]">
       {hasCovers ? (
         <>
-          {/* Apple-style radiosity glow behind the artwork */}
-          <div className="absolute inset-0 -z-1 scale-88 opacity-30 blur-[20px] saturate-200" aria-hidden="true">
-            {isCollage ? (
+          {/* Apple-style radiosity ambient glow behind the artwork */}
+          <div className="absolute inset-0 -z-1 scale-90 opacity-35 blur-[24px] saturate-200" aria-hidden="true">
+            {count === 1 ? (
+              <img src={covers[0]} alt="" className="size-full rounded-artwork-lg object-cover" draggable={false} />
+            ) : count === 2 ? (
+              <div className="grid aspect-square size-full grid-cols-2 gap-0.5 overflow-hidden rounded-artwork-lg">
+                <img src={covers[0]} alt="" className="size-full object-cover" draggable={false} />
+                <img src={covers[1]} alt="" className="size-full object-cover" draggable={false} />
+              </div>
+            ) : count === 3 ? (
+              <div className="grid aspect-square size-full grid-cols-2 gap-0.5 overflow-hidden rounded-artwork-lg">
+                <img src={covers[0]} alt="" className="size-full object-cover" draggable={false} />
+                <div className="grid size-full grid-rows-2 gap-0.5">
+                  <img src={covers[1]} alt="" className="size-full object-cover" draggable={false} />
+                  <img src={covers[2]} alt="" className="size-full object-cover" draggable={false} />
+                </div>
+              </div>
+            ) : (
               <div className="grid aspect-square size-full grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden rounded-artwork-lg">
-                {tiles.map((c, i) => (
+                {covers.slice(0, 4).map((c, i) => (
                   <img key={i} src={c} alt="" className="size-full object-cover" draggable={false} />
                 ))}
               </div>
-            ) : (
-              <img src={covers[0]} alt="" className="size-full rounded-artwork-lg object-cover" draggable={false} />
             )}
           </div>
 
-          {/* Front mosaic artwork */}
-          <div className="artwork-stroke relative aspect-square size-full overflow-hidden rounded-artwork-lg shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
-            {isCollage ? (
-              <div className="grid size-full grid-cols-2 grid-rows-2 gap-0.5 bg-black/20">
-                {tiles.map((c, i) => (
+          {/* Front composite mosaic artwork */}
+          <div className="artwork-stroke relative aspect-square size-full overflow-hidden rounded-artwork-lg shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+            {count === 1 ? (
+              <img src={covers[0]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+            ) : count === 2 ? (
+              <div className="grid size-full grid-cols-2 gap-[1.5px] bg-black/40">
+                <img src={covers[0]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+                <img src={covers[1]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+              </div>
+            ) : count === 3 ? (
+              <div className="grid size-full grid-cols-2 gap-[1.5px] bg-black/40">
+                <img src={covers[0]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+                <div className="grid size-full grid-rows-2 gap-[1.5px]">
+                  <img src={covers[1]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+                  <img src={covers[2]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
+                </div>
+              </div>
+            ) : (
+              <div className="grid size-full grid-cols-2 grid-rows-2 gap-[1.5px] bg-black/40">
+                {covers.slice(0, 4).map((c, i) => (
                   <img key={i} src={c} alt="" className="size-full object-cover" loading="eager" draggable={false} />
                 ))}
               </div>
-            ) : (
-              <img src={covers[0]} alt="" className="size-full object-cover" loading="eager" draggable={false} />
             )}
+
+            {/* Subtle inner glass highlight */}
+            <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),inset_0_-1px_0_0_rgba(0,0,0,0.3)]" />
+
+            {/* Floating Apple-style download library badge */}
+            <div
+              className="absolute right-2.5 bottom-2.5 flex size-8 items-center justify-center rounded-full border border-white/25 bg-black/60 text-white shadow-[0_4px_12px_rgba(0,0,0,0.5)] backdrop-blur-xl ring-1 ring-black/40"
+              title="Downloaded Library"
+              aria-hidden="true"
+            >
+              <ArrowDown size={16} strokeWidth={2.6} className="drop-shadow-xs" />
+            </div>
           </div>
         </>
       ) : (
-        /* Empty downloads state: red/key background with white download icon */
-        <div className="artwork-stroke relative grid aspect-square size-full place-items-center overflow-hidden rounded-artwork-lg bg-gradient-to-br from-key via-key/80 to-key/60 shadow-[0_10px_20px_0_var(--radiosityShadowColor)]">
-          <span className="grid size-20 place-items-center rounded-full bg-white/20 text-white shadow-lg backdrop-blur-md">
-            <Download size={36} strokeWidth={2.2} />
-          </span>
+        /* Empty downloads state: bespoke Apple Music editorial sleeve */
+        <div className="artwork-stroke relative grid aspect-square size-full place-items-center overflow-hidden rounded-artwork-lg bg-gradient-to-br from-[#1c1c1f] via-[#141416] to-[#0c0c0e] shadow-[0_16px_36px_-8px_rgba(0,0,0,0.6)] select-none">
+          {/* Ambient radial accent glow */}
+          <div className="pointer-events-none absolute -top-12 -right-12 size-48 rounded-full bg-key/25 blur-[40px]" />
+          <div className="pointer-events-none absolute -bottom-10 -left-10 size-40 rounded-full bg-key/15 blur-[35px]" />
+
+          {/* Concentric disc grooves */}
+          <div className="pointer-events-none absolute inset-6 rounded-full border border-white/[0.04]" />
+          <div className="pointer-events-none absolute inset-12 rounded-full border border-white/[0.06]" />
+          <div className="pointer-events-none absolute inset-20 rounded-full border border-white/[0.08]" />
+
+          {/* Center frosted glass plate */}
+          <div className="relative flex flex-col items-center gap-2.5">
+            <div className="grid size-20 place-items-center rounded-2xl border border-white/15 bg-white/[0.08] text-white shadow-[0_12px_28px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.25)] backdrop-blur-xl">
+              <Download size={34} strokeWidth={2.2} className="text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.3)]" />
+            </div>
+            <span className="type-[700_10px/12px] font-semibold uppercase tracking-[0.22em] text-white/50 drop-shadow-xs">
+              Downloads
+            </span>
+          </div>
+
+          {/* Inner specular glass rim */}
+          <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),inset_0_-1px_0_0_rgba(0,0,0,0.4)]" />
         </div>
       )}
     </div>

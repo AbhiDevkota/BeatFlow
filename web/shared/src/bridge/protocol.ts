@@ -258,6 +258,7 @@ export interface BridgeMethods {
       songsPath?: string;
       lyricsPath?: string;
       thumbnailsPath?: string;
+      connectorPath?: string;
       configPath?: string;
       cachePath?: string;
     };
@@ -283,7 +284,9 @@ export interface BridgeMethods {
       modifiedMs: number;
       localUrl: string;
       thumbnail?: string | null;
+      animatedThumbnail?: string | null;
       hasLyrics?: boolean;
+      originalVideoId?: string | null;
     }>;
   };
   'downloads.downloadTrack': {
@@ -294,6 +297,7 @@ export interface BridgeMethods {
       videoId?: string;
       extension?: string;
       thumbnailUrl?: string;
+      animatedArtUrl?: string;
       lyrics?: string;
       lyricsTtml?: string;
       album?: string;

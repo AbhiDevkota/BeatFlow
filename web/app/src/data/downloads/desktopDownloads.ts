@@ -16,8 +16,10 @@ export interface DownloadedItem {
   durationSec: number;
   localUrl: string;
   thumbnail?: string | null;
+  animatedThumbnail?: string | null;
   hasLyrics?: boolean;
   source?: string | null;
+  originalVideoId?: string | null;
 }
 
 export interface DownloadsFolderInfo {
@@ -25,6 +27,7 @@ export interface DownloadsFolderInfo {
   songsPath?: string;
   lyricsPath?: string;
   thumbnailsPath?: string;
+  connectorPath?: string;
   configPath?: string;
   cachePath?: string;
   isDev: boolean;
@@ -173,8 +176,10 @@ export async function listDownloadedTracks(): Promise<DownloadedItem[]> {
     durationSec: it.durationSec ?? 0,
     localUrl: it.localUrl,
     thumbnail: it.thumbnail ?? null,
+    animatedThumbnail: it.animatedThumbnail ?? null,
     hasLyrics: it.hasLyrics ?? false,
     source: it.source ?? null,
+    originalVideoId: it.originalVideoId ?? null,
   }));
 }
 
@@ -299,8 +304,8 @@ export async function downloadTrack(
 
     // Attempt to fetch lyrics to save along with the song. Prefer the source
     // the user picked for this track (useLyricsUi.picked, keyed by canonical
-    // video id); otherwise run the normal provider chain. Bounded so a slow
-    // lyric server can't hold a finished download up.
+    // video id); otherwise run the normal provider chain.
+    // NOTE: Only save ONE lyrics format (TTML if available, otherwise LRC).
     let lyricsText: string | undefined;
     let lyricsTtml: string | undefined;
     try {
@@ -321,19 +326,46 @@ export async function downloadTrack(
         lookup,
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 30000)),
       ])) as Awaited<ReturnType<typeof lookupLyrics>> | null;
-      if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
-        lyricsText = lyrics.lines
-          .map((line) => {
-            const min = Math.floor(line.timeMs / 60000);
-            const sec = Math.floor((line.timeMs % 60000) / 1000);
-            const ms = Math.floor((line.timeMs % 1000) / 10);
-            const time = `[${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(2, '0')}]`;
-            return `${time}${line.text}`;
-          })
-          .join('\n');
-        if (lyrics.ttml) lyricsTtml = lyrics.ttml;
+      if (lyrics) {
+        if (lyrics.ttml && (lyrics.wordSynced || lyrics.ttml.includes('<span') || !lyrics.lines.length)) {
+          // User's current / best lyrics are TTML: save TTML only, do not save LRC
+          lyricsTtml = lyrics.ttml;
+        } else if (lyrics.lines && lyrics.lines.length > 0) {
+          // Line-synced lyrics: save LRC only, do not save TTML
+          lyricsText = lyrics.lines
+            .map((line) => {
+              const min = Math.floor(line.timeMs / 60000);
+              const sec = Math.floor((line.timeMs % 60000) / 1000);
+              const ms = Math.floor((line.timeMs % 1000) / 10);
+              const time = `[${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(2, '0')}]`;
+              return `${time}${line.text}`;
+            })
+            .join('\n');
+        } else if (lyrics.ttml) {
+          lyricsTtml = lyrics.ttml;
+        }
       }
     } catch {}
+
+    // Check for animated artwork (Apple motion or Spotify Canvas)
+    let animatedArtUrl: string | undefined;
+    try {
+      const { fetchTrackMotion } = await import('@/data/apple/motionArt');
+      const motion = await fetchTrackMotion(title, artist, resolvedAlbum);
+      if (motion?.url) {
+        animatedArtUrl = motion.url;
+      }
+    } catch {}
+
+    if (!animatedArtUrl) {
+      try {
+        const { fetchCanvas } = await import('@/data/spotify/api');
+        const canvasUrl = await fetchCanvas({ videoId: track.videoId, title, artist, durationSec: track.durationSec ?? 0 });
+        if (canvasUrl) {
+          animatedArtUrl = canvasUrl;
+        }
+      } catch {}
+    }
 
     const bridge = desktopBridge();
     const res = await bridge.call('downloads.downloadTrack', {
@@ -343,6 +375,7 @@ export async function downloadTrack(
       videoId: track.videoId,
       extension,
       thumbnailUrl: resolvedThumbnailUrl ?? undefined,
+      animatedArtUrl: animatedArtUrl ?? undefined,
       lyrics: lyricsText,
       lyricsTtml: lyricsTtml,
       album: resolvedAlbum ?? undefined,
@@ -386,8 +419,16 @@ export function toTrackFromDownloaded(item: DownloadedItem): Track {
         ? 'HIGH_QUALITY'
         : null;
 
+  // When online, prefer the online videoId so online streaming is used
+  const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
+  const onlineId =
+    item.originalVideoId && !item.originalVideoId.startsWith('local_') && !item.originalVideoId.includes('/local/')
+      ? item.originalVideoId
+      : null;
+  const videoId = isOnline && onlineId ? onlineId : item.localUrl;
+
   return {
-    videoId: item.localUrl,
+    videoId,
     title: item.title,
     artists: [{ name: item.artist, id: null }],
     album: item.album ? { name: item.album, id: null } : null,
@@ -396,8 +437,8 @@ export function toTrackFromDownloaded(item: DownloadedItem): Track {
     thumbnail: item.thumbnail ?? null,
     index: null,
     plays: null,
-    sourceQuality,
-    sourceName: 'On Device',
+    sourceQuality: isOnline && onlineId ? null : sourceQuality,
+    sourceName: isOnline && onlineId ? undefined : 'On Device',
     sourceFormat: {
       codec: isDolby ? 'Dolby Atmos' : isLossless ? ext.toUpperCase() : ext.toUpperCase(),
       isLossless,

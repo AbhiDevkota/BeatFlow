@@ -923,8 +923,12 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   const contentSettings = useContentSettings.getState();
 
   // 0. Offline / Downloaded Playback Check:
-  // If this song was previously downloaded to the BeatFlow songs folder, stream directly from disk!
+  // When offline and this song was downloaded, stream directly from disk.
+  // When online, do not play from offline; play from the online source.
+  const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
+
   if (
+    !isOnline &&
     isDesktopApp() &&
     !isLocalTrack(currentTrack) &&
     !partyHooks?.inParty()
@@ -948,7 +952,40 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
           currentQueue[at] = { ...currentQueue[at]!, track: directTrack };
           usePlayer.setState({ queue: currentQueue });
         }
-        trackLog.i(`[Player] Using local downloaded audio file for "${currentTrack.title}"`, directTrack.videoId);
+        trackLog.i(`[Player] Offline detected: using local downloaded audio file for "${currentTrack.title}"`, directTrack.videoId);
+      }
+    } catch {}
+  }
+
+  // When online and playing an offline song, stream from online instead of offline disk file
+  if (isOnline && isLocalTrack(currentTrack) && !partyHooks?.inParty()) {
+    try {
+      let onlineId: string | null = null;
+      const { useDownloadsStore } = await import('@/data/downloads/desktopDownloads');
+      const local = useDownloadsStore.getState().getLocalTrack(currentTrack.title, currentTrack.artists[0]?.name, currentTrack.videoId);
+      if (local?.originalVideoId && !local.originalVideoId.startsWith('local_') && !local.originalVideoId.includes('/local/')) {
+        onlineId = local.originalVideoId;
+      }
+      if (!onlineId) {
+        const { searchSongs } = await import('@/data/music/api');
+        const query = `${currentTrack.title} ${currentTrack.artists[0]?.name || ''}`.trim();
+        const results = await searchSongs(query);
+        const match = results.find((r: Track) => r.videoId && !isLocalTrack(r));
+        if (match) onlineId = match.videoId;
+      }
+      if (onlineId && token === loadToken) {
+        trackLog.i(`[Player] Online detected: switching offline song "${currentTrack.title}" to online source (${onlineId})`);
+        const onlineTrack: Track = {
+          ...currentTrack,
+          videoId: onlineId,
+          sourceName: undefined,
+        };
+        currentTrack = onlineTrack;
+        const currentQueue = [...usePlayer.getState().queue];
+        if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+          currentQueue[at] = { ...currentQueue[at]!, track: onlineTrack };
+          usePlayer.setState({ queue: currentQueue });
+        }
       }
     } catch {}
   }

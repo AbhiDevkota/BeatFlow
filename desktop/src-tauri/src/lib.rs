@@ -727,6 +727,12 @@ pub fn get_thumbnails_dir() -> PathBuf {
   dir
 }
 
+pub fn get_connector_dir() -> PathBuf {
+  let dir = get_music_dir().join("connector");
+  let _ = fs::create_dir_all(&dir);
+  dir
+}
+
 pub fn get_cache_dir() -> PathBuf {
   let dir = get_music_dir().join("cache");
   let _ = fs::create_dir_all(&dir);
@@ -862,18 +868,26 @@ fn thumbnail_path_for(thumbs_dir: &Path, stem: &str) -> Option<PathBuf> {
     .find(|path| path.exists())
 }
 
+fn animated_thumbnail_path_for(thumbs_dir: &Path, stem: &str) -> Option<PathBuf> {
+  ["mp4", "webm"]
+    .iter()
+    .map(|ext| thumbs_dir.join(format!("{}.{}", stem, ext)))
+    .find(|path| path.exists())
+}
+
 fn image_mime_for(path: &Path) -> &'static str {
   match path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() {
     Some("png") => "image/png",
     Some("webp") => "image/webp",
     Some("gif") => "image/gif",
+    Some("mp4") => "video/mp4",
+    Some("webm") => "video/webm",
     _ => "image/jpeg",
   }
 }
 
-/// The fields a download knows that the file name doesn't carry. Stored next
-/// to the audio as `<stem>.beatflow.json`; Android writes the same facts into
-/// the container's tags, which the desktop keeps beside the file instead.
+/// The fields a download knows that the file name doesn't carry. Stored in
+/// the `connector/` directory as `<stem>.beatflow.json`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DownloadMeta {
@@ -883,23 +897,114 @@ struct DownloadMeta {
   duration_sec: Option<u32>,
   #[serde(default)]
   source: Option<String>,
+  #[serde(default)]
+  video_id: Option<String>,
+  #[serde(default)]
+  thumbnail_url: Option<String>,
 }
 
-fn download_meta_path(base_dir: &Path, stem: &str) -> PathBuf {
-  base_dir.join(format!("{}.beatflow.json", stem))
+fn download_meta_path(stem: &str) -> PathBuf {
+  get_connector_dir().join(format!("{}.beatflow.json", stem))
 }
 
 fn read_download_meta(songs_dir: &Path, stem: &str) -> DownloadMeta {
-  // Prefer the metadata kept beside (but not inside) the songs folder; fall
-  // back to the legacy sidecar that used to live next to the audio.
-  for base in [get_music_dir(), songs_dir.to_path_buf()] {
-    if let Ok(raw) = fs::read_to_string(download_meta_path(&base, stem)) {
+  // Check connector directory first, then fallback to legacy root music dir and songs dir
+  let candidates = [
+    get_connector_dir().join(format!("{}.beatflow.json", stem)),
+    get_connector_dir().join(format!("{}.json", stem)),
+    get_music_dir().join(format!("{}.beatflow.json", stem)),
+    get_music_dir().join(format!("{}.json", stem)),
+    songs_dir.join(format!("{}.beatflow.json", stem)),
+    songs_dir.join(format!("{}.json", stem)),
+  ];
+  for path in candidates {
+    if let Ok(raw) = fs::read_to_string(&path) {
       if let Ok(meta) = serde_json::from_str(&raw) {
         return meta;
       }
     }
   }
   DownloadMeta::default()
+}
+
+async fn download_animated_artwork(url: &str, dest_path: &Path) -> Result<(), String> {
+  if url.contains(".m3u8") {
+    println!("[Rust Bridge] Fetching HLS playlist for animated art: {}", url);
+    if let Ok(resp) = client().get(url).send().await {
+      if let Ok(playlist_text) = resp.text().await {
+        let base_url = if let Some(last_slash) = url.rfind('/') {
+          &url[..last_slash + 1]
+        } else {
+          url
+        };
+
+        let mut media_url = url.to_string();
+        for line in playlist_text.lines() {
+          let trimmed = line.trim();
+          if !trimmed.starts_with('#') && trimmed.ends_with(".m3u8") {
+            if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+              media_url = trimmed.to_string();
+            } else {
+              media_url = format!("{}{}", base_url, trimmed);
+            }
+            break;
+          }
+        }
+
+        let media_text = if media_url != url {
+          if let Ok(resp) = client().get(&media_url).send().await {
+            resp.text().await.unwrap_or(playlist_text)
+          } else {
+            playlist_text
+          }
+        } else {
+          playlist_text
+        };
+
+        let media_base = if let Some(last_slash) = media_url.rfind('/') {
+          &media_url[..last_slash + 1]
+        } else {
+          &media_url
+        };
+
+        let mut video_bytes = Vec::new();
+        for line in media_text.lines() {
+          let trimmed = line.trim();
+          if trimmed.starts_with("#EXT-X-MAP:URI=\"") {
+            if let Some(end) = trimmed[16..].find('"') {
+              let uri = &trimmed[16..16 + end];
+              let init_url = if uri.starts_with("http") { uri.to_string() } else { format!("{}{}", media_base, uri) };
+              if let Ok(resp) = client().get(&init_url).send().await {
+                if let Ok(b) = resp.bytes().await {
+                  video_bytes.extend_from_slice(&b);
+                }
+              }
+            }
+          } else if !trimmed.starts_with('#') && !trimmed.is_empty() {
+            let seg_url = if trimmed.starts_with("http") { trimmed.to_string() } else { format!("{}{}", media_base, trimmed) };
+            if let Ok(resp) = client().get(&seg_url).send().await {
+              if let Ok(b) = resp.bytes().await {
+                video_bytes.extend_from_slice(&b);
+              }
+            }
+          }
+        }
+
+        if !video_bytes.is_empty() {
+          fs::write(dest_path, &video_bytes).map_err(|e| e.to_string())?;
+          return Ok(());
+        }
+      }
+    }
+  }
+
+  let resp = client().get(url).send().await.map_err(|e| e.to_string())?;
+  if resp.status().is_success() {
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    fs::write(dest_path, &bytes).map_err(|e| e.to_string())?;
+    return Ok(());
+  }
+  Err(format!("HTTP {}", resp.status()))
 }
 
 
@@ -1950,6 +2055,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         "songsPath": get_songs_dir().to_string_lossy(),
         "lyricsPath": get_lyrics_dir().to_string_lossy(),
         "thumbnailsPath": get_thumbnails_dir().to_string_lossy(),
+        "connectorPath": get_connector_dir().to_string_lossy(),
         "configPath": get_config_dir().to_string_lossy(),
         "cachePath": get_cache_dir().to_string_lossy(),
         "isDev": cfg!(debug_assertions),
@@ -1963,6 +2069,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         "songs" => get_songs_dir(),
         "lyrics" => get_lyrics_dir(),
         "thumbnails" => get_thumbnails_dir(),
+        "connector" => get_connector_dir(),
         "config" => get_config_dir(),
         "cache" => get_cache_dir(),
         _ => dir,
@@ -2028,6 +2135,27 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
       }
 
+      // Auto-migrate any sidecar json files into connector_dir
+      let connector_dir = get_connector_dir();
+      for dir in [&root_dir, &songs_dir] {
+        if let Ok(entries) = fs::read_dir(dir) {
+          for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+              let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+              if name.ends_with(".beatflow.json") || (name.ends_with(".json") && name != "addons.json") {
+                let dest = connector_dir.join(name);
+                if !dest.exists() {
+                  let _ = fs::rename(&path, &dest);
+                } else {
+                  let _ = fs::remove_file(&path);
+                }
+              }
+            }
+          }
+        }
+      }
+
       let mut items = Vec::new();
       if let Ok(entries) = fs::read_dir(&songs_dir) {
         for entry in entries.flatten() {
@@ -2060,6 +2188,9 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
               let thumbnail = thumbnail_path_for(&thumbs_dir, stem)
                 .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("http://127.0.0.1:{}/thumbnail/{}", port, url_encode(f))));
 
+              let animated_thumbnail = animated_thumbnail_path_for(&thumbs_dir, stem)
+                .and_then(|path| path.file_name().and_then(|f| f.to_str()).map(|f| format!("http://127.0.0.1:{}/thumbnail/{}", port, url_encode(f))));
+
               let has_lyrics = lyrics_dir.join(format!("{}.lrc", stem)).exists()
                 || lyrics_dir.join(format!("{}.ttml", stem)).exists();
               let meta = read_download_meta(&songs_dir, stem);
@@ -2067,6 +2198,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
               items.push(json!({
                 "id": format!("local_{}", file_name),
                 "videoId": format!("local_{}", file_name),
+                "originalVideoId": meta.video_id,
                 "fileName": file_name,
                 "filePath": path.to_string_lossy(),
                 "title": title,
@@ -2079,6 +2211,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
                 "modifiedMs": modified_ms,
                 "localUrl": local_url,
                 "thumbnail": thumbnail,
+                "animatedThumbnail": animated_thumbnail,
                 "hasLyrics": has_lyrics
               }));
             }
@@ -2099,6 +2232,7 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       let video_id = params.get("videoId").and_then(|v| v.as_str()).unwrap_or("");
       let ext_param = params.get("extension").and_then(|v| v.as_str()).unwrap_or("m4a");
       let thumbnail_url = params.get("thumbnailUrl").and_then(|v| v.as_str());
+      let animated_art_url = params.get("animatedArtUrl").and_then(|v| v.as_str());
       let lyrics_text = params.get("lyrics").and_then(|v| v.as_str());
       let lyrics_ttml = params.get("lyricsTtml").and_then(|v| v.as_str());
       let album = params.get("album").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
@@ -2186,29 +2320,40 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
         }
       }
 
-      // Save the facts the file name doesn't carry, so Downloads can show the
-      // album and the length without opening the audio.
+      // If animated artwork is provided, download and save it in the thumbnails folder
+      if let Some(anim_url) = animated_art_url && !anim_url.is_empty() {
+        let anim_dest = get_thumbnails_dir().join(format!("{}.mp4", file_stem));
+        println!("[Rust Bridge] Downloading animated artwork for '{}' from: {}", file_stem, anim_url);
+        if let Err(e) = download_animated_artwork(anim_url, &anim_dest).await {
+          println!("[Rust Bridge] Warning: failed to download animated artwork: {}", e);
+        } else {
+          println!("[Rust Bridge] Successfully saved animated artwork to {:?}", anim_dest);
+        }
+      }
+
+      // Save the metadata JSON into the connector/ folder
       let meta = DownloadMeta {
         album: album.map(str::to_owned),
         duration_sec,
         source: source.map(str::to_owned),
+        video_id: if video_id.is_empty() { None } else { Some(video_id.to_string()) },
+        thumbnail_url: thumbnail_url.map(str::to_owned),
       };
-      if meta.album.is_some() || meta.duration_sec.is_some() || meta.source.is_some() {
+      if meta.album.is_some() || meta.duration_sec.is_some() || meta.source.is_some() || meta.video_id.is_some() {
         if let Ok(raw) = serde_json::to_string_pretty(&meta) {
-          let _ = fs::write(download_meta_path(&get_music_dir(), &file_stem), raw);
+          let _ = fs::write(download_meta_path(&file_stem), raw);
         }
       }
 
-      // Save lyrics (.lrc) if provided
-      if let Some(l_text) = lyrics_text && !l_text.is_empty() {
-        let lyrics_path = get_lyrics_dir().join(format!("{}.lrc", file_stem));
-        let _ = fs::write(&lyrics_path, l_text);
-      }
-      // Save TTML lyrics when the chosen provider sent them, so offline playback
-      // can render word-synced lyrics without the network.
+      // Save only one lyrics format: TTML if provided, else LRC if provided
       if let Some(t_text) = lyrics_ttml && !t_text.is_empty() {
         let ttml_path = get_lyrics_dir().join(format!("{}.ttml", file_stem));
         let _ = fs::write(&ttml_path, t_text);
+        let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.lrc", file_stem)));
+      } else if let Some(l_text) = lyrics_text && !l_text.is_empty() {
+        let lyrics_path = get_lyrics_dir().join(format!("{}.lrc", file_stem));
+        let _ = fs::write(&lyrics_path, l_text);
+        let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.ttml", file_stem)));
       }
 
       // If an old .mpd file exists with the same stem, delete it
@@ -2247,13 +2392,17 @@ async fn bridge_call(app: tauri::AppHandle, method: String, params: Value) -> Re
       }
       let stem = Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
       if !stem.is_empty() {
-        for ext in ["jpg", "jpeg", "png", "webp"] {
+        for ext in ["jpg", "jpeg", "png", "webp", "mp4", "webm"] {
           let _ = fs::remove_file(get_thumbnails_dir().join(format!("{}.{}", stem, ext)));
         }
         let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.lrc", stem)));
         let _ = fs::remove_file(get_lyrics_dir().join(format!("{}.ttml", stem)));
-        let _ = fs::remove_file(download_meta_path(&get_music_dir(), stem));
-        let _ = fs::remove_file(download_meta_path(&get_songs_dir(), stem));
+        let _ = fs::remove_file(get_connector_dir().join(format!("{}.beatflow.json", stem)));
+        let _ = fs::remove_file(get_connector_dir().join(format!("{}.json", stem)));
+        let _ = fs::remove_file(get_music_dir().join(format!("{}.beatflow.json", stem)));
+        let _ = fs::remove_file(get_music_dir().join(format!("{}.json", stem)));
+        let _ = fs::remove_file(get_songs_dir().join(format!("{}.beatflow.json", stem)));
+        let _ = fs::remove_file(get_songs_dir().join(format!("{}.json", stem)));
       }
       Ok(json!({ "deleted": deleted, "fileName": file_name }))
     }
@@ -3117,8 +3266,7 @@ fn start_local_ipc_server(app_handle: tauri::AppHandle) {
               let target_file = get_thumbnails_dir().join(&file_name);
               if target_file.exists() && target_file.is_file() {
                 if let Ok(bytes) = fs::read(&target_file) {
-                  let ext = target_file.extension().and_then(|e| e.to_str()).unwrap_or("");
-                  let mime = if ext.eq_ignore_ascii_case("png") { "image/png" } else { "image/jpeg" };
+                  let mime = image_mime_for(&target_file);
                   let header = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: public, max-age=86400\r\n\r\n",
                     mime, bytes.len()
