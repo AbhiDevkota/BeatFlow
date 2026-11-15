@@ -992,6 +992,22 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
 
   const isCurrentLocal = isLocalTrack(currentTrack);
 
+  if (currentTrack.videoId.startsWith('addon:') && revertedTracks.has(currentTrack.videoId)) {
+    const orig = originalTracks.get(currentTrack.videoId);
+    const canonicalId = getCanonicalVideoId(currentTrack.videoId);
+    if (orig) {
+      currentTrack = orig;
+    } else if (canonicalId && canonicalId !== currentTrack.videoId) {
+      currentTrack = {
+        ...currentTrack,
+        videoId: canonicalId,
+        sourceQuality: undefined,
+        sourceName: undefined,
+        sourceFormat: undefined,
+      };
+    }
+  }
+
   if (!isCurrentLocal) {
     const preferAudio = (contentSettings.preferMusicOnly || contentSettings.preferAudioCuts) && !partyHooks?.inParty();
     if (preferAudio && isVideoTrack(currentTrack)) {
@@ -1071,6 +1087,25 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     applyVolumes();
     const track = await deck.engine.load(currentTrack.videoId, { startSec, autoplay });
     if (token !== loadToken) return;
+
+    if (track.videoId !== currentTrack.videoId && currentTrack.videoId.startsWith('addon:')) {
+      const canonicalId = track.videoId;
+      revertedTracks.add(currentTrack.videoId);
+      revertedTracks.add(canonicalId);
+      currentTrack = {
+        ...currentTrack,
+        videoId: canonicalId,
+        sourceQuality: undefined,
+        sourceName: undefined,
+        sourceFormat: undefined,
+      };
+      const currentQueue = [...usePlayer.getState().queue];
+      if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
+        currentQueue[at] = { ...currentQueue[at]!, track: currentTrack };
+        usePlayer.setState({ queue: currentQueue });
+      }
+    }
+
     applyTrack(track, currentTrack);
     if (!autoplay) usePlayer.setState({ status: 'paused' });
     afterTrackStarted();
@@ -1092,13 +1127,22 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     // If an upgraded addon stream fails, gracefully fall back to the original YouTube track
     if (currentTrack.videoId.startsWith('addon:')) {
       const orig = originalTracks.get(currentTrack.videoId);
-      if (orig) {
-        trackLog.w(`Upgraded stream failed (${message}), reverting to original YouTube track`, orig.videoId);
+      const canonicalId = getCanonicalVideoId(currentTrack.videoId);
+      const fallbackTrack: Track | null = orig ?? (canonicalId && canonicalId !== currentTrack.videoId ? {
+        ...currentTrack,
+        videoId: canonicalId,
+        sourceQuality: undefined,
+        sourceName: undefined,
+        sourceFormat: undefined,
+      } : null);
+
+      if (fallbackTrack) {
+        trackLog.w(`Upgraded stream failed (${message}), reverting to original track`, fallbackTrack.videoId);
         revertedTracks.add(currentTrack.videoId);
-        revertedTracks.add(orig.videoId);
+        revertedTracks.add(fallbackTrack.videoId);
         const currentQueue = [...usePlayer.getState().queue];
         if (currentQueue[at] && currentQueue[at]!.entryId === entry.entryId) {
-          currentQueue[at] = { ...currentQueue[at]!, track: orig };
+          currentQueue[at] = { ...currentQueue[at]!, track: fallbackTrack };
           usePlayer.setState({ queue: currentQueue });
         }
         void startAt(at, { startSec, auto, autoplay });

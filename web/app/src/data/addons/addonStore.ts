@@ -153,7 +153,7 @@ export function toggleAddon(id: string, enabled: boolean): void {
 
 export function getAddonById(id: string): InstalledAddon | null {
   const list = getInstalledAddons();
-  return list.find((a) => a.id === id) ?? null;
+  return list.find((a) => a.id === id || a.name === id || a.id.includes(id) || id.includes(a.id)) ?? null;
 }
 
 export async function searchAddon(
@@ -326,8 +326,7 @@ export async function resolveAddonStreamInfo(
   const addonId = parts[1]!;
   const trackId = parts.slice(2).join(':');
 
-  const addons = getInstalledAddons();
-  const addon = addons.find((a) => a.id === addonId);
+  const addon = getAddonById(addonId);
   if (!addon) {
     throw new Error(`Addon with id '${addonId}' not found.`);
   }
