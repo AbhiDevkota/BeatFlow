@@ -1,5 +1,5 @@
-import { ChevronDown, Maximize, Minimize, Volume1, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ChevronDown, ChevronRight, Maximize, Minimize, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 import {
   BackwardIcon,
@@ -23,10 +23,11 @@ import { albumHref } from '@/components/music/links';
 import { MotionArtwork } from '@/components/music/MotionArtwork';
 import { VideoSurface } from '@/components/music/VideoSurface';
 import { useTrackMotion } from '@/data/apple/motionArt';
+import { useLyrics } from '@/lyrics/useLyrics';
 import { sizedArtwork } from '@/lib/artwork';
 import { isDesktopApp } from '@/lib/platform';
 import { useContentSettings } from '@/lib/contentSettings';
-import { usePlayer } from '@/state/player';
+import { getAudio, getPlayhead, usePlayer } from '@/state/player';
 import { useUi } from '@/state/ui';
 import { useHasVideo, useVideo } from '@/state/video';
 import { Credits, PageLink, pageLink } from './Lcd';
@@ -296,6 +297,80 @@ function PlayerActionRow({
   );
 }
 
+/**
+ * The phone's lyric preview (Spotify's now-playing card): the line being sung,
+ * in a quiet glass card above the seek line, and a tap opens the full lyrics.
+ * A skeleton holds the card's space while the lookup runs; when a track has no
+ * lyrics at all the card leaves without a trace.
+ */
+function LyricsPreview({ onOpen }: { onOpen: () => void }) {
+  const lyrics = useLyrics();
+  const result = lyrics.data;
+  // Only sung lines: during an instrumental stretch the last one keeps showing.
+  const lines = useMemo(() => result?.lines.filter((l) => l.text.trim()) ?? [], [result]);
+  const [index, setIndex] = useState(-1);
+
+  // The line at the playhead, found per frame but re-rendered only when it changes.
+  useEffect(() => {
+    if (!lines.length) return;
+    let frame = 0;
+    let last = -2;
+    const tick = () => {
+      const head = getPlayhead();
+      const sec = head?.sec ?? getAudio()?.currentTime ?? 0;
+      const ms = sec * 1000;
+      let lo = 0;
+      let hi = lines.length - 1;
+      let found = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (lines[mid]!.timeMs <= ms) {
+          found = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      if (found !== last) {
+        last = found;
+        setIndex(found);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [lines]);
+
+  if (!lines.length) {
+    return lyrics.isFetching ? (
+      <div className="mt-[clamp(16px,2.6vh,24px)] flex flex-col gap-2 rounded-[14px] bg-white/8 px-4 py-2.5">
+        <div className="h-2.5 w-14 animate-pulse rounded-full bg-white/20" />
+        <div className="h-3.5 w-3/5 animate-pulse rounded-full bg-white/20" />
+      </div>
+    ) : null;
+  }
+
+  // Unsynced lyrics have no "now": the card shows where the sheet starts.
+  const current = result?.synced ? (index >= 0 ? lines[Math.min(index, lines.length - 1)]! : lines[0]!) : lines[0]!;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Open lyrics"
+      className="group mt-[clamp(16px,2.6vh,24px)] flex w-full min-w-0 flex-col gap-1.5 rounded-[14px] bg-white/8 px-4 py-2.5 text-left backdrop-blur-md transition-[background-color,transform] duration-150 hover:bg-white/12 active:scale-[0.98]"
+    >
+      <span className="flex items-center gap-1 type-[600_10px/12px] uppercase tracking-widest text-white/45">
+        Lyrics
+        <ChevronRight size={12} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+      </span>
+      <span key={index} className="truncate animate-fade-in type-[500_15px/20px] text-white/90">
+        {current.text}
+      </span>
+    </button>
+  );
+}
+
 // Close, browser full screen, the column toggles and the speaker, in the corners.
 const chromeButton =
   'grid size-8 place-items-center rounded-full text-secondary transition-[background-color,color] duration-100 ease-in hover:bg-quinary hover:text-primary';
@@ -379,6 +454,8 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
   const extraControlsRef = useRef<HTMLDivElement>(null);
   const sideColumnRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  // The lyric preview's wrapper, faded out with the secondary controls on collapse.
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const phaseRef = useRef<'initial' | 'expanding' | 'expanded' | 'collapsing' | 'collapsed'>('initial');
   const activeAnims = useRef<Animation[]>([]);
@@ -850,6 +927,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     const actionsEl = titleActionsRef.current;
     const headerEl = headerRef.current;
     const sideEl = sideColumnRef.current;
+    const previewEl = previewRef.current;
     const sheetEl = sheetRef.current;
 
     // Cancel any active expand animations
@@ -1034,6 +1112,18 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     if (extraEl) {
       activeAnims.current.push(
         extraEl.animate(
+          [
+            { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+            { transform: 'translate3d(0, 16px, 0)', opacity: 0 },
+          ],
+          { duration: 180, easing: 'ease-out', fill: 'both' }
+        )
+      );
+    }
+
+    if (previewEl) {
+      activeAnims.current.push(
+        previewEl.animate(
           [
             { transform: 'translate3d(0, 0, 0)', opacity: 1 },
             { transform: 'translate3d(0, 16px, 0)', opacity: 0 },
@@ -1353,6 +1443,14 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
     </>
   );
 
+  /** The phone's lyric preview: narrow windows only, and only with no panel open. */
+  const previewSlot =
+    !wide && !column && !video ? (
+      <div ref={previewRef}>
+        <LyricsPreview onOpen={() => togglePanel('lyrics')} />
+      </div>
+    ) : null;
+
   return (
     <div
       ref={sheetRef}
@@ -1362,7 +1460,11 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           ? // With the panels paused the artwork has the left half to itself, so
             // it earns a little more room; the FLIP blooms it bigger and lower.
             '[--art:min(38vw,calc(100dvh-240px),560px)]'
-          : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
+          : column || video
+            ? '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
+            // With the panels paused the lyric preview joins the column (narrow
+            // windows): the artwork's budget pays for its card.
+            : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-420px),420px)]'
       }`}
       role="dialog"
       aria-modal="true"
@@ -1496,6 +1598,7 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           {/* The names + actions and the controls: beside the artwork while the
               panels are paused, under it once lyrics or Up Next is open. */}
           {!shifted && panelInfo}
+          {previewSlot}
           {!shifted && panelControls}
         </section>
 
