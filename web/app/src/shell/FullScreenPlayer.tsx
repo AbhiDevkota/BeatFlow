@@ -1874,11 +1874,15 @@ export function FullScreenPlayer({ open = true, onDismissed }: FullScreenPlayerP
           ? // With the panels paused the artwork has the left half to itself, so
             // it earns a little more room; the FLIP blooms it bigger and lower.
             '[--art:min(38vw,calc(100dvh-240px),560px)]'
-          : column || video
-            ? '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
-            // With the panels paused the lyric strip joins the column (narrow
-            // windows): its fixed 32px slot comes out of the artwork's budget.
-            : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-380px),420px)]'
+          : column
+            ? // When lyrics or playlist is open, the thumbnail decreases a bit so the
+              // artwork and controls fit comfortably in the left column.
+              '[--art:min(28vw,calc(100dvh-360px),420px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
+            : video
+              ? '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-340px),420px)]'
+              // With the panels paused the lyric strip joins the column (narrow
+              // windows): its fixed 32px slot comes out of the artwork's budget.
+              : '[--art:min(35vw,calc(100dvh-310px),520px)] max-md:[--art:min(86vw,calc(100dvh-380px),420px)]'
       }`}
       role="dialog"
       aria-modal="true"
