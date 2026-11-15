@@ -429,14 +429,18 @@ function StripEntryText({
           ? `rgba(255, 255, 255, ${STRIP_MUTED_ALPHA})`
           : `rgba(255, 255, 255, ${STRIP_UNSUNG_ALPHA})`;
   const animation = reduceAnim ? '' : mode === 'out' ? 'animate-lyric-strip-out' : e.animated ? 'animate-lyric-strip-in' : '';
+  const spanClass =
+    mode === 'out'
+      ? // The leaving line is not clipped to the arriving one's width; it
+        // slides off at its own width, as the strip's SizeTransform allows.
+        'absolute inset-y-0 left-0 flex w-max items-center whitespace-nowrap'
+      : 'max-w-full truncate';
 
   return (
     <span
       ref={mode === 'active' ? lineBoxRef : undefined}
       data-entry={mode === 'active' ? e.key : undefined}
-      className={`max-w-full truncate type-[500_16px/20px] ${
-        mode === 'out' ? 'absolute inset-y-0 left-0 flex items-center' : ''
-      } ${animation}`}
+      className={`type-[500_16px/20px] ${spanClass} ${animation}`}
       style={words.length ? undefined : { color }}
     >
       {words.length
@@ -549,11 +553,17 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
     const collect = () => {
       const box = lineBoxRef.current;
       const ent = entryRef.current;
-      wordEls.current =
-        box && ent?.kind === 'line' && ent.line?.words.length && box.dataset.entry === ent.key
-          ? Array.from(box.querySelectorAll<HTMLSpanElement>('[data-word]'))
-          : [];
-      wordModes.current = wordEls.current.map(() => null);
+      // Not committed yet (the entry was advanced this same frame): leave the
+      // flag up and retry on a later frame, or the sweep would die here.
+      if (!box || ent?.kind !== 'line' || box.dataset.entry !== ent.key) return;
+      const words = ent.line?.words ?? [];
+      if (words.length) {
+        wordEls.current = Array.from(box.querySelectorAll<HTMLSpanElement>('[data-word]'));
+        wordModes.current = wordEls.current.map(() => null);
+      } else {
+        wordEls.current = [];
+        wordModes.current = [];
+      }
       wordsStale.current = false;
     };
 
@@ -569,6 +579,12 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
       const ent = entryRef.current;
       const box = lineBoxRef.current;
       if (!ent || ent.kind !== 'line' || !ent.line || ent.index == null || !box) return;
+      if (box.dataset.entry !== ent.key) {
+        // The commit for this entry hasn't landed (it was advanced this same
+        // frame); draw on a later frame, once its words have been collected.
+        if (wordsStale.current) collect();
+        return;
+      }
       const alpha = dimOf(ent.index, ms);
       alphaRef.current = alpha;
       if (!ent.line.words.length) {
@@ -701,8 +717,9 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
 
   return (
     // The slot holds its height whatever the strip shows, so a track change
-    // never reflows the names above or the scrubber below.
-    <div className="h-8">
+    // never reflows the names above or the scrubber below. Nudged down 6px
+    // into the scrubber's dead space, as the Android strip is.
+    <div className="h-8 translate-y-1.5">
       <button
         type="button"
         onClick={onOpen}
@@ -712,8 +729,25 @@ function LyricsPreview({ onOpen }: { onOpen: () => void }) {
         {note && <InstrumentalNote className="size-4 shrink-0 text-white" />}
         {note && <span className="w-1.5 shrink-0" />}
         <span className="relative min-w-0">
-          {leavingShown && <StripEntryText entry={leavingShown} mode="out" trackKey={trackKey} reduceAnim={reduceAnim} />}
-          {active && <StripEntryText entry={active} mode="active" lineBoxRef={lineBoxRef} trackKey={trackKey} reduceAnim={reduceAnim} />}
+          {leavingShown && (
+            <StripEntryText
+              key={`out-${leavingShown.key}`}
+              entry={leavingShown}
+              mode="out"
+              trackKey={trackKey}
+              reduceAnim={reduceAnim}
+            />
+          )}
+          {active && (
+            <StripEntryText
+              key={active.key}
+              entry={active}
+              mode="active"
+              lineBoxRef={lineBoxRef}
+              trackKey={trackKey}
+              reduceAnim={reduceAnim}
+            />
+          )}
         </span>
         {active && (
           <>
