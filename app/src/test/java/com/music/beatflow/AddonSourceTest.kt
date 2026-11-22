@@ -9,6 +9,12 @@ import com.music.beatflow.data.sources.SourceKind
 import com.music.beatflow.data.sources.StreamRequest
 import com.music.beatflow.data.sources.addon.AddonClient
 import com.music.beatflow.playback.StreamContainer
+import com.music.beatflow.data.sources.SourceRegistry
+import com.music.beatflow.data.sources.TrackMatcher
+import com.music.beatflow.data.sources.addon.AddonAuth
+import com.music.beatflow.data.sources.addon.AddonException
+import com.music.beatflow.data.sources.addon.AddonQualityOption
+import com.music.beatflow.data.sources.addon.AddonUnavailable
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -322,6 +328,33 @@ class AddonSourceTest {
         // for, and not "LOSSLESS" either, because the addon enumerated the
         // words it understands and that is not one of them.
         assertEquals("lossless", url.queryParameter("quality"))
+    }
+
+    @Test
+    fun `a search for a known track sends its title and artist apart from q`() = runBlocking {
+        route("/search", json("""{"tracks":[]}"""))
+
+        AddonSource(config()).search(
+            "it might be you ian kiong",
+            limit = 5,
+            target = TrackMatcher.Target("It Might Be You", "Ian Kiong"),
+        )
+
+        val url = requestFor("/search")
+        assertEquals("it might be you ian kiong", url.queryParameter("q"))
+        assertEquals("It Might Be You", url.queryParameter("title"))
+        assertEquals("Ian Kiong", url.queryParameter("artist"))
+    }
+
+    @Test
+    fun `a typed search sends no title or artist`() = runBlocking {
+        route("/search", json("""{"tracks":[]}"""))
+
+        AddonSource(config()).search("it might be you", limit = 5)
+
+        val url = requestFor("/search")
+        assertNull(url.queryParameter("title"))
+        assertNull(url.queryParameter("artist"))
     }
 
     /**
