@@ -1502,7 +1502,6 @@
     <string name="update_kind_hotfix">עדכון תיקון</string>
     <string name="update_from_to">עודכן מ-v%1$s ל-v%2$s</string>
     <string name="changelog_title">יומן שינויים</string>
-    <string name="automix_overview">סקירת Automix</string>
     <string name="recognition_cancel">ביטול</string>
     <string name="recognition_tile_hint">זמזם או שיר</string>
     <string name="quick_tile_listening">מקשיב למוזיקה</string>

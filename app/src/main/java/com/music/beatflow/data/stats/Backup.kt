@@ -115,24 +115,6 @@ object Backup {
             context.contentResolver.openInputStream(source)
                 ?.use { readFrom(it) }
                 ?: error("Couldn't open that file")
-            val file = runCatching { json.decodeFromString(BackupFile.serializer(), text) }
-                .getOrElse { error("That doesn't look like a BeatFlow backup") }
-            require(file.app == APP_TAG) { "That backup is from another app" }
-            require(file.version <= SCHEMA_VERSION) {
-                "That backup was written by a newer version of BeatFlow"
-            }
-
-            ListeningStats.importAll(file.listening)
-            AppSettings.importPrefs(file.settings.mapValues { it.value.decoded() })
-            // Shares AppSettings' preference file, so it has already been
-            // overwritten by the line above — it just doesn't know yet.
-            SearchHistory.reload()
-            Summary(
-                months = file.listening.size,
-                settings = file.settings.size,
-                from = file.versionName,
-                at = file.exportedAt,
-            )
         }
     }
 
@@ -144,10 +126,10 @@ object Backup {
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun readFrom(input: InputStream): Summary = withContext(Dispatchers.IO) {
         val file = runCatching { json.decodeFromStream(BackupFile.serializer(), input) }
-            .getOrElse { error("That doesn't look like a BitChord backup") }
+            .getOrElse { error("That doesn't look like a BeatFlow backup") }
         require(file.app == APP_TAG) { "That backup is from another app" }
         require(file.version <= SCHEMA_VERSION) {
-            "That backup was written by a newer version of BitChord"
+            "That backup was written by a newer version of BeatFlow"
         }
 
         ListeningStats.importAll(file.listening)

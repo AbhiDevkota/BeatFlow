@@ -1465,7 +1465,6 @@
     <string name="update_kind_hotfix">Actualización correctiva</string>
     <string name="update_from_to">Actualizado de v%1$s a v%2$s</string>
     <string name="changelog_title">Historial de cambios</string>
-    <string name="automix_overview">Vista general de Automix</string>
     <string name="recognition_cancel">Cancelar</string>
     <string name="recognition_tile_hint">Tararea o canta</string>
     <string name="quick_tile_listening">Escuchando música</string>

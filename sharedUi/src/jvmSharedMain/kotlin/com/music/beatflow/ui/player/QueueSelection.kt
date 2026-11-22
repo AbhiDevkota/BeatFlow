@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.music.beatflow.data.model.QueueEntryIdentity
 import com.music.beatflow.data.model.Song
 import com.music.beatflow.sharedui.resources.*
-import com.music.beatflow.ui.icons.BitChordIcons
+import com.music.beatflow.ui.icons.BeatFlowIcons
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
@@ -172,14 +172,14 @@ internal fun QueueSelectionBar(
         ) {
             // Capped so the three actions stay grouped on tablets and unfolded foldables.
             Row(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                BulkActionButton(BitChordIcons.Plus, stringResource(Res.string.queue_add_to_playlist), enabled) {
+                BulkActionButton(BeatFlowIcons.Plus, stringResource(Res.string.queue_add_to_playlist), enabled) {
                     run { onAction(songs, QueueBulkAction.PLAYLIST) }
                 }
                 BulkActionButton(Icons.Rounded.Delete, stringResource(Res.string.queue_selection_remove), enabled) {
                     val identities = selectedQueueEntryIdentities(selected, timeline)
                     run { onRemoveSelected(identities); true }
                 }
-                BulkActionButton(BitChordIcons.Download, stringResource(Res.string.queue_download), enabled) {
+                BulkActionButton(BeatFlowIcons.Download, stringResource(Res.string.queue_download), enabled) {
                     run { onAction(songs, QueueBulkAction.DOWNLOAD) }
                 }
             }

@@ -336,7 +336,6 @@ internal fun rememberLyricsPicker(
                 }
                 val line = source.getOrNull(index) ?: return@forEachIndexed
                 val sub = subLines?.getOrNull(index)?.text
-                val window = if (synced) singWindow(source, index, chosen.getOrNull(position + 1)) else null
                 add(
                     LyricsShareLine(
                         text = line.text,

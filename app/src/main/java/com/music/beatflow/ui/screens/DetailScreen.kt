@@ -185,7 +185,6 @@ import com.music.beatflow.ui.theme.rememberArtworkPalette
 import com.music.beatflow.ui.graphics.FADE_CURVE_STOPS
 import com.music.beatflow.ui.graphics.smootherStep
 import com.music.beatflow.data.canvas.CanvasSource
-import com.music.beatflow.ui.icons.BitChordIcons
 import kotlin.math.roundToInt
 import java.util.Locale
 

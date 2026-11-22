@@ -105,7 +105,6 @@ import com.music.beatflow.ui.icons.BeatFlowIcons
 import com.music.beatflow.data.model.QueueTier
 import com.music.beatflow.data.model.Song
 import com.music.beatflow.playback.autoplaySectionStart
-import com.music.beatflow.ui.icons.BitChordIcons
 import com.music.beatflow.data.model.QueueEntryIdentity
 import com.music.beatflow.ui.AppUi
 import dev.chrisbanes.haze.HazeState

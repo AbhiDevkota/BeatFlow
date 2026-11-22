@@ -1,5 +1,8 @@
 package com.music.beatflow.ui.player
 
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.withFrameNanos
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
@@ -692,7 +695,7 @@ internal class LyricPlayhead(
      * reader moving the lyrics offset — which shifts every reading at once, and
      * without saying so would look like a reading gone wrong.
      */
-    val discontinuity: Long
+    override val discontinuity: Long
         get() = (position.sampledSeeks.toLong() shl 32) or (offsetMs.value.toLong() and 0xFFFF_FFFFL)
 
     fun reading(isPlaying: Boolean): LyricClockReading {

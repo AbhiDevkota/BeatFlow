@@ -864,3 +864,6 @@ object BeatFlowIcons {
     private const val AIRPLAY_WIDTH = 25.9668f + AIRPLAY_INSET * 2f
     private const val AIRPLAY_HEIGHT = 25.6348f + AIRPLAY_INSET * 2f
 }
+
+
+typealias BitChordIcons = BeatFlowIcons

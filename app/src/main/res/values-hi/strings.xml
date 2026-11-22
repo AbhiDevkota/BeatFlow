@@ -1496,7 +1496,6 @@
     <string name="update_kind_hotfix">हॉटफ़िक्स अपडेट</string>
     <string name="update_from_to">v%1$s से v%2$s तक अपडेट किया गया</string>
     <string name="changelog_title">परिवर्तन सूची</string>
-    <string name="automix_overview">ऑटोमिक्स अवलोकन</string>
     <string name="recognition_cancel">रद्द करें</string>
     <string name="recognition_tile_hint">गुनगुनाएँ या गाएँ</string>
     <string name="quick_tile_listening">संगीत सुन रहा है</string>

@@ -1432,7 +1432,6 @@
     <string name="update_kind_hotfix">Aggiornamento rapido</string>
     <string name="update_from_to">Aggiornato da v%1$s a v%2$s</string>
     <string name="changelog_title">Registro delle modifiche</string>
-    <string name="automix_overview">Panoramica di Automix</string>
     <string name="recognition_cancel">Annulla</string>
     <string name="recognition_tile_hint">Canticchia o canta</string>
     <string name="quick_tile_listening">In ascolto della musica</string>

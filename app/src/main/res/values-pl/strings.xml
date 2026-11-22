@@ -1533,7 +1533,6 @@
     <string name="update_kind_hotfix">Aktualizacja poprawkowa</string>
     <string name="update_from_to">Zaktualizowano z v%1$s do v%2$s</string>
     <string name="changelog_title">Lista zmian</string>
-    <string name="automix_overview">Przegląd Automix</string>
     <string name="recognition_cancel">Anuluj</string>
     <string name="recognition_tile_hint">Nuć lub śpiewaj</string>
     <string name="quick_tile_listening">Nasłuchiwanie muzyki</string>

@@ -1476,7 +1476,6 @@
     <string name="update_kind_hotfix">อัปเดตแก้ด่วน</string>
     <string name="update_from_to">อัปเดตจาก v%1$s เป็น v%2$s</string>
     <string name="changelog_title">บันทึกการเปลี่ยนแปลง</string>
-    <string name="automix_overview">ภาพรวม Automix</string>
     <string name="recognition_cancel">ยกเลิก</string>
     <string name="recognition_tile_hint">ฮัมหรือร้อง</string>
     <string name="quick_tile_listening">กำลังฟังเพลง</string>

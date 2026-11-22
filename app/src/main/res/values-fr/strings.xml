@@ -1494,7 +1494,6 @@
     <string name="update_kind_hotfix">Mise à jour corrective</string>
     <string name="update_from_to">Mise à jour de v%1$s à v%2$s</string>
     <string name="changelog_title">Journal des modifications</string>
-    <string name="automix_overview">Aperçu Automix</string>
     <string name="recognition_cancel">Annuler</string>
     <string name="recognition_tile_hint">Fredonnez ou chantez</string>
     <string name="quick_tile_listening">Écoute de la musique</string>

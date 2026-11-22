@@ -1450,7 +1450,6 @@
     <string name="update_kind_hotfix">Düzeltme güncellemesi</string>
     <string name="update_from_to">v%1$s sürümünden v%2$s sürümüne güncellendi</string>
     <string name="changelog_title">Değişiklik günlüğü</string>
-    <string name="automix_overview">Automix özeti</string>
     <string name="recognition_cancel">İptal</string>
     <string name="recognition_tile_hint">Mırıldan veya söyle</string>
     <string name="quick_tile_listening">Müzik dinleniyor</string>

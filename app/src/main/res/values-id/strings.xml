@@ -1470,7 +1470,6 @@
     <string name="update_kind_hotfix">Pembaruan perbaikan</string>
     <string name="update_from_to">Diperbarui dari v%1$s ke v%2$s</string>
     <string name="changelog_title">Log perubahan</string>
-    <string name="automix_overview">Ringkasan Automix</string>
     <string name="recognition_cancel">Batal</string>
     <string name="recognition_tile_hint">Dengo atau nyanyi</string>
     <string name="quick_tile_listening">Mendengarkan musik</string>

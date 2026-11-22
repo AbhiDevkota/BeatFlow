@@ -1493,7 +1493,6 @@
     <string name="update_kind_hotfix">Hotfix-Aktualisierung</string>
     <string name="update_from_to">Aktualisiert von v%1$s auf v%2$s</string>
     <string name="changelog_title">Änderungsprotokoll</string>
-    <string name="automix_overview">Automix-Übersicht</string>
     <string name="recognition_cancel">Abbrechen</string>
     <string name="recognition_tile_hint">Summen oder singen</string>
     <string name="quick_tile_listening">Musik wird erkannt</string>

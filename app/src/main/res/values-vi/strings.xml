@@ -1410,7 +1410,6 @@
     <string name="update_kind_hotfix">Bản cập nhật vá lỗi</string>
     <string name="update_from_to">Đã cập nhật từ v%1$s lên v%2$s</string>
     <string name="changelog_title">Nhật ký thay đổi</string>
-    <string name="automix_overview">Tổng quan Automix</string>
     <string name="recognition_cancel">Hủy</string>
     <string name="recognition_tile_hint">Ngâm nga hoặc hát</string>
     <string name="quick_tile_listening">Đang nghe nhạc</string>

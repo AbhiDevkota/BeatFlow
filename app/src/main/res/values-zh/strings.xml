@@ -1470,7 +1470,6 @@
     <string name="update_kind_hotfix">修复更新</string>
     <string name="update_from_to">已从 v%1$s 更新到 v%2$s</string>
     <string name="changelog_title">更新日志</string>
-    <string name="automix_overview">Automix 概览</string>
     <string name="recognition_cancel">取消</string>
     <string name="recognition_tile_hint">哼唱或唱歌</string>
     <string name="quick_tile_listening">正在聆听音乐</string>

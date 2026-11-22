@@ -1525,7 +1525,6 @@
     <string name="update_kind_hotfix">Экстренное обновление</string>
     <string name="update_from_to">Обновлено с v%1$s до v%2$s</string>
     <string name="changelog_title">Список изменений</string>
-    <string name="automix_overview">Обзор Automix</string>
     <string name="recognition_cancel">Отмена</string>
     <string name="recognition_tile_hint">Напевайте или пойте</string>
     <string name="quick_tile_listening">Поиск музыки</string>

@@ -28,7 +28,7 @@ internal interface PlayheadReading {
     val discontinuity: Long
 }
 
-private fun nanosToMs(nanos: Long): Double = nanos / 1_000_000.0
+internal fun nanosToMs(nanos: Long): Double = nanos / 1_000_000.0
 
 /**
  * The playhead, ticking every frame.

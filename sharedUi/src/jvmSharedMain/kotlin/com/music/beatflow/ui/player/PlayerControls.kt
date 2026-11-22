@@ -1,5 +1,15 @@
 package com.music.beatflow.ui.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.semantics.Role
+import com.music.beatflow.playback.PlaybackPosition
+import com.music.beatflow.ui.components.MenuFrostDark
+import com.music.beatflow.ui.components.liveMenuFrost
+import dev.chrisbanes.haze.HazeState
+
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Size
@@ -605,7 +615,7 @@ internal fun BestPartPill(
                 modifier = Modifier.padding(start = 12.dp, end = 15.dp, top = 7.dp, bottom = 7.dp),
             ) {
                 Icon(
-                    imageVector = BitChordIcons.MusicNote,
+                    imageVector = BeatFlowIcons.MusicNote,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(15.dp),
@@ -1465,7 +1475,7 @@ private fun rememberOutputGlyph(): OutputGlyph {
             // No active row is the phone too — the caption under the pill
             // says "This phone" in the same case. AirPlay rather than a phone:
             // on the phone itself the button's job is to send it elsewhere.
-            null, AudioOutputKind.PHONE -> OutputGlyph(BitChordIcons.AirPlay, PILL_OUTPUT_AIRPLAY_SIZE)
+            null, AudioOutputKind.PHONE -> OutputGlyph(BeatFlowIcons.AirPlay, PILL_OUTPUT_AIRPLAY_SIZE)
             AudioOutputKind.BLUETOOTH -> when (active.form) {
                 BluetoothForm.BUDS -> OutputGlyph(vectorResource(Res.drawable.ic_output_buds), PILL_OUTPUT_BUDS_SIZE)
                 BluetoothForm.SPEAKER -> OutputGlyph(vectorResource(Res.drawable.ic_output_speaker))

@@ -1471,7 +1471,6 @@
     <string name="update_kind_hotfix">ホットフィックス アップデート</string>
     <string name="update_from_to">v%1$s から v%2$s に更新</string>
     <string name="changelog_title">変更履歴</string>
-    <string name="automix_overview">Automix の概要</string>
     <string name="recognition_cancel">キャンセル</string>
     <string name="recognition_tile_hint">ハミングや歌</string>
     <string name="quick_tile_listening">音楽を聴いています</string>

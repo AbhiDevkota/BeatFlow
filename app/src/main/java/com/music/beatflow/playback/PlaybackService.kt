@@ -274,16 +274,16 @@ const val ACTION_QUEUE_DRAG = "com.music.beatflow.action.QUEUE_DRAG"
 const val EXTRA_QUEUE_DRAG_ACTIVE = "bitchord.queueDrag.active"
 
 /** Move an existing queue occurrence without resolving or copying its media source. */
-const val ACTION_QUEUE_MOVE_TO_USER = "com.music.bitchord.action.QUEUE_MOVE_TO_USER"
-const val EXTRA_QUEUE_MOVE_INDEX = "bitchord.queueMove.index"
-const val EXTRA_QUEUE_MOVE_ENTRY = "bitchord.queueMove.entry"
-const val EXTRA_QUEUE_MOVE_MEDIA = "bitchord.queueMove.media"
+const val ACTION_QUEUE_MOVE_TO_USER = "com.music.beatflow.action.QUEUE_MOVE_TO_USER"
+const val EXTRA_QUEUE_MOVE_INDEX = "beatflow.queueMove.index"
+const val EXTRA_QUEUE_MOVE_ENTRY = "beatflow.queueMove.entry"
+const val EXTRA_QUEUE_MOVE_MEDIA = "beatflow.queueMove.media"
 
 /**
  * Play a history row again from the queue screen, keeping later history as
  * history. Takes the same index/entry/media extras as [ACTION_QUEUE_MOVE_TO_USER].
  */
-const val ACTION_QUEUE_REPLAY_HISTORY = "com.music.bitchord.action.QUEUE_REPLAY_HISTORY"
+const val ACTION_QUEUE_REPLAY_HISTORY = "com.music.beatflow.action.QUEUE_REPLAY_HISTORY"
 
 /** A full first page for an explicitly requested station. */
 private const val INITIAL_STATION_TRACKS = 24
@@ -423,7 +423,7 @@ class PlaybackService : MediaLibraryService() {
         songs: List<Song>,
         source: QueueSource,
         continuation: String? = null,
-        cookie: String? = com.music.bitchord.data.innertube.Innertube.cookie,
+        cookie: String? = com.music.beatflow.data.innertube.Innertube.cookie,
     ): List<MediaItem> {
         if (songs.isEmpty()) return emptyList()
         val context = AutoBrowseContext(YtMusicRepository.SongPage(songs, continuation), cookie, source)
@@ -1131,7 +1131,7 @@ class PlaybackService : MediaLibraryService() {
                 if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
                     crossfade?.cancelAutoMixVisual()
                 }
-            }            }
+            }
             // Something started the phone's own player while a receiver is the
             // speaker — an internal path, since the session player's door
             // already sends a listener's play to the receiver. The phone goes
@@ -2184,7 +2184,7 @@ class PlaybackService : MediaLibraryService() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w("BitChord", "AutoMix artwork prefetch failed", e)
+                Log.w("BeatFlow", "AutoMix artwork prefetch failed", e)
             }
         }
     }
@@ -9770,7 +9770,7 @@ class PlaybackService : MediaLibraryService() {
                         if (songs.isNotEmpty()) {
                             likedMutex.withLock {
                                 val page = cachedLikedPage
-                                if (cachedLikedCookie != com.music.bitchord.data.innertube.Innertube.cookie) emptyList()
+                                if (cachedLikedCookie != com.music.beatflow.data.innertube.Innertube.cookie) emptyList()
                                 else autoBrowseItems(
                                     page?.songs ?: songs,
                                     QueueSource(getString(R.string.auto_liked), PlaybackSourceType.BROWSE, YtMusicRepository.LIKED_MUSIC),
@@ -9840,7 +9840,7 @@ class PlaybackService : MediaLibraryService() {
                         parentId.startsWith("playlist:") || parentId.startsWith("browse:") -> {
                             val id = parentId.substringAfter(':')
                             val browseId = if (parentId.startsWith("playlist:")) "VL$id" else id
-                            val cookie = com.music.bitchord.data.innertube.Innertube.cookie
+                            val cookie = com.music.beatflow.data.innertube.Innertube.cookie
                             val songPage = withTimeoutOrNull(2500L) {
                                 YtMusicRepository.browseSongs(browseId).getOrNull()
                                     ?: if (browseId != id) YtMusicRepository.browseSongs(id).getOrNull() else null
@@ -10065,7 +10065,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 val bounded = withContext(Dispatchers.Main) {
                     if (context.cookie != null) {
-                        check(context.cookie == com.music.bitchord.data.innertube.Innertube.cookie) {
+                        check(context.cookie == com.music.beatflow.data.innertube.Innertube.cookie) {
                             "Account changed; reopen the folder"
                         }
                     }
@@ -10122,7 +10122,7 @@ class PlaybackService : MediaLibraryService() {
             val context = synchronized(autoBrowseContexts) { autoBrowseContexts[parts[1]] }
             if (context == null) throw ExpiredBrowseContextException()
             if (context.cookie != null) {
-                require(context.cookie == com.music.bitchord.data.innertube.Innertube.cookie) {
+                require(context.cookie == com.music.beatflow.data.innertube.Innertube.cookie) {
                     "Account changed; reopen the folder"
                 }
             }

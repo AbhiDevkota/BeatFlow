@@ -517,7 +517,7 @@ internal fun LandscapeCredits(
             if (signedIn || song.localUri != null) {
                 val liked = likeStatus == LikeStatus.LIKE
                 CircleGlyph(
-                    icon = if (liked) BitChordIcons.StarFilled else BitChordIcons.Star,
+                    icon = if (liked) BeatFlowIcons.StarFilled else BeatFlowIcons.Star,
                     contentDescription = stringResource(
                         if (liked) Res.string.remove_from_liked else Res.string.like,
                     ),

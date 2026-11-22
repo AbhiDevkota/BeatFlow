@@ -1331,7 +1331,6 @@
     <string name="update_kind_hotfix">핫픽스 업데이트</string>
     <string name="update_from_to">v%1$s에서 v%2$s(으)로 업데이트됨</string>
     <string name="changelog_title">변경 로그</string>
-    <string name="automix_overview">Automix 개요</string>
     <string name="recognition_cancel">취소</string>
     <string name="recognition_tile_hint">흥얼거리거나 노래하기</string>
     <string name="quick_tile_listening">음악을 듣고 있습니다</string>

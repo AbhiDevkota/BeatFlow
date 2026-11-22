@@ -110,7 +110,7 @@ import com.music.beatflow.ui.tv.components.tvPlatter
 import com.music.beatflow.ui.tv.theme.TvGlass
 import com.music.beatflow.ui.tv.theme.TvType
 import com.music.beatflow.data.canvas.CanvasSource
-import com.music.beatflow.ui.icons.BitChordIcons
+import com.music.beatflow.ui.icons.BeatFlowIcons
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import java.util.Locale
