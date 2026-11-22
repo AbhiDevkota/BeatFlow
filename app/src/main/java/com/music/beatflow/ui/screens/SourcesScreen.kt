@@ -113,7 +113,6 @@ fun SourcesScreen(
     onEditSource: (SourceConfig) -> Unit,
     /** Asks the activity to open an addon's quality list — raised for the same reason as [onEditSource]. */
     onChooseSourceQuality: (SourceConfig) -> Unit,
-    /** Asks the activity to explain an addon's "Outdated addon" line — raised for the same reason. */
     /**
      * Asks the activity to open the WebDAV editor — raised for the same
      * reason as [onEditSource]: the frosted alert cannot be drawn from inside
@@ -244,8 +243,6 @@ fun SourcesScreen(
                         // today".
                         skippedByQuality = config.enabled && !ceiling.permits(config.kind),
                         awaitingOutput = if (config.enabled && config.awaitsLosslessOutput) losslessOutput else null,
-                        // Read off the stored manifest, so it shows before the
-                        // probe below answers, and on a server that is down.
                         onMetered = metered == true,
                         ceiling = ceiling,
                         // Anything the user configured is theirs to edit or
@@ -767,15 +764,12 @@ private fun SourceRow(
     health: SourceHealth?,
     onClick: (() -> Unit)?,
     onChooseQuality: () -> Unit,
-    /** Explains the "Outdated addon" line, which only an addon with [needsUpdate] shows. */
     /** Null for a source that cannot be switched off, which gets a label instead. */
     onToggle: ((Boolean) -> Unit)?,
     /** On, but skipped by the ceiling the current connection is set to. */
     skippedByQuality: Boolean = false,
     /** On, but its addon needs a lossless output and this is what is connected instead. Null when not waiting. */
     awaitingOutput: LosslessOutput.State? = null,
-    /** An addon that is out of date (no `bitchordAuth` in its manifest). Still used; flagged on a line of its own. */
-    needsUpdate: Boolean = false,
     /** Which of the two ceilings [ceiling] is, so the row can name it. */
     onMetered: Boolean = false,
     ceiling: AudioQuality = AudioQuality.LOSSLESS,

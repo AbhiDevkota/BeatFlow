@@ -26,6 +26,7 @@ import com.music.beatflow.data.model.NOTIFICATION_ART_PX
 import com.music.beatflow.data.model.PLAYER_ART_PX
 import com.music.beatflow.data.model.ROW_ART_PX
 import com.music.beatflow.data.model.artworkAt
+import com.music.beatflow.data.model.PLAYER_ART_MEMORY_CACHE_KEY_EXTRA
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -302,6 +303,11 @@ internal object MediaWidgetArt {
             // hint and passes through untouched.
             .data(url.artworkAt(px) ?: url)
             .size(px)
+            .apply {
+                if (px == PLAYER_ART_PX) {
+                    memoryCacheKeyExtra(PLAYER_ART_MEMORY_CACHE_KEY_EXTRA, px.toString())
+                }
+            }
             .allowHardware(false) // the blur below reads pixels
             .build()
         val result = runCatching { SingletonImageLoader.get(context).execute(request) }.getOrNull()

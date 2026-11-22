@@ -120,10 +120,14 @@ fun PlayerDrawer(
     modifier: Modifier = Modifier,
     /** Air between the title and whatever the drawer opens with. */
     titleGap: Dp = 14.dp,
+    /**
+     * The tallest the drawer grows before its rows scroll. Most drawers are a
+     * list and want the cap; one whose actions sit at the bottom — the lyrics
+     * share — asks for more so they are on screen without a scroll.
+     */
+    maxHeight: Dp = 560.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val reduceDynamicBlur by PlayerSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val frost = LocalPlayerFrost.current
 
     // How far the drawer has been dragged down, in pixels. Released, it either
     // springs back or goes — see [DISMISS_DRAG_FRACTION].
@@ -214,7 +218,7 @@ fun PlayerDrawer(
             modifier = Modifier
                 // Capped so a phone full of rows scrolls inside the drawer
                 // rather than growing one into a full-screen page.
-                .heightIn(max = 560.dp)
+                .heightIn(max = maxHeight)
                 // Capped before the fill, so [Modifier.fillMaxWidth] fills to
                 // the cap rather than to the window. Centred by the parent's
                 // own BottomCenter alignment once it is narrower.
@@ -223,18 +227,9 @@ fun PlayerDrawer(
                 .onSizeChanged { height = it.height }
                 .offset { IntOffset(0, offset.roundToInt()) }
                 .clip(DRAWER_SHAPE)
-                .then(
-                    // The ⋯ menu's frost, so the drawers and the menu read as one
-                    // material over the player — its own where the player is
-                    // recorded for it, else the same look through the haze.
-                    when {
-                        reduceDynamicBlur -> Modifier.background(MenuFrostDark)
-                        frost != null -> with(frost) {
-                            Modifier.frostPanel(DRAWER_SHAPE, MenuFrostDark.copy(alpha = MENU_FROST_ALPHA))
-                        }
-                        else -> Modifier.liveMenuFrost(hazeState, MenuFrostDark)
-                    }
-                )
+                // The ⋯ menu's frost, so the drawers and the menu read as one
+                // material over the player — see [playerMenuSurface].
+                .playerMenuSurface(DRAWER_SHAPE, hazeState)
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() },

@@ -22,6 +22,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.EnterTransition
@@ -63,6 +64,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -76,6 +78,8 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Upgrade
 import com.music.beatflow.data.listentogether.ServerConnectionState
+import com.music.beatflow.ui.haptics.Haptic
+import com.music.beatflow.ui.haptics.rememberHaptics
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -97,6 +101,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -154,6 +159,7 @@ import com.music.beatflow.data.model.UserPlaylist
 import com.music.beatflow.data.model.EntityType
 import com.music.beatflow.data.model.SearchHistoryEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import com.music.beatflow.data.model.durationMillis
 import com.music.beatflow.data.scrobbling.LastFM
@@ -174,6 +180,10 @@ import com.music.beatflow.ui.screens.EqualizerPresetPage
 import com.music.beatflow.ui.screens.SettingsChoicePage
 import com.music.beatflow.ui.components.SpotifyImportAlert
 import com.music.beatflow.ui.screens.WearOsScreen
+import com.music.beatflow.ui.screens.DriveBackupScreen
+import com.music.beatflow.ui.screens.DriveDevicesScreen
+import com.music.beatflow.ui.screens.DriveBackupAlerts
+import com.music.beatflow.ui.screens.DriveBackupAlertsHost
 import com.music.beatflow.ui.screens.AccountAndScrobblingScreen
 import com.music.beatflow.ui.screens.DiscordDialog
 import com.music.beatflow.ui.screens.DiscordDialogHost
@@ -211,6 +221,13 @@ import com.music.beatflow.playback.autoplayEnabledFor
 import com.music.beatflow.playback.autoplaySectionStart
 import com.music.beatflow.playback.beginRadioQueue
 import com.music.beatflow.playback.commitRadioQueue
+import com.music.beatflow.playback.moveQueueEntryToUser
+import com.music.beatflow.playback.replayFromHistory
+import com.music.beatflow.playback.QueueScreenUndo
+import com.music.beatflow.playback.removeQueueItemWithUndo
+import com.music.beatflow.playback.removeQueueEntriesWithUndo
+import com.music.beatflow.playback.clearUserQueueWithUndo
+import com.music.beatflow.playback.undoQueueEdit
 import com.music.beatflow.playback.fromAutoplay
 import com.music.beatflow.playback.hasYouTubeOriginal
 import com.music.beatflow.playback.loadAutoplayTracks
@@ -238,6 +255,7 @@ import com.music.beatflow.ui.components.ConfirmationAlert
 import com.music.beatflow.ui.components.InfoAlert
 import com.music.beatflow.ui.components.DownloadManagerPage
 import com.music.beatflow.ui.components.PlaylistPickerSheet
+import com.music.beatflow.ui.components.QueuePlaylistPicker
 import com.music.beatflow.ui.components.ReorderPlaylistPage
 import com.music.beatflow.ui.components.LongPressOrigin
 import com.music.beatflow.ui.components.MenuAnchor
@@ -306,6 +324,9 @@ import com.music.beatflow.data.model.TopPickKind
 import com.music.beatflow.data.model.TopPickMood
 import com.music.beatflow.ui.screens.MoodGridPage
 import com.music.beatflow.ui.player.NowPlayingScreen
+import com.music.beatflow.ui.player.rememberMiniAutoMixArtwork
+import com.music.beatflow.ui.player.QueueBulkAction
+import kotlinx.coroutines.CompletableDeferred
 import com.music.beatflow.ui.player.MusicVideoEngine
 import com.music.beatflow.ui.player.PlayerSheetMotion
 import androidx.compose.ui.geometry.Offset
@@ -348,6 +369,7 @@ import com.music.beatflow.data.toGroup
 import com.music.beatflow.data.settings.LibraryViewType
 import com.music.beatflow.data.settings.LocalMusicSort
 import com.music.beatflow.ui.screens.HomeScreen
+import com.music.beatflow.ui.screens.MixesScreen
 import com.music.beatflow.ui.screens.LibraryGridPage
 import com.music.beatflow.ui.screens.LibraryScreen
 import com.music.beatflow.ui.screens.MoodGenrePlaylistsScreen
@@ -388,11 +410,27 @@ private const val TOP_FADE_RAMP = 0.3f
 
 private const val INITIAL_RADIO_TRACKS = 24
 
+/** Duration of the smooth scroll-to-top animation in milliseconds. */
+private const val SCROLL_TO_TOP_DURATION_MS = 550
+
+/** Number of items above which we treat a list as "far" and do a bounded jump near the top. */
+private const val FAR_LIST_THRESHOLD = 15
+
 internal fun shouldSkipAfterDislike(
     previousStatus: LikeStatus,
     targetVideoId: String,
     currentVideoId: String?,
 ): Boolean = previousStatus != LikeStatus.DISLIKE && targetVideoId == currentVideoId
+
+/**
+ * [shown] keeps [page]'s own order: every entry is the page's, in the page's
+ * sequence, though a search may have left some out. A sort breaks that, and
+ * then the page snapshot can't stand in for the list on screen (#1141).
+ */
+internal fun inPageOrder(shown: List<String>, page: List<String>): Boolean {
+    val rest = page.iterator()
+    return shown.all { key -> rest.asSequence().any { it == key } }
+}
 
 
 class MainActivity : AppCompatActivity() {
@@ -649,6 +687,10 @@ private fun BeatFlowApp(
     var showReplayShare by rememberSaveable { mutableStateOf(false) }
     /** Which story card the share sheet is for, or null for the whole Replay. */
     var replaySharePage by rememberSaveable { mutableStateOf<ReplayStoryPage?>(null) }
+    // The Replay year story, opened from its button on Home, and the card of it
+    // the share sheet is up for. Apart from the ordinary Replay's, because the
+    // year story is drawn from a calendar year rather than the page's period.
+    var yearStoryOpen by rememberSaveable { mutableStateOf(false) }
     var showSpotifyCanvasAuth by remember { mutableStateOf(false) }
 
     // Hosted here rather than inside SourcesScreen so its frosted card has
@@ -658,11 +700,11 @@ private fun BeatFlowApp(
     // and the mini player, like every other alert in the app.
     var editingSource by remember { mutableStateOf<SourceConfig?>(null) }
     var choosingSourceQuality by remember { mutableStateOf<SourceConfig?>(null) }
-    /** An addon whose "Outdated addon" line was tapped; see [SourceConfig.needsAddonUpdate]. */
-    var explainingOutdatedAddon by remember { mutableStateOf<SourceConfig?>(null) }
     var confirmJioSaavn by remember { mutableStateOf(false) }
     var confirmBitPerfect by remember { mutableStateOf<BitPerfectMode?>(null) }
     var confirmFixedVolume by remember { mutableStateOf(false) }
+    // Google Drive backup's questions, asked in the frosted alert like the rest.
+    val driveAlerts = remember { DriveBackupAlerts() }
     /** An addon search row tapped while the quality setting skips its addon; see [AddonBlockedAlert]. */
     var blockedAddonSong by remember { mutableStateOf<com.music.beatflow.data.model.Song?>(null) }
     /** An addon a download just went ahead without, and why; see [SourceRegistry.addonsLeftOutOfDownloads]. */
@@ -701,6 +743,8 @@ private fun BeatFlowApp(
      * question has to be answered by whoever opened the menu.
      */
     var menuFromPlayer by remember { mutableStateOf(false) }
+    /** Whether the track menu was opened from a row in the player's queue. */
+    var menuFromQueue by remember { mutableStateOf(false) }
     /** Whether the track menu was opened from the History screen. */
     var menuFromHistory by remember { mutableStateOf(false) }
     /**
@@ -736,6 +780,7 @@ private fun BeatFlowApp(
     /** Holding a row anywhere but the player — the menu without the player's rows. */
     val openSongMenu: (Song) -> Unit = { song ->
         menuFromPlayer = false
+        menuFromQueue = false
         songMenuOrigin = LongPressOrigin.consume()
         songMenuAnchor = MenuAnchor.consume()
         songActions = song
@@ -748,6 +793,10 @@ private fun BeatFlowApp(
     // Separate from [songActions] so the menu can close behind it — the picker
     // is the next step, not a second sheet stacked on the first.
     var playlistTarget by remember { mutableStateOf<Song?>(null) }
+    // The album whose complete track list is being added to selected playlists.
+    var albumPlaylistTarget by remember { mutableStateOf<BrowseTarget?>(null) }
+    var queuePlaylistSongs by remember { mutableStateOf<List<Song>?>(null) }
+    var queuePlaylistCompletion by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
     // The picker opened from the Library tab, where there is no track and
     // creating the playlist is the whole errand.
     var creatingPlaylist by remember { mutableStateOf(false) }
@@ -918,6 +967,7 @@ private fun BeatFlowApp(
     val results by viewModel.results.collectAsStateWithLifecycle()
     val resultsQuery by viewModel.resultsQuery.collectAsStateWithLifecycle()
     val exploreState by viewModel.explore.collectAsStateWithLifecycle()
+    val mixesState by viewModel.mixes.collectAsStateWithLifecycle()
     val selectedMoodGenre by viewModel.selectedMoodGenre.collectAsStateWithLifecycle()
     val moodGenreShelves by viewModel.moodGenreShelves.collectAsStateWithLifecycle()
     val libraryState by viewModel.library.collectAsStateWithLifecycle()
@@ -1120,6 +1170,7 @@ private fun BeatFlowApp(
     }
     val controller = rememberMediaController()
     val player = rememberPlayerState(controller)
+    val queueUndo by QueueScreenUndo.notice.collectAsStateWithLifecycle()
     // Song recognition listens to the room, so anything this device was playing
     // has to stop first. Only a take that actually paused playback resumes on
     // cancel; a match leaves it paused while the Search tab opens.
@@ -1184,6 +1235,13 @@ private fun BeatFlowApp(
     val controlsLocked = partyState.controlsLocked
     var queueNotice by remember { mutableStateOf<QueueActionNotice?>(null) }
     var queueNoticeId by remember { mutableIntStateOf(0) }
+    var queueUndoNotice by remember { mutableStateOf<QueueActionNotice?>(null) }
+    LaunchedEffect(queueUndo) {
+        queueUndoNotice = queueUndo?.let { notice ->
+            queueNoticeId += 1
+            QueueActionNotice(queueNoticeId, notice.message)
+        }
+    }
     val showQueueNotice: (String) -> Unit = { message ->
         queueNoticeId += 1
         queueNotice = QueueActionNotice(queueNoticeId, message)
@@ -1296,9 +1354,11 @@ private fun BeatFlowApp(
     val libraryShowAllGridState = rememberLazyGridState()
     val moodsGridState = rememberLazyGridState()
     val searchListState = rememberLazyListState()
+    val mixesListState = rememberLazyListState()
     val currentListState = when (selectedTab) {
         TAB_HOME -> homeListState
         TAB_EXPLORE -> if (selectedMoodGenre == null) exploreListState else moodGenreListState
+        TAB_RADIO -> mixesListState
         TAB_LIBRARY -> libraryListState
         else -> searchListState
     }
@@ -1308,12 +1368,14 @@ private fun BeatFlowApp(
     val homePull = rememberPullToRefreshState()
     val explorePull = rememberPullToRefreshState()
     val libraryPull = rememberPullToRefreshState()
+    val mixesPull = rememberPullToRefreshState()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val currentFeed = when {
         route != null || detail != null -> null
         selectedTab == TAB_HOME -> MainViewModel.Feed.HOME
         selectedTab == TAB_EXPLORE -> MainViewModel.Feed.EXPLORE
         selectedTab == TAB_LIBRARY -> MainViewModel.Feed.LIBRARY
+        selectedTab == TAB_RADIO -> MainViewModel.Feed.MIXES
         else -> null
     }
     // The lead shelf is listening history, so opening Home after playing
@@ -1324,11 +1386,17 @@ private fun BeatFlowApp(
         // was last fetched is a change to exactly this page.
         if (currentFeed == MainViewModel.Feed.LIBRARY) viewModel.onLibraryShown()
     }
+    // Keyed on the account too: the mixes are one listener's, and a sign-in
+    // or switch while the page is open is a different set of them.
+    LaunchedEffect(currentFeed, signedIn, account) {
+        if (currentFeed == MainViewModel.Feed.MIXES) viewModel.onMixesShown()
+    }
 
     val currentPull = when (currentFeed) {
         MainViewModel.Feed.HOME -> homePull
         MainViewModel.Feed.EXPLORE -> explorePull
         MainViewModel.Feed.LIBRARY -> libraryPull
+        MainViewModel.Feed.MIXES -> mixesPull
         null -> null
     }
     val scrolled by remember(currentListState) {
@@ -1408,16 +1476,18 @@ private fun BeatFlowApp(
     val playLabel = stringResource(R.string.play)
     val exploreLabel = stringResource(R.string.explore)
     val libraryLabel = stringResource(R.string.library)
+    val radioLabel = stringResource(R.string.radio)
     val searchLabel = stringResource(R.string.search)
     val historyLabel = stringResource(R.string.history)
     val replayLabel = stringResource(R.string.replay)
     val queueLabel = stringResource(R.string.queue)
     val sharedLinkLabel = stringResource(R.string.shared_link)
     val openedFileLabel = stringResource(R.string.opened_file)
-    val tabs = remember(homeLabel, exploreLabel, libraryLabel, searchLabel) {
+    val tabs = remember(homeLabel, exploreLabel, radioLabel, libraryLabel, searchLabel) {
         listOf(
             BottomTab(homeLabel, BeatFlowIcons.Home),
             BottomTab(exploreLabel, BeatFlowIcons.TabExplore),
+            BottomTab(radioLabel, BeatFlowIcons.TabRadio),
             BottomTab(libraryLabel, BeatFlowIcons.TabLibrary),
             BottomTab(searchLabel, BeatFlowIcons.TabSearch),
         )
@@ -2499,6 +2569,38 @@ private fun BeatFlowApp(
         startDownload(listOf(withDuration), null)
     }
 
+    val performQueueBulkAction: suspend (List<Song>, QueueBulkAction) -> Boolean = { songs, action ->
+        try {
+            when (action) {
+                QueueBulkAction.PLAYLIST -> if (queuePlaylistSongs != null) false else {
+                    val completion = CompletableDeferred<Boolean>()
+                    queuePlaylistCompletion = completion
+                    queuePlaylistSongs = songs
+                    try {
+                        completion.await()
+                    } finally {
+                        if (queuePlaylistCompletion === completion) {
+                            queuePlaylistCompletion = null
+                            queuePlaylistSongs = null
+                        }
+                    }
+                }
+                QueueBulkAction.DOWNLOAD -> {
+                    val requested = songs.filter { it.localUri == null }.distinctBy { it.videoId }
+                    if (requested.isEmpty()) {
+                        Toast.makeText(context, R.string.already_downloaded, Toast.LENGTH_SHORT).show()
+                    } else startDownload(requested, null)
+                    true
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Toast.makeText(context, R.string.failed, Toast.LENGTH_SHORT).show()
+            false
+        }
+    }
+
     // Content padding leaves room for the frosted bar above and the tab bar
     // (plus mini player) below, so nothing is ever trapped under the glass.
     //
@@ -2536,7 +2638,28 @@ private fun BeatFlowApp(
     // See [rememberReplayState].
     val replayOpen = route == AppRoute.Replay || replayStory != null || showReplayShare ||
         (selectedTab == TAB_LIBRARY && detail == null && route == null)
-    val (replay, setReplayPeriod) = rememberReplayState(replayOpen)
+    val replayPageOpen = replayEntryId != null || replayStory != null || showReplayShare
+    val (replay, setReplayPeriod) = rememberReplayState(replayOpen, replayPageOpen)
+    // The year the Home button offers. Read only while Home or the story is up.
+    val replayYear = com.music.beatflow.ui.replay.year.rememberReplayYear(
+        active = selectedTab == TAB_HOME || yearStoryOpen,
+    )
+    val replayYearDescription = replayYear?.let {
+        stringResource(R.string.replay_year_open, it.year.toString())
+    }
+    val replayYearBadge = remember(replayYear, replayYearDescription) {
+        replayYear?.let { year ->
+            com.music.beatflow.ui.screens.ReplayYearBadge(
+                year = year.year,
+                artworkUrl = year.data.summary.songs.firstOrNull()?.song?.thumbnailUrl,
+                contentDescription = replayYearDescription.orEmpty(),
+                onOpen = { yearStoryOpen = true },
+            )
+        }
+    }
+    // The story has its own soundtrack: whatever was playing stops for it, and
+    // stays stopped after, rather than coming back in under the last card.
+    LaunchedEffect(yearStoryOpen) { if (yearStoryOpen) controller?.pause() }
     val replayCards = remember(replay.summary) {
         replay.summary?.takeUnless { it.isEmpty }?.cards(context).orEmpty()
     }
@@ -2627,6 +2750,12 @@ private fun BeatFlowApp(
             },
             onNext = { controller?.seekToNextMediaItem() },
             onPrevious = { controller?.seekToPrevious() },
+            previousRestarts = {
+                controller?.let {
+                    it.currentPosition > it.maxSeekToPreviousPosition || !it.hasPreviousMediaItem()
+                } ?: true
+            },
+            currentPlaybackSong = { controller?.currentMediaItem?.toSong() },
             onBlockedControl = showHostOnlyNotice,
             onSeekFraction = { fraction ->
                 controller?.let { player ->
@@ -2711,17 +2840,64 @@ private fun BeatFlowApp(
                     // its seekTo override); editing the queue from here would
                     // round-trip every item through the controller and lose
                     // their bounded-window metadata.
-                    c.seekTo(index, 0L)
-                    c.play()
+                    val historySong = player.queue.getOrNull(index)
+                        ?.takeIf { index < c.currentMediaItemIndex }
+                    if (historySong == null) {
+                        c.seekTo(index, 0L)
+                        c.play()
+                    } else {
+                        // A history row plays again at the playhead, so what was
+                        // played after it stays history rather than coming back
+                        // as upcoming. The seek is the service's fallback.
+                        scope.launch {
+                            if (!c.replayFromHistory(index, historySong)) c.seekTo(index, 0L)
+                            c.play()
+                        }
+                    }
                 }
             },
-            onRemoveFromQueue = { controller?.removeMediaItem(it) },
+            onRemoveFromQueue = { index ->
+                val queueSong = player.queue.getOrNull(index)
+                val c = controller
+                if (c != null && queueSong != null) scope.launch { c.removeQueueItemWithUndo(index, queueSong) }
+            },
+            onQueueSwipeToQueue = { index, queueSong -> controller?.moveQueueEntryToUser(index, queueSong) ?: false },
+            onQueueBulkAction = performQueueBulkAction,
+            onQueueRemoveEntries = { entries ->
+                controller?.removeQueueEntriesWithUndo(entries)
+                Unit
+            },
+            onQueueAddAllToPlaylist = { songs ->
+                scope.launch { performQueueBulkAction(songs, QueueBulkAction.PLAYLIST) }
+            },
+            queueUndoNotice = { queueHaze ->
+                QueueActionNoticeHost(
+                    notice = queueUndoNotice,
+                    hazeState = queueHaze,
+                    modifier = Modifier.navigationBarsPadding(),
+                    actionLabel = stringResource(R.string.queue_undo_action),
+                    onAction = {
+                        val token = queueUndo?.token
+                        val c = controller
+                        if (c != null && token != null) scope.launch { c.undoQueueEdit(token) }
+                    },
+                )
+            },
             onMoveInQueue = { from, to -> controller?.moveMediaItem(from, to) },
             onQueueDragActiveChange = { active -> controller?.setQueueDragActive(active) },
+            onQueueSongMenu = { _, queueSong ->
+                menuFromQueue = true
+                menuFromPlayer = true
+                songMenuOrigin = LongPressOrigin.consume()
+                songMenuAnchor = MenuAnchor.consume()
+                songActions = queueSong
+                if (!AppSettings.reduceDynamicBlur.value && !playerLiveCanvas) playerBackdrop.capture()
+            },
             // The enriched copy, not player.song — otherwise the menu
             // hides the album and artist rows even once their browse
             // ids have been resolved.
             onOpenMenu = {
+                menuFromQueue = false
                 menuFromPlayer = true
                 songMenuOrigin = null
                 songMenuAnchor = MenuAnchor.consume()
@@ -2846,7 +3022,7 @@ private fun BeatFlowApp(
             onClearQueue = {
                 // Keep what's playing and context/autoplay; drop user-queued tracks.
                 controller?.let { c ->
-                    QueueCoordinator.clearUserQueue(c)
+                    scope.launch { c.clearUserQueueWithUndo() }
                 }
             },
         )
@@ -2901,7 +3077,6 @@ private fun BeatFlowApp(
         BackHandler(enabled = discordDialog != null) { discordDialog = null }
         BackHandler(enabled = editingSource != null) { editingSource = null }
         BackHandler(enabled = choosingSourceQuality != null) { choosingSourceQuality = null }
-        BackHandler(enabled = explainingOutdatedAddon != null) { explainingOutdatedAddon = null }
         BackHandler(enabled = editingPartyServer) { editingPartyServer = false }
         BackHandler(enabled = editingSignatureApi) { editingSignatureApi = false }
 
@@ -3144,6 +3319,20 @@ private fun BeatFlowApp(
                             )
                         } else if (pageRoute == AppRoute.WearOs) {
                             WearOsScreen(contentPadding = listPadding)
+                        } else if (pageRoute == AppRoute.DriveBackup) {
+                            DriveBackupScreen(
+                                contentPadding = listPadding,
+                                onOpenDevices = { navigator.push(AppRoute.DriveDevices) },
+                                onConfirmDisconnect = { driveAlerts.disconnect = true },
+                                onConfirmRemove = { driveAlerts.remove = it },
+                                onRename = { driveAlerts.renaming = it },
+                            )
+                        } else if (pageRoute == AppRoute.DriveDevices) {
+                            DriveDevicesScreen(
+                                contentPadding = listPadding,
+                                onConfirmRestore = { driveAlerts.restore = it },
+                                onDone = { navigator.pop() },
+                            )
                         } else if (pageRoute == AppRoute.ListenTogether) {
                             ListenTogetherScreen(
                                 signedIn = signedIn,
@@ -3198,6 +3387,7 @@ private fun BeatFlowApp(
                                     replayLandingPage = ReplayStoryPage.INTRO
                                     navigator.push(AppRoute.Replay)
                                 },
+                                onDriveBackup = { navigator.push(AppRoute.DriveBackup) },
                                 onLyricsSources = { showLyricsSources = true },
                                 onTranslationLanguage = { showTranslationLanguage = true },
                                 onSources = { navigator.push(AppRoute.Sources) },
@@ -3308,11 +3498,14 @@ private fun BeatFlowApp(
                                     page.browseId,
                                 )
                                 val selected = songs.getOrNull(index)
-                                val pageSongKeys =
-                                    (page.songs as? UiState.Success)?.data.orEmpty().mapTo(HashSet()) { it.contextEntryKey() }
+                                val pageKeys =
+                                    (page.songs as? UiState.Success)?.data.orEmpty().map { it.contextEntryKey() }
+                                val pageSongKeys = pageKeys.toHashSet()
                                 val useBounded =
                                     (page.type == BrowseType.ALBUM || page.type == BrowseType.PLAYLIST) &&
                                         selected?.contextEntryKey()?.let(pageSongKeys::contains) == true &&
+                                        // A sorted list plays as sorted, not in the page's order.
+                                        inPageOrder(songs.map { it.contextEntryKey() }, pageKeys) &&
                                         !CastController.state.value.casting
                                 val latestPage = if (useBounded) {
                                     viewModel.takePlaybackContext(page.browseId)
@@ -3353,6 +3546,14 @@ private fun BeatFlowApp(
                                 onSongClick = ::playDetailSongs,
                                 onSongLongPress = { openSongMenu(withAlbum(it)) },
                                 onSongSwipe = { onSongSwipe(withAlbum(it)) },
+                                onPlay = { songs ->
+                                    if (songs.isNotEmpty()) {
+                                        // Play is the release in order, so a shuffle left on
+                                        // from the last queue goes off before this one is built.
+                                        QueueShuffle.disableForNextQueue()
+                                        playDetailSongs(songs, 0)
+                                    }
+                                },
                                 onShuffle = { songs ->
                                     if (songs.isNotEmpty()) {
                                         // Shuffle goes on first so the queue is built shuffled
@@ -3490,6 +3691,7 @@ private fun BeatFlowApp(
                                 onMoodsShowAll = { navigator.push(AppRoute.Moods) },
                                 // Nothing on Home is seen while the greeting covers it.
                                 artworkMotion = artworkMotion,
+                                replayYear = replayYearBadge,
                                 onTopPickLongPress = { pick ->
                                     pick.browseId?.let { browseId ->
                                         onShelfLongPress(
@@ -3736,6 +3938,31 @@ private fun BeatFlowApp(
                                     )
                                 },
                             )
+                            TAB_RADIO -> MixesScreen(
+                                title = radioLabel,
+                                state = mixesState,
+                                signedIn = signedIn,
+                                listState = mixesListState,
+                                // A mix opens as the playlist it is, as its card
+                                // does on Home and in the web player.
+                                onItemClick = { item ->
+                                    item.browseId?.let { browseId ->
+                                        viewModel.openDetail(
+                                            browseId = browseId,
+                                            title = item.title,
+                                            subtitle = item.subtitle,
+                                            thumbnailUrl = item.thumbnailUrl,
+                                        )
+                                    }
+                                },
+                                onItemLongPress = onShelfLongPress,
+                                onRetry = viewModel::loadMixes,
+                                onSignIn = { webSession = WebSessionMode.SIGN_IN },
+                                refreshing = MainViewModel.Feed.MIXES in refreshing,
+                                onRefresh = { viewModel.refresh(MainViewModel.Feed.MIXES) },
+                                pullState = mixesPull,
+                                contentPadding = listPadding,
+                            )
                             else -> LibraryScreen(
                                 signedIn = signedIn,
                                 state = libraryState,
@@ -3869,6 +4096,8 @@ private fun BeatFlowApp(
                         AppRoute.Sources -> stringResource(R.string.sources)
                         AppRoute.ListenTogether -> stringResource(R.string.listen_together)
                         AppRoute.WearOs -> stringResource(R.string.wear_os_page_title)
+                        AppRoute.DriveBackup -> stringResource(R.string.drive_backup_title)
+                        AppRoute.DriveDevices -> stringResource(R.string.drive_devices_title)
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
                         AppRoute.Settings -> stringResource(R.string.settings)
                         is AppRoute.SettingsSection -> stringResource(route.category.title)
@@ -4245,6 +4474,22 @@ private fun BeatFlowApp(
                     }
                 }
 
+                val haptics = rememberHaptics()
+                val scrollScope = rememberCoroutineScope()
+                var scrollJob by remember { mutableStateOf<Job?>(null) }
+                /** Scroll the current tab's list back to top when the active tab is tapped (excludes Search). */
+                val onActiveTabTap: () -> Unit = fun() {
+                    // Capture overlay state at tap time, before any navigation handler clears it.
+                    if (route != null || detail != null || selectedMoodGenre != null) return
+                    if (selectedTab == TAB_SEARCH) return
+                    haptics.play(Haptic.Select)
+                    scrollJob?.cancel()
+                    scrollJob = scrollScope.launch {
+                        currentListState.scrollToTopEased()
+                    }
+                }
+
+                val miniArtwork = rememberMiniAutoMixArtwork(player.song, player.queue, player.queueIndex)
                 if (glassActive) Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -4265,6 +4510,7 @@ private fun BeatFlowApp(
                         song = player.song,
                         isPlaying = player.isPlaying,
                         isLoading = playPauseBusy,
+                        animationsActive = !showNowPlaying,
                         onPlayPause = {
                             togglePlayPause()
                         },
@@ -4280,6 +4526,8 @@ private fun BeatFlowApp(
                         dock = activeDock,
                         pull = playerSheetMotion.takeIf { !reducePlayerMotion },
                         modifier = Modifier.fillMaxWidth(),
+                        onActiveTabTap = onActiveTabTap,
+                        autoMixArtwork = miniArtwork,
                     )
                 } else Column(
                     modifier = Modifier
@@ -4301,6 +4549,7 @@ private fun BeatFlowApp(
                             song = song,
                             isPlaying = player.isPlaying,
                             isLoading = playPauseBusy,
+                            animationsActive = !showNowPlaying,
                             hazeState = hazeState,
                             onPlayPause = {
                                 togglePlayPause()
@@ -4317,6 +4566,7 @@ private fun BeatFlowApp(
                             dock = activeDock,
                             pull = playerSheetMotion.takeIf { !reducePlayerMotion },
                             modifier = Modifier.fillMaxWidth(),
+                            autoMixArtwork = miniArtwork,
                         )
                         Spacer(Modifier.height(8.dp))
                     }
@@ -4325,6 +4575,7 @@ private fun BeatFlowApp(
                         selectedIndex = selectedTab,
                         hazeState = hazeState,
                         onTabSelected = onTabSelected,
+                        onActiveTabTap = onActiveTabTap,
                     )
                 }
             }
@@ -4360,12 +4611,13 @@ private fun BeatFlowApp(
             // read off the player's own visibility any more, because on a
             // tablet the player is visible whatever the menu was opened from.
             val fromPlayer = menuFromPlayer
+            val fromQueue = menuFromQueue
             // A row from search results, recents or a feed rarely knows which
             // album or artist page it belongs to, which left the menu with no
             // way to get there. Ask as the menu opens, the way the player
             // backfills its own track — the player's copy is already kept in
             // sync above, so it is left alone here.
-            val needsLinks = !fromPlayer && heldSong.localUri == null &&
+            val needsLinks = (!fromPlayer || fromQueue) && heldSong.localUri == null &&
                 heldSong.videoId.isNotBlank() &&
                 (heldSong.albumId == null || heldSong.artistId == null)
             var menuLinks by remember(heldSong.videoId) { mutableStateOf<Song?>(null) }
@@ -4527,6 +4779,7 @@ private fun BeatFlowApp(
             }
             SongActionsMenu(
                 song = song,
+                fromQueue = fromQueue,
                 signedIn = signedIn,
                 likeStatus = likeStatusOf(song),
                 onPlayNext = { playNext(song); songActions = null },
@@ -4595,6 +4848,14 @@ private fun BeatFlowApp(
                             songActions = null
                             OfflinePlaylists.remove(id, song)
                         }
+                    } ?: detail?.browseId
+                    ?.takeIf { id -> !fromPlayer && localPlaylists.any { it.browseId == id } }
+                    ?.let { id ->
+                        {
+                            songActions = null
+                            com.music.beatflow.data.spotify.LocalPlaylistStore.removeSong(id, song)
+                            viewModel.reloadLocalDetail(id)
+                        }
                     },
                 onRemoveFromCache = if (inCache) {
                     {
@@ -4625,8 +4886,8 @@ private fun BeatFlowApp(
                 },
                 // The player backfills its own track; any other row is
                 // looked up as the menu opens — see `needsLinks` above.
-                resolvingLinks = if (fromPlayer) linksLoading else needsLinks && menuLinksLoading,
-                showSleepTimer = fromPlayer,
+                resolvingLinks = if (fromPlayer && !fromQueue) linksLoading else needsLinks && menuLinksLoading,
+                showSleepTimer = fromPlayer && !fromQueue,
                 // Offered for every playing track with a YouTube upload
                 // behind it, not only for one an upgrade visibly swapped:
                 // a source ranked above YouTube can be playing its own
@@ -4691,7 +4952,7 @@ private fun BeatFlowApp(
                 // drops it for a local file via `isOffline`, this catches
                 // the rest.
                 onShare = share.takeIf { song.videoId.isNotBlank() },
-                onCopyLog = if (fromPlayer) {
+                onCopyLog = if (fromPlayer && !fromQueue) {
                     {
                         songActions = null
                         scope.launch {
@@ -4715,7 +4976,7 @@ private fun BeatFlowApp(
                 } else {
                     null
                 },
-                onLyricsOffset = if (fromPlayer) {
+                onLyricsOffset = if (fromPlayer && !fromQueue) {
                     {
                         songActions = null
                         showLyricsOffset = true
@@ -4725,7 +4986,7 @@ private fun BeatFlowApp(
                 },
                 // The popup lives in the player, so the menu only has to close
                 // and ask for it; it lays the next transition out on its own.
-                onAutomixOverview = if (fromPlayer && automixOn) {
+                onAutomixOverview = if (fromPlayer && !fromQueue && automixOn) {
                     {
                         songActions = null
                         MixViewRequest.open = true
@@ -4825,6 +5086,7 @@ private fun BeatFlowApp(
                     if (!reducePlayerMotion) playerSheetMotion.attachWindow(sheetWindow)
                     onDispose { }
                 }
+                val playerMenuHaze = remember { HazeState() }
                 Box(
                     Modifier
                         // Where the app is holding the player, if it is — see
@@ -4876,7 +5138,9 @@ private fun BeatFlowApp(
                             reduceDynamicBlur -> Modifier
                             playerLiveCanvas -> Modifier.layerBackdrop(livePlayerBackdrop)
                             else -> Modifier.snapshotBackdropSource(playerBackdrop)
-                        },
+                        }.then(
+                            if (reduceDynamicBlur) Modifier else Modifier.hazeSource(playerMenuHaze),
+                        ),
                     ) {
                         CompositionLocalProvider(LocalPlayerDock provides activeDock) {
                             nowPlaying(playerSong)
@@ -4887,6 +5151,25 @@ private fun BeatFlowApp(
                         anchor = songMenuAnchor,
                         onDismiss = { songActions = null },
                         backdrop = if (playerLiveCanvas) livePlayerBackdrop else playerBackdrop,
+                    ) { song ->
+                        songMenuBody(song)
+                    }
+                    HeldContextMenu(
+                        item = songActions?.takeIf { menuFromPlayer },
+                        held = songMenuOrigin,
+                        hazeState = playerMenuHaze,
+                        inPlayerSheet = true,
+                        preview = if (menuFromQueue) {
+                            { song -> com.music.beatflow.ui.player.QueueSongPreview(song) }
+                        } else null,
+                        onDismiss = { songActions = null },
+                        onPreviewClick = { song ->
+                            song.albumId?.let { id ->
+                                songActions = null
+                                dismissPlayer()
+                                viewModel.openDetail(id, song.albumName ?: song.title, song.artist, song.thumbnailUrl, BrowseType.ALBUM)
+                            }
+                        },
                     ) { song ->
                         songMenuBody(song)
                     }
@@ -4937,6 +5220,14 @@ private fun BeatFlowApp(
             }
         }
 
+        // ---- Replay year story ----
+        // Mounted over the window like the Replay story, for the same reason.
+        com.music.beatflow.ui.replay.year.ReplayYearHost(
+            year = replayYear,
+            open = yearStoryOpen,
+            onClose = { yearStoryOpen = false },
+        )
+
         // ---- Track menu ----
         // In a recompose scope of its own: whether a menu is up is read in
         // here, and read in the app's own body it recomposed all of the app
@@ -4946,14 +5237,18 @@ private fun BeatFlowApp(
             // Drawn over everything, tab bar and mini player included, and kept
             // composed through its own exit — so it is not gated on songActions.
             HeldContextMenu(
-                item = songActions,
+                item = songActions?.takeUnless { menuFromPlayer && playerRaised },
                 held = songMenuOrigin,
                 hazeState = hazeState,
                 onDismiss = { songActions = null },
+                preview = if (menuFromQueue) {
+                    { song -> com.music.beatflow.ui.player.QueueSongPreview(song) }
+                } else null,
                 // Tapping the lifted track opens its album, as Apple Music's does.
                 onPreviewClick = { song ->
                     song.albumId?.let { id ->
                         songActions = null
+                        dismissPlayer()
                         viewModel.openDetail(id, song.albumName ?: song.title, song.artist, song.thumbnailUrl, BrowseType.ALBUM)
                     }
                 },
@@ -4984,8 +5279,26 @@ private fun BeatFlowApp(
                 if (songActions == null) {
                     songMenuOrigin = null
                     songMenuAnchor = null
+                    menuFromQueue = false
                     menuFromHistory = false
                 }
+            }
+        }
+
+        queuePlaylistSongs?.let { targets ->
+            val completion = queuePlaylistCompletion
+            val finish: (Boolean) -> Unit = { completed ->
+                completion?.complete(completed)
+                if (queuePlaylistCompletion === completion) queuePlaylistSongs = null
+            }
+            key(completion) {
+                QueuePlaylistPicker(
+                    songs = targets,
+                    viewModel = viewModel,
+                    onNotice = { message -> Toast.makeText(context, message, Toast.LENGTH_LONG).show() },
+                    onComplete = { finish(true) },
+                    onDismiss = { finish(false) },
+                )
             }
         }
 
@@ -5027,6 +5340,35 @@ private fun BeatFlowApp(
                 },
                 onCreate = { title, privacy ->
                     viewModel.createPlaylist(title, privacy, target)
+                },
+            )
+        }
+
+        albumPlaylistTarget?.let { target ->
+            PlaylistPickerSheet(
+                playlists = playlists,
+                loading = playlistsLoading,
+                song = target.songs.firstOrNull(),
+                headerTitle = target.title,
+                onDismiss = { albumPlaylistTarget = null },
+                onAdd = { picked ->
+                    viewModel.addSongsToPlaylists(picked, target.songs) { added, alreadyThere, failed ->
+                        showQueueNotice(
+                            when {
+                                added > 0 -> context.getString(R.string.song_added_to_playlist)
+                                alreadyThere > 0 && failed == 0 -> context.getString(R.string.song_already_in_playlist)
+                                else -> context.getString(R.string.failed)
+                            },
+                        )
+                    }
+                },
+                onCreate = { title, privacy ->
+                    viewModel.createPlaylistWithVideoIds(
+                        title = title,
+                        privacy = privacy,
+                        videoIds = target.songs.map { it.videoId },
+                        songs = target.songs,
+                    )
                 },
             )
         }
@@ -5168,10 +5510,15 @@ private fun BeatFlowApp(
             // One of the offline player's own playlists, which are the user's
             // to rename and delete — all but Liked, which is the app's.
             val offlineEditable = OfflinePlaylists.get(target.browseId)?.takeUnless { it.isLiked }
+            // A playlist imported onto this device (signed out, or YouTube
+            // refused it) is the user's to rename and delete as well.
+            val importEditable = localPlaylists.firstOrNull { it.browseId == target.browseId }
             BrowseActionsMenu(
                 // The live answer, not the one the target was built with.
                 target = target.copy(
                     playlist = playlist ?: offlineEditable?.let {
+                        UserPlaylist(playlistId = it.id, title = it.title, subtitle = "", thumbnailUrl = null)
+                    } ?: importEditable?.let {
                         UserPlaylist(playlistId = it.id, title = it.title, subtitle = "", thumbnailUrl = null)
                     },
                 ),
@@ -5182,7 +5529,10 @@ private fun BeatFlowApp(
                 startRenaming = browseRenameInSheet,
                 onPlayNext = act(playSongsNext),
                 onAddToQueue = act(addSongsToQueue),
-                onPlay = act { songs -> play(songs, 0) }.takeIf { target.fromCard },
+                onPlay = act { songs ->
+                    QueueShuffle.disableForNextQueue()
+                    play(songs, 0)
+                }.takeIf { target.fromCard },
                 onShuffle = act { songs ->
                     // As on a release page: shuffle goes on before the queue
                     // is built, so it is built shuffled rather than played
@@ -5190,6 +5540,17 @@ private fun BeatFlowApp(
                     QueueShuffle.enableForNextQueue()
                     play(songs, songs.indices.random())
                 }.takeIf { target.fromCard },
+                onAddToPlaylists = if (target.type == BrowseType.ALBUM && target.browseId != null && signedIn) {
+                    {
+                        browseActions = null
+                        viewModel.loadPlaylists()
+                        withBrowseSongs(target) { songs ->
+                            if (songs.isNotEmpty()) albumPlaylistTarget = target.copy(songs = songs)
+                        }
+                    }
+                } else {
+                    null
+                },
                 onOpen = target.browseId
                     ?.takeIf { target.fromCard }
                     ?.let { id ->
@@ -5278,6 +5639,12 @@ private fun BeatFlowApp(
                         OfflinePlaylists.rename(p.browseId, name)
                         viewModel.retitleDetail(p.browseId, name.trim())
                     }
+                } ?: importEditable?.let { p ->
+                    { name: String ->
+                        browseActions = null
+                        com.music.beatflow.data.spotify.LocalPlaylistStore.renamePlaylist(p.browseId, name.trim())
+                        viewModel.retitleDetail(p.browseId, name.trim())
+                    }
                 },
                 onReorder = playlist?.let { p ->
                     {
@@ -5317,6 +5684,12 @@ private fun BeatFlowApp(
                         // Its page has nothing left to show; take it away too.
                         if (detail?.browseId == p.browseId) viewModel.closeDetail()
                         OfflinePlaylists.delete(p.browseId)
+                    }
+                } ?: importEditable?.let { p ->
+                    {
+                        browseActions = null
+                        if (detail?.browseId == p.browseId) viewModel.closeDetail()
+                        com.music.beatflow.data.spotify.LocalPlaylistStore.deletePlaylist(p.browseId)
                     }
                 },
                 onDeleteDownload = target.downloadId?.let { id ->
@@ -5404,94 +5777,24 @@ private fun BeatFlowApp(
 
         // ---- Google sign-in (full screen WebView) ----
         webSession?.let { mode ->
-            BackHandler { webSession = null }
-            // Raised by "Use this channel", read by the browser as "take the
-            // session from the page as it now stands". A counter rather than a
-            // flag so a second tap, after a failed first one, is still a new
-            // request rather than a value that was already true.
-            var captureRequest by remember(mode) { mutableIntStateOf(0) }
-            var captureFailed by remember(mode) { mutableStateOf(false) }
-            var pageReady by remember(mode) { mutableStateOf(false) }
-            var confirmingProfile by remember(mode) { mutableStateOf(false) }
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.fillMaxSize()) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { webSession = null }) {
-                            Icon(
-                                Icons.Rounded.Close,
-                                contentDescription = stringResource(R.string.close),
-                                tint = MaterialTheme.colorScheme.onBackground,
-                            )
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = when (mode) {
-                                    WebSessionMode.SIGN_IN -> stringResource(R.string.sign_in_youtube_music)
-                                    WebSessionMode.SWITCH_CHANNEL -> stringResource(R.string.choose_profile)
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
-                            )
-                            if (pageReady) {
-                                Text(
-                                    text = if (captureFailed) {
-                                         stringResource(R.string.profile_unavailable)
-                                     } else {
-                                         stringResource(R.string.switch_profile_hint)
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                )
-                            }
-                        }
-                        if (pageReady) {
-                            TextButton(onClick = {
-                                captureFailed = false
-                                confirmingProfile = true
-                                captureRequest++
-                            }, enabled = !confirmingProfile) {
-                                Text(
-                                    if (confirmingProfile) stringResource(R.string.checking)
-                                    else stringResource(R.string.use_this_profile),
-                                )
+            GoogleSignInOverlay(
+                mode = mode,
+                initialCookie = if (mode == WebSessionMode.SWITCH_CHANNEL) {
+                    googleAccounts.firstOrNull { it.accountId == activeAccountId }?.cookie
+                } else null,
+                onDismiss = { webSession = null },
+                onCaptured = { session ->
+                    viewModel.onWebSession(session, mode) { accepted ->
+                        if (accepted) {
+                            webSession = null
+                            if (mode == WebSessionMode.SIGN_IN) {
+                                navigator.clear()
+                                selectedTab = TAB_LIBRARY
                             }
                         }
                     }
-                    YtMusicLoginScreen(
-                        mode = mode,
-                        initialCookie = if (mode == WebSessionMode.SWITCH_CHANNEL) {
-                            googleAccounts.firstOrNull { it.accountId == activeAccountId }?.cookie
-                        } else null,
-                        captureRequest = captureRequest,
-                        onPageReady = { pageReady = it },
-                        onCaptureUnavailable = {
-                            confirmingProfile = false
-                            captureFailed = true
-                        },
-                        onCaptured = { session ->
-                            viewModel.onWebSession(session, mode) { accepted ->
-                                confirmingProfile = false
-                                if (accepted) {
-                                    webSession = null
-                                    if (mode == WebSessionMode.SIGN_IN) {
-                                        navigator.clear()
-                                        selectedTab = TAB_LIBRARY
-                                    }
-                                } else {
-                                    captureFailed = true
-                                }
-                            }
-                        },
-                    )
-                }
-            }
+                },
+            )
         }
 
         // ---- Update available (once per launch; held until the welcome and Diwali greeting are done) ----
@@ -5688,6 +5991,11 @@ private fun BeatFlowApp(
             FrostedSortMenu(
                 hazeState = hazeState,
                 selected = songSort,
+                // Only a page whose files carry track tags — a local album —
+                // has anything to sort by track number.
+                offerTrackNumber = (detail?.songs as? UiState.Success)?.data
+                    .orEmpty()
+                    .any { it.trackNumber != null },
                 onSelect = { option ->
                     detail?.browseId?.let { AppSettings.setDetailSongSort(it, option) }
                     songSortMenuOpen = false
@@ -5789,140 +6097,22 @@ private fun BeatFlowApp(
         }
 
         if (showLastfmLogin) {
-            var usernameInput by remember { mutableStateOf("") }
-            var passwordInput by remember { mutableStateOf("") }
-            var lastfmError by remember { mutableStateOf<String?>(null) }
-            var lastfmLoading by remember { mutableStateOf(false) }
-            LastfmLoginAlert(
+            LastfmLoginOverlay(
                 hazeState = hazeState,
-                usernameInput = usernameInput,
-                onUsernameInputChange = { usernameInput = it },
-                passwordInput = passwordInput,
-                onPasswordInputChange = { passwordInput = it },
-                error = lastfmError,
-                loading = lastfmLoading,
-                onSignIn = {
-                    lastfmLoading = true
-                    lastfmError = null
-                    scope.launch {
-                        try {
-                            LastFM.initialize(
-                                apiKey = AppSettings.lastfmApiKey.value,
-                                secret = AppSettings.lastfmSecret.value,
-                            )
-                            LastFM.getMobileSession(usernameInput.trim(), passwordInput)
-                                .onSuccess { auth ->
-                                    AppSettings.setLastfmSessionKey(auth.session.key)
-                                    AppSettings.setLastfmUsername(auth.session.name)
-                                    AppSettings.setLastfmEnabled(true)
-                                    showLastfmLogin = false
-                                }
-                                .onFailure { e ->
-                                    lastfmError = e.message ?: context.getString(R.string.login_failed)
-                                }
-                        } catch (e: Exception) {
-                            lastfmError = e.message ?: context.getString(R.string.login_failed)
-                        } finally {
-                            lastfmLoading = false
-                        }
-                    }
-                },
-                onDismiss = { if (!lastfmLoading) showLastfmLogin = false },
+                onDismiss = { showLastfmLogin = false },
             )
         }
 
         if (showWebDavEditor) {
-            BackHandler { showWebDavEditor = false }
-            ServerEditorHost(
+            WebDavEditorOverlay(
                 hazeState = hazeState,
-                title = stringResource(R.string.webdav),
-                description = stringResource(R.string.webdav_description),
-                fields = listOf(
-                    FieldConfig(
-                        initial = AppSettings.webdavUrl.value,
-                        placeholder = stringResource(R.string.webdav_server_url_hint),
-                        keyboardType = KeyboardType.Uri,
-                    ),
-                    FieldConfig(
-                        initial = AppSettings.webdavUsername.value,
-                        placeholder = stringResource(R.string.username),
-                    ),
-                    FieldConfig(
-                        initial = AppSettings.webdavPassword.value,
-                        placeholder = stringResource(R.string.password),
-                        keyboardType = KeyboardType.Password,
-                        isPassword = true,
-                    ),
-                ),
-                canSubmit = { it[0].isNotBlank() },
-                testFailedRes = R.string.webdav_test_failed,
-                onTest = { (url, username, password) ->
-                    com.music.beatflow.data.webdav.WebDavRepository.testConnection(
-                        url.trim(),
-                        username.trim(),
-                        password,
-                    )
-                },
-                onSave = { (url, username, password) ->
-                    AppSettings.setWebDavUrl(url.trim())
-                    AppSettings.setWebDavUsername(username.trim())
-                    AppSettings.setWebDavPassword(password)
-                    showWebDavEditor = false
-                },
                 onDismiss = { showWebDavEditor = false },
             )
         }
 
         if (showSmbEditor) {
-            BackHandler { showSmbEditor = false }
-            ServerEditorHost(
+            SmbEditorOverlay(
                 hazeState = hazeState,
-                title = stringResource(R.string.smb),
-                description = stringResource(R.string.smb_description),
-                fields = listOf(
-                    FieldConfig(
-                        initial = AppSettings.smbHost.value,
-                        placeholder = stringResource(R.string.smb_server_hint),
-                        keyboardType = KeyboardType.Uri,
-                    ),
-                    FieldConfig(
-                        initial = AppSettings.smbShare.value,
-                        placeholder = stringResource(R.string.smb_share_hint),
-                    ),
-                    FieldConfig(
-                        initial = AppSettings.smbBasePath.value,
-                        placeholder = stringResource(R.string.smb_folder_hint),
-                    ),
-                    FieldConfig(
-                        initial = AppSettings.smbUsername.value,
-                        placeholder = stringResource(R.string.username),
-                    ),
-                    FieldConfig(
-                        initial = AppSettings.smbPassword.value,
-                        placeholder = stringResource(R.string.password),
-                        keyboardType = KeyboardType.Password,
-                        isPassword = true,
-                    ),
-                ),
-                canSubmit = { it[0].isNotBlank() && it[1].isNotBlank() },
-                testFailedRes = R.string.smb_test_failed,
-                onTest = { (host, share, folder, username, password) ->
-                    com.music.beatflow.data.smb.SmbRepository.testConnection(
-                        host.trim(),
-                        share.trim(),
-                        folder.trim(),
-                        username.trim(),
-                        password,
-                    )
-                },
-                onSave = { (host, share, folder, username, password) ->
-                    AppSettings.setSmbHost(host.trim())
-                    AppSettings.setSmbShare(share.trim())
-                    AppSettings.setSmbBasePath(folder.trim())
-                    AppSettings.setSmbUsername(username.trim())
-                    AppSettings.setSmbPassword(password)
-                    showSmbEditor = false
-                },
                 onDismiss = { showSmbEditor = false },
             )
         }
@@ -5955,75 +6145,26 @@ private fun BeatFlowApp(
 
         // ---- Discord sign-in (full screen WebView) ----
         if (showDiscordLogin) {
-            BackHandler { showDiscordLogin = false }
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.fillMaxSize()) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { showDiscordLogin = false }) {
-                            Icon(
-                                Icons.Rounded.Close,
-                                contentDescription = stringResource(R.string.close),
-                                tint = MaterialTheme.colorScheme.onBackground,
-                            )
-                        }
-                        Text(
-                            "Sign in to Discord",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
-                    DiscordLoginScreen(
-                        onTokenCaptured = { token ->
-                            AppSettings.setDiscordToken(token)
-                            showDiscordLogin = false
-                        },
-                    )
-                }
-            }
+            DiscordLoginOverlay(
+                onDismiss = { showDiscordLogin = false },
+                onTokenCaptured = { token ->
+                    AppSettings.setDiscordToken(token)
+                    showDiscordLogin = false
+                },
+            )
         }
 
         // ---- Spotify sign-in (full screen WebView) ----
         // Out here with Discord's rather than on the Spotify page itself: see
         // SpotifyLoginScreen for what the blurred content tree does to a WebView.
         if (showSpotifyLogin) {
-            BackHandler { showSpotifyLogin = false }
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.fillMaxSize()) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { showSpotifyLogin = false }) {
-                            Icon(
-                                Icons.Rounded.Close,
-                                contentDescription = stringResource(R.string.close),
-                                tint = MaterialTheme.colorScheme.onBackground,
-                            )
-                        }
-                        Text(
-                            stringResource(R.string.spotify_sign_in),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
-                    SpotifyLoginScreen(
-                        modifier = Modifier.navigationBarsPadding(),
-                        onConnected = { token ->
-                            AppSettings.setSpotifySpdcToken(token)
-                            showSpotifyLogin = false
-                        },
-                    )
-                }
-            }
+            SpotifyLoginOverlay(
+                onDismiss = { showSpotifyLogin = false },
+                onTokenCaptured = { token ->
+                    AppSettings.setSpotifySpdcToken(token)
+                    showSpotifyLogin = false
+                },
+            )
         }
 
         if (showSpotifyCanvasAuth) {
@@ -6122,6 +6263,14 @@ private fun BeatFlowApp(
             )
         }
 
+        // Google Drive backup's questions; see DriveBackupAlertsHost.
+        DriveBackupAlertsHost(
+            alerts = driveAlerts,
+            hazeState = hazeState,
+            // Back to the backup page, where the bar shows the restore running.
+            onRestoreStarted = { if (navigator.visibleRoute() == AppRoute.DriveDevices) navigator.pop() },
+        )
+
         if (confirmFixedVolume) {
             ConfirmationAlert(
                 hazeState = hazeState,
@@ -6199,6 +6348,7 @@ private fun LibrarySort.localizedLabel(): String = when (this) {
 private fun FrostedSortMenu(
     hazeState: HazeState,
     selected: SongSort,
+    offerTrackNumber: Boolean,
     onSelect: (SongSort) -> Unit,
     onFlipDateDirection: () -> Unit,
     onDismiss: () -> Unit,
@@ -6240,6 +6390,7 @@ private fun FrostedSortMenu(
         }
         SongSort.entries
             .filter { it != SongSort.DATE_ADDED_ASC && it != SongSort.DATE_ADDED_DESC }
+            .filter { offerTrackNumber || it != SongSort.TRACK_NUMBER }
             .forEach { option ->
                 FrostedMenuRow(
                     label = option.localizedLabel(),
@@ -6370,6 +6521,7 @@ private fun FrostedMenuRow(
 @Composable
 private fun SongSort.localizedLabel(): String = when (this) {
     SongSort.DEFAULT -> stringResource(R.string.sort_default)
+    SongSort.TRACK_NUMBER -> stringResource(R.string.sort_track_number)
     SongSort.TITLE_ASC -> stringResource(R.string.sort_title_ascending)
     SongSort.TITLE_DESC -> stringResource(R.string.sort_title_descending)
     SongSort.DATE_ADDED_ASC -> stringResource(R.string.sort_date_added_oldest)
@@ -6478,5 +6630,55 @@ private object PlayerSheetShape : Shape {
 
 private const val TAB_HOME = 0
 private const val TAB_EXPLORE = 1
-private const val TAB_LIBRARY = 2
-private const val TAB_SEARCH = 3
+private const val TAB_RADIO = 2
+private const val TAB_LIBRARY = 3
+private const val TAB_SEARCH = 4
+
+/**
+ * Smoothly scroll a LazyList back to the top with eased deceleration.
+ *
+ * For near lists (≤ FAR_LIST_THRESHOLD items above), animates the full estimated distance then
+ * finishes at exactly index 0. For far lists, does a bounded jump near the top first, then
+ * animates the remaining short distance — avoiding long-distance scroll inconsistencies.
+ */
+private suspend fun LazyListState.scrollToTopEased() {
+    val firstIndex = this.firstVisibleItemIndex
+    val scrollOffset = this.firstVisibleItemScrollOffset
+    if (firstIndex == 0 && scrollOffset == 0) return // already at top
+
+    val visibleItems = this.layoutInfo.visibleItemsInfo
+    if (visibleItems.isEmpty()) return // empty list guard
+
+    val avgHeight: Float = visibleItems.sumOf { it.size }.toFloat() / visibleItems.size
+    val estimatedDistance: Float = avgHeight * firstIndex + scrollOffset
+
+    if (firstIndex > FAR_LIST_THRESHOLD) {
+        // Far list: jump to a bounded index near the top, then animate the remainder.
+        val targetIndex = firstIndex - FAR_LIST_THRESHOLD.coerceAtMost(firstIndex)
+        this.scrollToItem(targetIndex)
+        kotlinx.coroutines.delay(16L) // layout settle after scrollToItem
+        val remainingOffset: Float = this.firstVisibleItemScrollOffset.toFloat() +
+            visibleItems.getOrNull(0)?.size?.toFloat().orZero()
+        if (remainingOffset > 0) {
+            this.animateScrollBy(
+                value = -remainingOffset,
+                animationSpec = tween(SCROLL_TO_TOP_DURATION_MS, easing = FastOutSlowInEasing),
+            )
+        }
+    } else {
+        // Near distance: animate the full estimated distance.
+        if (estimatedDistance > 0) {
+            this.animateScrollBy(
+                value = -estimatedDistance,
+                animationSpec = tween(SCROLL_TO_TOP_DURATION_MS, easing = FastOutSlowInEasing),
+            )
+        }
+    }
+    // Finish at exactly index 0 with a short settling scroll.
+    if (this.firstVisibleItemIndex != 0 || this.firstVisibleItemScrollOffset != 0) {
+        this.animateScrollToItem(0)
+    }
+}
+
+/** Safely converts a nullable Float to non-null, defaulting to 0f for null. */
+private fun Float?.orZero(): Float = this ?: 0f
