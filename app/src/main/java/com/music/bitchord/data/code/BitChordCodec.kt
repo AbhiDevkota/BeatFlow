@@ -134,7 +134,8 @@ object BitChordCodec {
         require(idLength in 1..63) { "Invalid ID length: $idLength" }
 
         val packetBits = 2 + 6 + idLength * 6 + 8
-        require(bits.length >= packetBits) { "Packet truncated" }
+        val requiredBars = (packetBits + 2) / 3
+        require(dataLevels.size == requiredBars) { "Wrong code length: expected ${requiredBars + 2} total bars but got ${levels.size}" }
 
         val packet = bits.substring(0, packetBits)
         val content = packet.substring(0, packetBits - 8)
@@ -171,7 +172,8 @@ object BitChordCodec {
         val type = if (typeBit == 0) MediaType.ARTIST else MediaType.ALBUM
         val idLength = bits.substring(1, 7).toInt(2)
         val packetBits = 1 + 6 + idLength * 6 + 8
-        require(bits.length >= packetBits) { "Truncated legacy packet" }
+        val requiredBars = (packetBits + 2) / 3
+        require(dataLevels.size == requiredBars) { "Wrong legacy code length" }
 
         val packet = bits.substring(0, packetBits)
         val content = packet.substring(0, packetBits - 8)

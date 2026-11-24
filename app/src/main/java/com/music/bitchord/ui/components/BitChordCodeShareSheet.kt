@@ -152,7 +152,7 @@ fun BitChordCodeCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .matchParentSize()
-                    .blur(50.dp),
+                    .blur(20.dp),
             )
         }
 
@@ -487,17 +487,17 @@ suspend fun renderBitChordCodeBitmap(
         } catch (_: Exception) {}
     }
 
-    // 1. Background: Album artwork blurred across the entire card (matching fullscreen player & lyrics)
+    // 1. Background: Album artwork softly blurred across the entire card (matching fullscreen player & lyrics)
     if (artBitmap != null && !artBitmap.isRecycled) {
-        // Downsample to 24x24 and draw scaled with bilinear filtering for a smooth Gaussian blur
-        val blurThumb = Bitmap.createScaledBitmap(artBitmap, 24, 24, true)
+        // Downsample to 80x80 and draw scaled with bilinear filtering for a subtle, soft frosted blur
+        val blurThumb = Bitmap.createScaledBitmap(artBitmap, 80, 80, true)
         val blurPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         canvas.drawBitmap(blurThumb, null, cardRect, blurPaint)
         blurThumb.recycle()
 
-        // Scrim over background: dark translucent tint so text and soundwave bars stand out
+        // Scrim over background: translucent tint so text and soundwave bars stand out while artwork is visible
         val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xC40E121B.toInt()
+            color = 0x880E121B.toInt()
         }
         canvas.drawRect(cardRect, scrimPaint)
     } else {

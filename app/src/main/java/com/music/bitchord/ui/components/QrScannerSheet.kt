@@ -213,12 +213,35 @@ fun QrScannerSheet(
 
                         try {
                             cameraProvider.unbindAll()
-                            camera = cameraProvider.bindToLifecycle(
+                            val boundCamera = cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
                                 cameraSelector,
                                 preview,
                                 imageAnalysis,
                             )
+                            camera = boundCamera
+
+                            // Initial center focus on the viewfinder area
+                            previewView.post {
+                                val factory = previewView.meteringPointFactory
+                                val cx = previewView.width / 2f
+                                val cy = previewView.height / 2f
+                                val point = factory.createPoint(cx, cy)
+                                val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                                boundCamera.cameraControl.startFocusAndMetering(action)
+                            }
+
+                            // Tap to focus on preview
+                            previewView.setOnTouchListener { view, event ->
+                                if (event.action == android.view.MotionEvent.ACTION_UP) {
+                                    val factory = previewView.meteringPointFactory
+                                    val point = factory.createPoint(event.x, event.y)
+                                    val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                                    boundCamera.cameraControl.startFocusAndMetering(action)
+                                    view.performClick()
+                                }
+                                true
+                            }
                         } catch (e: Exception) {
                             Log.e("QrScanner", "Failed to bind camera use cases", e)
                         }
@@ -704,9 +727,6 @@ private class QrCodeAnalyzer(
             mapOf(
                 DecodeHintType.POSSIBLE_FORMATS to listOf(
                     BarcodeFormat.QR_CODE,
-                    BarcodeFormat.DATA_MATRIX,
-                    BarcodeFormat.AZTEC,
-                    BarcodeFormat.CODE_128,
                 ),
                 DecodeHintType.TRY_HARDER to true,
             ),
