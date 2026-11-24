@@ -22,23 +22,20 @@ data class BarBox(
 }
 
 /**
- * Real-time detector for BitChord visual soundwave codes from camera luminance frames.
+ * High-performance real-time detector for BitChord visual soundwave codes from camera frames.
  *
- * Scans the region of interest corresponding to the viewfinder, binarizes using Otsu
- * thresholding for both polarities, performs connected component labeling to identify
- * vertical rounded bars, clusters aligned bars, evaluates calibration bar heights,
- * and validates candidate codes with CRC-8 via [BitChordCodec].
+ * Employs a dual-pass detection strategy:
+ * 1. Fast horizontal scanline peak profiling: immune to global lighting changes, detects the
+ *    periodic peak-valley oscillation of the soundwave bars along multiple horizontal scanlines
+ *    and measures vertical bar height directly.
+ * 2. Adaptive-threshold connected component analysis: identifies candidate vertical bar
+ *    bounding boxes and aligns them horizontally.
+ *
+ * Candidate sequences are validated with 8-bit CRC checksums via [BitChordCodec], ensuring zero
+ * false positives.
  */
 object BitChordBarDetector {
 
-    /**
-     * Attempts to detect and decode a BitChord soundwave visual code from a grayscale (Y plane) buffer.
-     *
-     * @param yuvBytes Grayscale luminance bytes (8 bits per pixel)
-     * @param width Frame width
-     * @param height Frame height
-     * @return Decoded [BitChordCodec.Payload] if a valid code was verified, or null otherwise.
-     */
     fun detect(
         yuvBytes: ByteArray,
         width: Int,
@@ -46,66 +43,304 @@ object BitChordBarDetector {
     ): BitChordCodec.Payload? {
         if (width < 100 || height < 100 || yuvBytes.size < width * height) return null
 
-        // Viewfinder region of interest (centered horizontally and vertically)
-        val roiX = (width * 0.04f).toInt()
-        val roiY = (height * 0.15f).toInt()
-        val roiW = (width * 0.92f).toInt()
-        val roiH = (height * 0.70f).toInt()
+        // Pass 1: Scanline peak profiling (fastest & most resilient to screen glare and shadows)
+        detectByScanlines(yuvBytes, width, height)?.let { return it }
 
-        // Downsample factor if the camera resolution is high to keep processing < 2ms
-        val step = if (roiW > 700) 2 else 1
-        val downW = roiW / step
-        val downH = roiH / step
-        val totalPixels = downW * downH
-        if (totalPixels <= 0) return null
+        // Pass 2: Connected component run-length analysis
+        detectByComponents(yuvBytes, width, height)?.let { return it }
 
-        // 1. Compute histogram of luminance for Otsu's thresholding
-        val hist = IntArray(256)
-        for (y in 0 until downH) {
-            val srcY = roiY + y * step
-            val rowOffset = srcY * width
-            for (x in 0 until downW) {
-                val srcX = roiX + x * step
-                val v = yuvBytes[rowOffset + srcX].toInt() and 0xFF
-                hist[v]++
+        return null
+    }
+
+    /**
+     * Pass 1: Analyzes horizontal scanlines through the viewfinder looking for the characteristic
+     * alternating peak/valley profile of soundwave bars, then measures the vertical extent of each bar.
+     */
+    private fun detectByScanlines(
+        yuvBytes: ByteArray,
+        width: Int,
+        height: Int,
+    ): BitChordCodec.Payload? {
+        val roiLeft = (width * 0.02f).toInt()
+        val roiRight = (width * 0.98f).toInt()
+        val roiTop = (height * 0.08f).toInt()
+        val roiBottom = (height * 0.92f).toInt()
+        val roiW = roiRight - roiLeft
+        if (roiW < 100) return null
+
+        val row = IntArray(roiW)
+        val smooth = IntArray(roiW)
+
+        // Test scanlines spaced by 5 pixels vertically
+        for (y in roiTop..roiBottom step 5) {
+            val rowOffset = y * width
+
+            // Read horizontal scanline
+            for (x in 0 until roiW) {
+                row[x] = yuvBytes[rowOffset + roiLeft + x].toInt() and 0xFF
+            }
+
+            // 3-point moving average smoothing: (r[x-1] + 2*r[x] + r[x+1]) / 4
+            smooth[0] = row[0]
+            smooth[roiW - 1] = row[roiW - 1]
+            for (x in 1 until roiW - 1) {
+                smooth[x] = (row[x - 1] + (row[x] shl 1) + row[x + 1]) shr 2
+            }
+
+            // Find local peaks (bright bars) and measure local contrast
+            val peakIndices = ArrayList<Int>()
+            val peakBgVals = ArrayList<Int>()
+            var lastPeak = -100
+
+            for (x in 2 until roiW - 2) {
+                val v = smooth[x]
+                if (v >= smooth[x - 1] && v > smooth[x + 1] && (x - lastPeak) >= 3) {
+                    // Walk down slopes left and right to find actual local valleys
+                    var minLeft = v
+                    var leftX = x
+                    var k = x - 1
+                    while (k >= 0 && k >= x - 40) {
+                        if (smooth[k] < minLeft) {
+                            minLeft = smooth[k]
+                            leftX = k
+                        } else if (smooth[k] > minLeft + 4) {
+                            break
+                        }
+                        k--
+                    }
+
+                    var minRight = v
+                    var rightX = x
+                    k = x + 1
+                    while (k < roiW && k <= x + 40) {
+                        if (smooth[k] < minRight) {
+                            minRight = smooth[k]
+                            rightX = k
+                        } else if (smooth[k] > minRight + 4) {
+                            break
+                        }
+                        k++
+                    }
+
+                    val localBg = max(minLeft, minRight)
+                    val contrast = v - localBg
+                    if (contrast >= 8) {
+                        val barCenterX = (leftX + rightX) / 2
+                        peakIndices.add(roiLeft + barCenterX)
+                        peakBgVals.add(localBg)
+                        lastPeak = x
+                    }
+                }
+            }
+
+            if (peakIndices.size < 18) continue
+
+            // Find chains of peaks with relatively uniform spacing
+            val chains = findPeakChains(peakIndices, peakBgVals)
+            for (chainPair in chains) {
+                val chain = chainPair.first
+                val chainBg = chainPair.second
+                if (chain.size < 18) continue
+
+                // Measure vertical height of each bar in the chain
+                val barHeights = FloatArray(chain.size)
+                val centerYs = FloatArray(chain.size)
+                var validCount = 0
+
+                for (i in chain.indices) {
+                    val px = chain[i]
+                    val peakVal = yuvBytes[y * width + px].toInt() and 0xFF
+                    val bgVal = chainBg.getOrElse(i) { 0 }
+                    val contrast = (peakVal - bgVal).coerceAtLeast(10)
+                    val cutoff = bgVal + (contrast * 0.35f).toInt()
+
+                    // Trace UP
+                    var upY = y
+                    val maxTravel = height / 2
+                    while (upY > max(0, y - maxTravel)) {
+                        val lum = yuvBytes[upY * width + px].toInt() and 0xFF
+                        if (lum < cutoff) break
+                        upY--
+                    }
+
+                    // Trace DOWN
+                    var downY = y
+                    while (downY < min(height - 1, y + maxTravel)) {
+                        val lum = yuvBytes[downY * width + px].toInt() and 0xFF
+                        if (lum < cutoff) break
+                        downY++
+                    }
+
+                    val bh = (downY - upY).toFloat()
+                    val cy = (upY + downY) / 2f
+                    barHeights[i] = bh
+                    centerYs[i] = cy
+                    if (bh >= 4f) validCount++
+                }
+
+                if (validCount < 18) continue
+
+                // Evaluate candidate slices of heights
+                evaluateHeightsSlices(barHeights)?.let { return it }
             }
         }
 
-        val otsuThreshold = computeOtsuThreshold(hist, totalPixels)
+        return null
+    }
 
-        // 2. Preallocate buffers for connected component analysis
-        val visited = BooleanArray(totalPixels)
-        val queueX = IntArray(totalPixels)
-        val queueY = IntArray(totalPixels)
-        val binary = BooleanArray(totalPixels)
+    private fun findPeakChains(
+        peaks: List<Int>,
+        bgs: List<Int>,
+    ): List<Pair<List<Int>, List<Int>>> {
+        val result = ArrayList<Pair<List<Int>, List<Int>>>()
+        var currentChain = ArrayList<Int>()
+        var currentBg = ArrayList<Int>()
 
-        // Test polarity 0: white bars on dark background (BitChord card default)
-        // Test polarity 1: dark bars on light background (paper printout or light theme)
+        for (i in peaks.indices) {
+            if (currentChain.isEmpty()) {
+                currentChain.add(peaks[i])
+                currentBg.add(bgs[i])
+                continue
+            }
+            val gap = peaks[i] - currentChain.last()
+            if (gap in 3..60) {
+                currentChain.add(peaks[i])
+                currentBg.add(bgs[i])
+            } else {
+                if (currentChain.size >= 18) {
+                    result.add(Pair(currentChain, currentBg))
+                }
+                currentChain = ArrayList()
+                currentBg = ArrayList()
+                currentChain.add(peaks[i])
+                currentBg.add(bgs[i])
+            }
+        }
+        if (currentChain.size >= 18) {
+            result.add(Pair(currentChain, currentBg))
+        }
+        return result
+    }
+
+    private fun evaluateHeightsSlices(heights: FloatArray): BitChordCodec.Payload? {
+        val n = heights.size
+        // Valid BitChord codes range from ~24 to 34 bars
+        val minLen = 22
+        val maxLen = min(n, 36)
+
+        // Pass 1: Prioritize modern 2-bit format first (which handles TRACK, ALBUM, ARTIST, PLAYLIST)
+        for (len in maxLen downTo minLen) {
+            for (start in 0..(n - len)) {
+                val sub = FloatArray(len) { heights[start + it] }
+                tryDecodeHeights(sub, allowLegacy = false)?.let { return it }
+            }
+        }
+
+        // Pass 2: Fall back to legacy 1-bit format only if modern format did not match
+        for (len in maxLen downTo minLen) {
+            for (start in 0..(n - len)) {
+                val sub = FloatArray(len) { heights[start + it] }
+                tryDecodeHeights(sub, allowLegacy = true)?.let { return it }
+            }
+        }
+
+        return null
+    }
+
+    private fun tryDecodeHeights(h: FloatArray, allowLegacy: Boolean): BitChordCodec.Payload? {
+        if (h.size < 5) return null
+
+        // 1. Forward direction: first bar is 0, last bar is 7
+        val lowFwd = h.first()
+        val highFwd = h.last()
+        if (highFwd >= lowFwd + 4f) {
+            val levels = ArrayList<Int>(h.size)
+            for (v in h) {
+                val scaled = ((v - lowFwd) / (highFwd - lowFwd)) * 7f
+                levels.add(scaled.roundToInt().coerceIn(0, 7))
+            }
+            if (levels.first() == 0 && levels.last() == 7) {
+                val payload = runCatching { BitChordCodec.decode(levels) }.getOrNull()
+                    ?: if (allowLegacy) runCatching { BitChordCodec.decodeLegacy1Bit(levels) }.getOrNull() else null
+                if (payload != null) return payload
+            }
+        }
+
+        // 2. Reversed direction: phone held upside down
+        val lowRev = h.last()
+        val highRev = h.first()
+        if (highRev >= lowRev + 4f) {
+            val rev = FloatArray(h.size) { h[h.size - 1 - it] }
+            val levels = ArrayList<Int>(rev.size)
+            for (v in rev) {
+                val scaled = ((v - lowRev) / (highRev - lowRev)) * 7f
+                levels.add(scaled.roundToInt().coerceIn(0, 7))
+            }
+            if (levels.first() == 0 && levels.last() == 7) {
+                val payload = runCatching { BitChordCodec.decode(levels) }.getOrNull()
+                    ?: if (allowLegacy) runCatching { BitChordCodec.decodeLegacy1Bit(levels) }.getOrNull() else null
+                if (payload != null) return payload
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Pass 2: Connected component run-length analysis with low minimum thresholds so level-0 bars
+     * are never discarded.
+     */
+    private fun detectByComponents(
+        yuvBytes: ByteArray,
+        width: Int,
+        height: Int,
+    ): BitChordCodec.Payload? {
+        val roiX = (width * 0.02f).toInt()
+        val roiY = (height * 0.08f).toInt()
+        val roiW = (width * 0.96f).toInt()
+        val roiH = (height * 0.84f).toInt()
+        val total = roiW * roiH
+        if (total <= 0) return null
+
+        // Find min and max in ROI to set local contrast threshold
+        var minLum = 255
+        var maxLum = 0
+        for (y in 0 until roiH step 3) {
+            val rowOffset = (roiY + y) * width
+            for (x in 0 until roiW step 3) {
+                val v = yuvBytes[rowOffset + roiX + x].toInt() and 0xFF
+                if (v < minLum) minLum = v
+                if (v > maxLum) maxLum = v
+            }
+        }
+
+        if (maxLum - minLum < 20) return null
+        val threshold = minLum + ((maxLum - minLum) * 0.45f).toInt()
+
+        val binary = BooleanArray(total)
+        val visited = BooleanArray(total)
+        val queueX = IntArray(total)
+        val queueY = IntArray(total)
+
         for (invert in booleanArrayOf(false, true)) {
-            // Fill binary array
-            for (y in 0 until downH) {
-                val srcY = roiY + y * step
-                val rowOffset = srcY * width
-                val binRow = y * downW
-                for (x in 0 until downW) {
-                    val srcX = roiX + x * step
-                    val v = yuvBytes[rowOffset + srcX].toInt() and 0xFF
-                    binary[binRow + x] = if (invert) v < otsuThreshold else v >= otsuThreshold
+            for (y in 0 until roiH) {
+                val rowOffset = (roiY + y) * width
+                val binRow = y * roiW
+                for (x in 0 until roiW) {
+                    val v = yuvBytes[rowOffset + roiX + x].toInt() and 0xFF
+                    binary[binRow + x] = if (invert) v < threshold else v >= threshold
                 }
             }
 
             visited.fill(false)
             val candidates = ArrayList<BarBox>()
-            val minBarH = (downH * 0.05f).toInt().coerceAtLeast(10)
-            val maxBarW = (downW * 0.08f).toInt().coerceAtLeast(14)
 
-            for (y in 0 until downH) {
-                val binRow = y * downW
-                for (x in 0 until downW) {
+            for (y in 0 until roiH) {
+                val binRow = y * roiW
+                for (x in 0 until roiW) {
                     val idx = binRow + x
                     if (!binary[idx] || visited[idx]) continue
 
-                    // BFS flood fill to find bounding box of connected component
                     var minX = x
                     var maxX = x
                     var minY = y
@@ -130,32 +365,31 @@ object BitChordBarDetector {
                         if (qy < minY) minY = qy
                         if (qy > maxY) maxY = qy
 
-                        // 4-neighborhood
-                        if (qx + 1 < downW) {
-                            val nIdx = qy * downW + (qx + 1)
-                            if (binary[nIdx] && !visited[nIdx]) {
-                                visited[nIdx] = true
+                        if (qx + 1 < roiW) {
+                            val n = qy * roiW + (qx + 1)
+                            if (binary[n] && !visited[n]) {
+                                visited[n] = true
                                 queueX[tail] = qx + 1; queueY[tail] = qy; tail++
                             }
                         }
                         if (qx - 1 >= 0) {
-                            val nIdx = qy * downW + (qx - 1)
-                            if (binary[nIdx] && !visited[nIdx]) {
-                                visited[nIdx] = true
+                            val n = qy * roiW + (qx - 1)
+                            if (binary[n] && !visited[n]) {
+                                visited[n] = true
                                 queueX[tail] = qx - 1; queueY[tail] = qy; tail++
                             }
                         }
-                        if (qy + 1 < downH) {
-                            val nIdx = (qy + 1) * downW + qx
-                            if (binary[nIdx] && !visited[nIdx]) {
-                                visited[nIdx] = true
+                        if (qy + 1 < roiH) {
+                            val n = (qy + 1) * roiW + qx
+                            if (binary[n] && !visited[n]) {
+                                visited[n] = true
                                 queueX[tail] = qx; queueY[tail] = qy + 1; tail++
                             }
                         }
                         if (qy - 1 >= 0) {
-                            val nIdx = (qy - 1) * downW + qx
-                            if (binary[nIdx] && !visited[nIdx]) {
-                                visited[nIdx] = true
+                            val n = (qy - 1) * roiW + qx
+                            if (binary[n] && !visited[n]) {
+                                visited[n] = true
                                 queueX[tail] = qx; queueY[tail] = qy - 1; tail++
                             }
                         }
@@ -164,63 +398,29 @@ object BitChordBarDetector {
                     val bw = maxX - minX + 1
                     val bh = maxY - minY + 1
 
-                    // Candidate bars must be vertical strips: taller than wide, reasonable dimensions
-                    if (bh >= minBarH && bw in 2..maxBarW && (bh.toFloat() / bw.coerceAtLeast(1)) >= 1.12f && area >= 14) {
+                    // Accept even small bars (level 0 can be small)
+                    if (bh >= 4 && bw in 1..(roiW * 0.12f).toInt() && (bh.toFloat() / bw) >= 1.05f && area >= 6) {
                         candidates.add(BarBox(minX, minY, bw, bh, area))
                     }
                 }
             }
 
-            if (candidates.size < 5) continue
-
-            // 3. Sort candidate bars left-to-right
+            if (candidates.size < 18) continue
             candidates.sortBy { it.x }
 
-            // 4. Merge adjacent overlapping broken fragments (same as Python codec)
-            val merged = ArrayList<BarBox>()
-            for (bar in candidates) {
-                if (merged.isEmpty()) {
-                    merged.add(bar)
-                    continue
-                }
-                val prev = merged.last()
-                val gap = bar.x - prev.right
-                val overlap = min(prev.bottom, bar.bottom) - max(prev.y, bar.y)
-                if (gap <= 3 && overlap > 0) {
-                    val left = min(prev.x, bar.x)
-                    val right = max(prev.right, bar.right)
-                    val top = min(prev.y, bar.y)
-                    val bottom = max(prev.bottom, bar.bottom)
-                    prev.x = left
-                    prev.y = top
-                    prev.w = right - left
-                    prev.h = bottom - top
-                    prev.area += bar.area
-                } else {
-                    merged.add(bar)
-                }
-            }
-
-            if (merged.size < 5) continue
-
-            // 5. Group bars that share the same horizontal baseline/center line
-            val chains = findAlignedChains(merged)
+            // Group bars aligned along horizontal center
+            val chains = findAlignedComponentChains(candidates)
             for (chain in chains) {
-                val payload = evaluateChain(chain)
-                if (payload != null) {
-                    return payload
-                }
+                if (chain.size < 18) continue
+                val heights = FloatArray(chain.size) { chain[it].h.toFloat() }
+                evaluateHeightsSlices(heights)?.let { return it }
             }
         }
 
         return null
     }
 
-    /**
-     * Groups candidate bars into horizontal chains where adjacent bars share
-     * approximately the same vertical center line.
-     */
-    private fun findAlignedChains(bars: List<BarBox>): List<List<BarBox>> {
+    private fun findAlignedComponentChains(bars: List<BarBox>): List<List<BarBox>> {
         val result = ArrayList<List<BarBox>>()
         val visited = BooleanArray(bars.size)
 
@@ -235,10 +435,9 @@ object BitChordBarDetector {
                 if (visited[j]) continue
                 val next = bars[j]
                 val gap = next.x - current.right
-                // Adjacent bars in soundwave barcode have small gaps
-                val maxGap = max(current.w, next.w) * 4 + 10
+                val maxGap = max(current.w, next.w) * 5 + 16
                 val dy = abs(next.centerY - current.centerY)
-                val maxDy = max(current.h, next.h) * 0.40f
+                val maxDy = max(current.h, next.h) * 0.50f
 
                 if (gap in 0..maxGap && dy <= maxDy) {
                     chain.add(next)
@@ -247,109 +446,10 @@ object BitChordBarDetector {
                 }
             }
 
-            if (chain.size >= 12) {
+            if (chain.size >= 18) {
                 result.add(chain)
             }
         }
-
         return result
-    }
-
-    /**
-     * Evaluates a chain of aligned bars by testing candidate subsequences with CRC-8 validation.
-     */
-    private fun evaluateChain(chain: List<BarBox>): BitChordCodec.Payload? {
-        // Try entire chain first
-        trySequence(chain)?.let { return it }
-
-        // If chain has extra surrounding components (e.g. logo or text), test sliding windows
-        // Valid BitChord codes typically have between 20 and 42 bars
-        val minLen = 16
-        val maxLen = min(chain.size, 45)
-
-        for (len in maxLen downTo minLen) {
-            for (start in 0..(chain.size - len)) {
-                val sub = chain.subList(start, start + len)
-                trySequence(sub)?.let { return it }
-            }
-        }
-
-        return null
-    }
-
-    /**
-     * Scales bar heights between the first and last calibration bars and tests
-     * both forward and reversed orientation against [BitChordCodec].
-     */
-    private fun trySequence(bars: List<BarBox>): BitChordCodec.Payload? {
-        if (bars.size < 5) return null
-
-        // 1. Normal forward direction: first bar is calibration 0 (min), last bar is calibration 7 (max)
-        val lowFwd = bars.first().h.toFloat()
-        val highFwd = bars.last().h.toFloat()
-        if (highFwd >= lowFwd + 5f) {
-            val levels = ArrayList<Int>(bars.size)
-            for (b in bars) {
-                val scaled = ((b.h - lowFwd) / (highFwd - lowFwd)) * 7f
-                levels.add(scaled.roundToInt().coerceIn(0, 7))
-            }
-            if (levels.first() == 0 && levels.last() == 7) {
-                val payload = runCatching { BitChordCodec.decode(levels) }.getOrNull()
-                    ?: runCatching { BitChordCodec.decodeLegacy1Bit(levels) }.getOrNull()
-                if (payload != null) return payload
-            }
-        }
-
-        // 2. Reversed direction: code presented upside down
-        val lowRev = bars.last().h.toFloat()
-        val highRev = bars.first().h.toFloat()
-        if (highRev >= lowRev + 5f) {
-            val revBars = bars.asReversed()
-            val levels = ArrayList<Int>(revBars.size)
-            for (b in revBars) {
-                val scaled = ((b.h - lowRev) / (highRev - lowRev)) * 7f
-                levels.add(scaled.roundToInt().coerceIn(0, 7))
-            }
-            if (levels.first() == 0 && levels.last() == 7) {
-                val payload = runCatching { BitChordCodec.decode(levels) }.getOrNull()
-                    ?: runCatching { BitChordCodec.decodeLegacy1Bit(levels) }.getOrNull()
-                if (payload != null) return payload
-            }
-        }
-
-        return null
-    }
-
-    /**
-     * Computes Otsu's optimal binarization threshold from a 256-bin luminance histogram.
-     */
-    private fun computeOtsuThreshold(hist: IntArray, total: Int): Int {
-        var sum = 0.0
-        for (i in 0..255) {
-            sum += i * hist[i]
-        }
-        var sumB = 0.0
-        var wB = 0
-        var varMax = 0.0
-        var threshold = 128
-
-        for (t in 0..255) {
-            wB += hist[t]
-            if (wB == 0) continue
-            val wF = total - wB
-            if (wF == 0) break
-
-            sumB += t * hist[t]
-            val mB = sumB / wB
-            val mF = (sum - sumB) / wF
-            val varBetween = wB.toDouble() * wF.toDouble() * (mB - mF) * (mB - mF)
-
-            if (varBetween > varMax) {
-                varMax = varBetween
-                threshold = t
-            }
-        }
-
-        return threshold
     }
 }

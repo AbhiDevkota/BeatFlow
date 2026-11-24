@@ -2061,20 +2061,23 @@ private fun BitChordApp(
         when (request) {
             is LinkRequest.Track -> {
                 val song = YtMusicRepository.trackLinks(request.videoId).getOrNull()
-                if (song == null) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.couldnt_open_link),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                } else {
-                    // A link is one song named on purpose, which is exactly the
-                    // case [playRadio] exists for: play it and let AutoPlay
-                    // carry on, rather than queueing something around it.
-                    playRadio(
-                        song,
-                        QueueSource(sharedLinkLabel, PlaybackSourceType.SHARED_LINK, song.videoId),
+                    ?: Song(
+                        videoId = request.videoId,
+                        title = "",
+                        artist = "",
+                        albumName = null,
+                        thumbnailUrl = "https://i.ytimg.com/vi/${request.videoId}/hqdefault.jpg",
                     )
+                // A link is one song named on purpose, which is exactly the
+                // case [playRadio] exists for: play it and let AutoPlay
+                // carry on, rather than queueing something around it.
+                playRadio(
+                    song,
+                    QueueSource(sharedLinkLabel, PlaybackSourceType.SHARED_LINK, song.videoId),
+                )
+                showNowPlaying = true
+                if (!reducePlayerMotion) {
+                    playerSheetMotion.open()
                 }
             }
             is LinkRequest.Page -> {

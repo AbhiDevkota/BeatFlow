@@ -187,6 +187,7 @@ fun QrScannerSheet(
                         }
                         val imageAnalysis = ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setTargetResolution(android.util.Size(1280, 720))
                             .build()
                             .also { analysis ->
                                 analysis.setAnalyzer(
@@ -741,7 +742,17 @@ private class QrCodeAnalyzer(
             90 -> Triple(rotateYuv90(bytes, width, height, rowStride), height, width)
             180 -> Triple(rotateYuv180(bytes, width, height, rowStride), width, height)
             270 -> Triple(rotateYuv270(bytes, width, height, rowStride), height, width)
-            else -> Triple(bytes, width, height)
+            else -> {
+                if (rowStride == width) {
+                    Triple(bytes, width, height)
+                } else {
+                    val packed = ByteArray(width * height)
+                    for (y in 0 until height) {
+                        System.arraycopy(bytes, y * rowStride, packed, y * width, width)
+                    }
+                    Triple(packed, width, height)
+                }
+            }
         }
 
         // 1. First, attempt to detect and decode BitChord visual soundwave code

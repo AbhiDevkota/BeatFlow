@@ -48,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -95,12 +96,12 @@ fun BitChordCodeBar(
         if (levels.isEmpty()) return@Canvas
         val count = levels.size
         val availableWidth = size.width
-        val barWidth = (availableWidth / (count * 1.85f)).coerceIn(2.5.dp.toPx(), 6.5.dp.toPx())
+        val barWidth = (availableWidth / (count * 1.8f)).coerceIn(3.5.dp.toPx(), 8.dp.toPx())
         val gap = (availableWidth - count * barWidth) / (count - 1).coerceAtLeast(1)
 
         val centerY = size.height / 2f
-        val minH = size.height * 0.16f
-        val maxH = size.height * 0.94f
+        val minH = size.height * 0.18f
+        val maxH = size.height * 0.96f
 
         for (i in levels.indices) {
             val level = levels[i].coerceIn(0, 7)
@@ -120,6 +121,7 @@ fun BitChordCodeBar(
 
 /**
  * The BitChord Code Card displaying:
+ * - Background: Album artwork blurred (like fullscreen player / lyrics), with frosted/translucent glass
  * - Top: Album cover on left, Song title & artist name on right
  * - Bottom: BitChord logo on left (below album cover), with the soundwave code
  *   bars expanding across to the right (below the artist name).
@@ -130,14 +132,43 @@ fun BitChordCodeCard(
     levels: List<Int>,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(22.dp)),
-        color = Color(0xFF13161F),
-        shape = RoundedCornerShape(22.dp),
+            .clip(RoundedCornerShape(24.dp))
+            .border(
+                1.dp,
+                Color.White.copy(alpha = if (glassActive) 0.26f else 0.16f),
+                RoundedCornerShape(24.dp),
+            ),
     ) {
+        // Song artwork cover as blurred background (matching fullscreen player and lyrics)
+        if (!song.thumbnailUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = song.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .blur(36.dp),
+            )
+        }
+
+        // Translucent glass overlay passing color like the 3-dot menu in glass mode
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    if (glassActive) {
+                        Color(0xFF161922).copy(alpha = 0.52f)
+                    } else {
+                        Color(0xFF0E1118).copy(alpha = 0.82f)
+                    },
+                ),
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -148,7 +179,7 @@ fun BitChordCodeCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Album cover
+                // Album cover thumbnail
                 AsyncImage(
                     model = song.thumbnailUrl,
                     contentDescription = null,
@@ -156,12 +187,12 @@ fun BitChordCodeCard(
                     modifier = Modifier
                         .size(76.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp)),
+                        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(12.dp)),
                 )
 
                 Spacer(Modifier.width(14.dp))
 
-                // Song Title and Artist
+                // Song Title and Artist (no "BitChord Code" badge)
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center,
@@ -180,18 +211,9 @@ fun BitChordCodeCard(
                     Text(
                         text = song.artist,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.72f),
+                        color = Color.White.copy(alpha = 0.76f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "BitChord Code",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 0.5.sp,
-                        ),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                     )
                 }
             }
@@ -218,12 +240,12 @@ fun BitChordCodeCard(
 
                 Spacer(Modifier.width(14.dp))
 
-                // Soundwave code bars expanded across to the right
+                // Soundwave code bars expanded across to the right (taller & clearer)
                 BitChordCodeBar(
                     levels = levels,
                     modifier = Modifier
                         .weight(1f)
-                        .height(32.dp),
+                        .height(44.dp),
                     barColor = Color.White,
                 )
             }
@@ -440,23 +462,15 @@ suspend fun renderBitChordCodeBitmap(
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    // Background
-    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF12151E.toInt()
-    }
     val cardRect = RectF(0f, 0f, width.toFloat(), height.toFloat())
-    canvas.drawRoundRect(cardRect, 48f, 48f, bgPaint)
-
-    // Border
-    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-        color = 0x33FFFFFF
+    val clipPath = android.graphics.Path().apply {
+        addRoundRect(cardRect, 48f, 48f, android.graphics.Path.Direction.CW)
     }
-    canvas.drawRoundRect(cardRect, 48f, 48f, borderPaint)
+    canvas.save()
+    canvas.clipPath(clipPath)
 
     // Load artwork bitmap via Coil
-    val artSize = 220
+    val artSize = 220f
     val artLeft = 60f
     val artTop = 60f
     var artBitmap: Bitmap? = null
@@ -473,21 +487,45 @@ suspend fun renderBitChordCodeBitmap(
         } catch (_: Exception) {}
     }
 
-    // Draw artwork
+    // 1. Background: Album artwork stretched to cover the entire card (like fullscreen / lyrics)
+    if (artBitmap != null) {
+        val srcRect = android.graphics.Rect(0, 0, artBitmap.width, artBitmap.height)
+        canvas.drawBitmap(artBitmap, srcRect, cardRect, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        // Scrim over background: dark translucent tint so text and soundwave bars stand out
+        val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xB80E121B.toInt()
+        }
+        canvas.drawRect(cardRect, scrimPaint)
+    } else {
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF12151E.toInt()
+        }
+        canvas.drawRect(cardRect, bgPaint)
+    }
+
+    // 2. Border
+    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = 0x38FFFFFF
+    }
+    canvas.drawRoundRect(cardRect, 48f, 48f, borderPaint)
+
+    // 3. Draw artwork thumbnail on top-left
     val artRect = RectF(artLeft, artTop, artLeft + artSize, artTop + artSize)
     if (artBitmap != null) {
-        val path = android.graphics.Path().apply {
+        val artPath = android.graphics.Path().apply {
             addRoundRect(artRect, 28f, 28f, android.graphics.Path.Direction.CW)
         }
         canvas.save()
-        canvas.clipPath(path)
+        canvas.clipPath(artPath)
         canvas.drawBitmap(artBitmap, null, artRect, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
         canvas.restore()
     } else {
         val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF242834.toInt() }
         canvas.drawRoundRect(artRect, 28f, 28f, placeholderPaint)
     }
-    // Art border
+    // Art thumbnail border
     val artBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f
@@ -495,26 +533,20 @@ suspend fun renderBitChordCodeBitmap(
     }
     canvas.drawRoundRect(artRect, 28f, 28f, artBorder)
 
-    // Text details
+    // 4. Text details (Title and Artist only, NO "BITCHORD CODE" label)
     val textLeft = artLeft + artSize + 40f
     val textMaxW = width - textLeft - 60f
 
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFFFFFFF.toInt()
-        textSize = 48f
+        textSize = 52f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
 
     val artistPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xB3FFFFFF.toInt()
-        textSize = 36f
+        color = 0xCCFFFFFF.toInt()
+        textSize = 38f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-    }
-
-    val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF38B6FF.toInt()
-        textSize = 28f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
 
     // Draw Title (truncated if too long)
@@ -524,7 +556,7 @@ suspend fun renderBitChordCodeBitmap(
         textMaxW,
         android.text.TextUtils.TruncateAt.END,
     ).toString()
-    canvas.drawText(titleText, textLeft, artTop + 65f, titlePaint)
+    canvas.drawText(titleText, textLeft, artTop + 85f, titlePaint)
 
     // Draw Artist
     val artistText = android.text.TextUtils.ellipsize(
@@ -533,15 +565,12 @@ suspend fun renderBitChordCodeBitmap(
         textMaxW,
         android.text.TextUtils.TruncateAt.END,
     ).toString()
-    canvas.drawText(artistText, textLeft, artTop + 130f, artistPaint)
+    canvas.drawText(artistText, textLeft, artTop + 155f, artistPaint)
 
-    // Draw BitChord Code label
-    canvas.drawText("BITCHORD CODE", textLeft, artTop + 190f, badgePaint)
-
-    // Bottom Section: Logo + Soundwave Code Bars
+    // 5. Bottom Section: Logo + Soundwave Code Bars
     val bottomY = height - 120f
     val logoDrawable = ResourcesCompat.getDrawable(context.resources, R.drawable.ic_logo, null)
-    val logoH = 52f
+    val logoH = 54f
     val logoW = if (logoDrawable != null && logoDrawable.intrinsicHeight > 0) {
         logoH * logoDrawable.intrinsicWidth / logoDrawable.intrinsicHeight
     } else {
@@ -567,12 +596,12 @@ suspend fun renderBitChordCodeBitmap(
     val count = levels.size
 
     if (count > 0) {
-        val barWidth = (codeWidth / (count * 1.85f)).coerceIn(8f, 18f)
+        val barWidth = (codeWidth / (count * 1.8f)).coerceIn(10f, 22f)
         val gap = (codeWidth - count * barWidth) / (count - 1).coerceAtLeast(1)
         val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
 
-        val minH = 14f
-        val maxH = 90f
+        val minH = 26f
+        val maxH = 135f
 
         for (i in levels.indices) {
             val level = levels[i].coerceIn(0, 7)
@@ -588,5 +617,6 @@ suspend fun renderBitChordCodeBitmap(
         }
     }
 
+    canvas.restore()
     bitmap
 }
