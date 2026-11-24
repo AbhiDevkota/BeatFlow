@@ -68,6 +68,7 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
@@ -4326,6 +4327,15 @@ private fun BitChordApp(
                                 SearchSource.YOUTUBE -> results != null && searchSuggestions.isEmpty()
                             }
                             val isSearchPage = onSearchTab && !inSearchResultPlace
+                            if (isSearchPage) {
+                                IconButton(onClick = {}) {
+                                    Icon(
+                                        Icons.Rounded.CameraAlt,
+                                        contentDescription = stringResource(R.string.listen_together_scan_qr),
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
                             // Not on a release page, whose pill already carries
                             // three of its own controls — Apple Music leaves the
                             // profile off its album pages too. Nor on the search page
