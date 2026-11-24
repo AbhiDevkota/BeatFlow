@@ -107,6 +107,50 @@ object MusicLink {
     }
 
     /**
+     * Posts a request directly into the pending queue (e.g. from the code scanner).
+     */
+    fun submit(request: LinkRequest) {
+        _pending.value = request
+    }
+
+    /**
+     * Parses a scanned string, BitChord URI, or standard link into a [LinkRequest].
+     */
+    fun parseCode(text: String): LinkRequest? {
+        val trimmed = text.trim()
+        if (trimmed.startsWith("bitchord:", ignoreCase = true)) {
+            val after = trimmed.substring("bitchord:".length)
+            val parts = after.split(":", limit = 2)
+            if (parts.size == 2) {
+                val kind = parts[0].lowercase()
+                val id = parts[1].trim()
+                return when (kind) {
+                    "track", "song" -> track(id)
+                    "album" -> LinkRequest.Page(if (id.startsWith("MPREb") || id.startsWith("OLAK5uy")) id else "VL$id")
+                    "playlist" -> playlist(id)
+                    "artist" -> LinkRequest.Page(id)
+                    else -> null
+                }
+            }
+        }
+        if (trimmed.startsWith("track:", ignoreCase = true)) {
+            return track(trimmed.substring("track:".length))
+        }
+        if (trimmed.startsWith("album:", ignoreCase = true)) {
+            val id = trimmed.substring("album:".length).trim()
+            return LinkRequest.Page(if (id.startsWith("MPREb") || id.startsWith("OLAK5uy")) id else "VL$id")
+        }
+        if (trimmed.startsWith("playlist:", ignoreCase = true)) {
+            return playlist(trimmed.substring("playlist:".length))
+        }
+        if (trimmed.startsWith("artist:", ignoreCase = true)) {
+            return LinkRequest.Page(trimmed.substring("artist:".length).trim())
+        }
+        val url = firstUrl(trimmed) ?: trimmed
+        return runCatching { parse(Uri.parse(url)) }.getOrNull()
+    }
+
+    /**
      * What a YouTube or YouTube Music URL points at, or null for one this app
      * has nothing to show for.
      *
@@ -117,6 +161,21 @@ object MusicLink {
      * as through the browser.
      */
     fun parse(uri: Uri): LinkRequest? {
+        if (uri.scheme == "bitchord") {
+            val ssp = uri.schemeSpecificPart.removePrefix("//")
+            val parts = ssp.split(":", limit = 2)
+            if (parts.size == 2) {
+                val kind = parts[0].lowercase()
+                val id = parts[1].trim()
+                return when (kind) {
+                    "track", "song" -> track(id)
+                    "album" -> LinkRequest.Page(if (id.startsWith("MPREb") || id.startsWith("OLAK5uy")) id else "VL$id")
+                    "playlist" -> playlist(id)
+                    "artist" -> LinkRequest.Page(id)
+                    else -> null
+                }
+            }
+        }
         val host = uri.host?.lowercase()?.removePrefix("www.") ?: return null
         val segments = uri.pathSegments.orEmpty()
         if (host == "youtu.be") {

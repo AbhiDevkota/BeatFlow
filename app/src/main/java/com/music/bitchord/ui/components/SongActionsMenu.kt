@@ -294,32 +294,28 @@ fun SongActionsMenu(
         // playlist's answer there, not YouTube's, and neither needs an account.
         // Remove stands without an account too: a playlist imported onto
         // this device is the user's to edit while signed out.
-        if (canRate || onRemoveFromPlaylist != null || onShareBitChordCode != null) {
-            if (startsGroup()) IosMenuSeparator()
-            if (canRate) {
-                ActionRow(
-                    icon = SfIcons.AddToPlaylist,
-                    label = stringResource(R.string.add_to_playlist),
-                    accent = palette.accent,
-                    onClick = onAddToPlaylist,
-                )
-            }
-            if (onShareBitChordCode != null) {
-                ActionRow(
-                    icon = SfIcons.GraphicEq,
-                    label = "Share BitChord Code",
-                    accent = palette.accent,
-                    onClick = onShareBitChordCode,
-                )
-            }
-            onRemoveFromPlaylist?.let {
-                ActionRow(
-                    icon = SfIcons.RemoveFromPlaylist,
-                    label = stringResource(R.string.remove_from_playlist),
-                    accent = palette.accent,
-                    onClick = it,
-                )
-            }
+        if (startsGroup()) IosMenuSeparator()
+        ActionRow(
+            icon = SfIcons.AddToPlaylist,
+            label = stringResource(R.string.add_to_playlist),
+            accent = palette.accent,
+            onClick = onAddToPlaylist,
+        )
+        if (onShareBitChordCode != null) {
+            ActionRow(
+                icon = SfIcons.GraphicEq,
+                label = "Share BitChord Code",
+                accent = palette.accent,
+                onClick = onShareBitChordCode,
+            )
+        }
+        onRemoveFromPlaylist?.let {
+            ActionRow(
+                icon = SfIcons.RemoveFromPlaylist,
+                label = stringResource(R.string.remove_from_playlist),
+                accent = palette.accent,
+                onClick = it,
+            )
         }
 
         // Where the track goes next, and what is kept of it. The file rows

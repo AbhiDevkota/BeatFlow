@@ -6728,6 +6728,7 @@ private fun BitChordScannerAndCodeOverlays(
         BackHandler { onDismissQrScanner() }
         QrScannerSheet(
             onDismiss = onDismissQrScanner,
+            onCodeScanned = { onDismissQrScanner() },
         )
     }
 

@@ -51,8 +51,12 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.FlashOff
 import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
+import com.music.bitchord.data.code.BitChordBarDetector
+import com.music.bitchord.playback.MusicLink
+import com.music.bitchord.playback.LinkRequest
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -191,7 +195,14 @@ fun QrScannerSheet(
                                         if (scannedCode == null) {
                                             scannedCode = text
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            onCodeScanned(text)
+                                            val request = MusicLink.parseCode(text)
+                                            if (request != null) {
+                                                MusicLink.submit(request)
+                                                onCodeScanned(text)
+                                                onDismiss()
+                                            } else {
+                                                onCodeScanned(text)
+                                            }
                                         }
                                     },
                                 )
@@ -373,6 +384,7 @@ fun QrScannerSheet(
                 exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
             ) {
                 val code = scannedCode.orEmpty()
+                val musicRequest = remember(code) { MusicLink.parseCode(code) }
                 val isUrl = code.startsWith("http://") || code.startsWith("https://")
 
                 Surface(
@@ -425,7 +437,24 @@ fun QrScannerSheet(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            if (isUrl) {
+                            if (musicRequest != null) {
+                                Button(
+                                    onClick = {
+                                        MusicLink.submit(musicRequest)
+                                        onDismiss()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(14.dp),
+                                ) {
+                                    Icon(
+                                        if (musicRequest is LinkRequest.Track) Icons.Rounded.PlayArrow else Icons.AutoMirrored.Rounded.OpenInNew,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (musicRequest is LinkRequest.Track) "Play Track" else "Open in BitChord", maxLines = 1)
+                                }
+                            } else if (isUrl) {
                                 Button(
                                     onClick = {
                                         try {
@@ -714,6 +743,17 @@ private class QrCodeAnalyzer(
             270 -> Triple(rotateYuv270(bytes, width, height, rowStride), height, width)
             else -> Triple(bytes, width, height)
         }
+
+        // 1. First, attempt to detect and decode BitChord visual soundwave code
+        try {
+            val bitChordPayload = BitChordBarDetector.detect(rotatedBytes, rotWidth, rotHeight)
+            if (bitChordPayload != null) {
+                lastScannedTime = currentTime
+                onQrCodeScanned(bitChordPayload.canonicalUri)
+                imageProxy.close()
+                return
+            }
+        } catch (_: Exception) {}
 
         val stride = if (rotation == 90 || rotation == 270) rotWidth else rowStride
         val source = PlanarYUVLuminanceSource(
