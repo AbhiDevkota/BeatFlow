@@ -4319,10 +4319,18 @@ private fun BitChordApp(
                             if (route != AppRoute.Downloads) {
                                 TopBarDownloadButton(onClick = { navigator.push(AppRoute.Downloads) })
                             }
+                            val onSearchTab = selectedTab == TAB_SEARCH && route == null && detail == null && selectedMoodGenre == null
+                            val inSearchResultPlace = when (searchSource) {
+                                SearchSource.LIBRARY -> query.isNotBlank()
+                                SearchSource.ADDONS -> addonResults != null
+                                SearchSource.YOUTUBE -> results != null && searchSuggestions.isEmpty()
+                            }
+                            val isSearchPage = onSearchTab && !inSearchResultPlace
                             // Not on a release page, whose pill already carries
                             // three of its own controls — Apple Music leaves the
-                            // profile off its album pages too.
-                            if (!isReleaseDetail) TopBarAccountButton(
+                            // profile off its album pages too. Nor on the search page
+                            // itself (surfacing only when viewing search results).
+                            if (!isReleaseDetail && !isSearchPage) TopBarAccountButton(
                                 account = account,
                                 onClick = {
                                     if (signedIn) {
