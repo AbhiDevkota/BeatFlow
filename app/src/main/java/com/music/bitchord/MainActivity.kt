@@ -311,6 +311,7 @@ import com.music.bitchord.ui.components.AppLanguageDialog
 import com.music.bitchord.ui.components.TranslationLanguageDialog
 import com.music.bitchord.ui.components.LyricsSourcesDialog
 import com.music.bitchord.ui.components.QrScannerSheet
+import com.music.bitchord.ui.components.BitChordCodeShareSheet
 import com.music.bitchord.ui.components.ServerEditorHost
 import com.music.bitchord.ui.components.UpdateAvailableDialog
 import com.music.bitchord.ui.components.WebDavConflictAlert
@@ -910,6 +911,7 @@ private fun BitChordApp(
     var updateDialogShown by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showQrScanner by rememberSaveable { mutableStateOf(false) }
+    var shareBitChordCodeTarget by remember { mutableStateOf<Song?>(null) }
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
 
     /**
@@ -4759,6 +4761,11 @@ private fun BitChordApp(
                         playlistTarget = song
                     }
                 },
+                onShareBitChordCode = {
+                    val target = song
+                    songActions = null
+                    shareBitChordCodeTarget = target
+                },
                 onRemoveFromPlaylist = editable?.let {
                     {
                         songActions = null
@@ -5825,18 +5832,12 @@ private fun BitChordApp(
             }
         }
 
-        if (showQrScanner) {
-            val keyboard = LocalSoftwareKeyboardController.current
-            val focusManager = LocalFocusManager.current
-            LaunchedEffect(Unit) {
-                keyboard?.hide()
-                focusManager.clearFocus(force = true)
-            }
-            BackHandler { showQrScanner = false }
-            QrScannerSheet(
-                onDismiss = { showQrScanner = false },
-            )
-        }
+        BitChordScannerAndCodeOverlays(
+            showQrScanner = showQrScanner,
+            onDismissQrScanner = { showQrScanner = false },
+            shareBitChordCodeTarget = shareBitChordCodeTarget,
+            onDismissShareBitChordCode = { shareBitChordCodeTarget = null },
+        )
 
         if (showLyricsSources) {
             BackHandler { showLyricsSources = false }
@@ -6709,3 +6710,31 @@ private suspend fun LazyListState.scrollToTopEased() {
 
 /** Safely converts a nullable Float to non-null, defaulting to 0f for null. */
 private fun Float?.orZero(): Float = this ?: 0f
+
+@Composable
+private fun BitChordScannerAndCodeOverlays(
+    showQrScanner: Boolean,
+    onDismissQrScanner: () -> Unit,
+    shareBitChordCodeTarget: Song?,
+    onDismissShareBitChordCode: () -> Unit,
+) {
+    if (showQrScanner) {
+        val keyboard = LocalSoftwareKeyboardController.current
+        val focusManager = LocalFocusManager.current
+        LaunchedEffect(Unit) {
+            keyboard?.hide()
+            focusManager.clearFocus(force = true)
+        }
+        BackHandler { onDismissQrScanner() }
+        QrScannerSheet(
+            onDismiss = onDismissQrScanner,
+        )
+    }
+
+    if (shareBitChordCodeTarget != null) {
+        BitChordCodeShareSheet(
+            song = shareBitChordCodeTarget,
+            onDismiss = onDismissShareBitChordCode,
+        )
+    }
+}

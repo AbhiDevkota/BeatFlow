@@ -119,6 +119,7 @@ fun SongActionsMenu(
     onToggleLike: () -> Unit,
     onToggleDislike: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onShareBitChordCode: (() -> Unit)? = null,
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -293,7 +294,7 @@ fun SongActionsMenu(
         // playlist's answer there, not YouTube's, and neither needs an account.
         // Remove stands without an account too: a playlist imported onto
         // this device is the user's to edit while signed out.
-        if (canRate || onRemoveFromPlaylist != null) {
+        if (canRate || onRemoveFromPlaylist != null || onShareBitChordCode != null) {
             if (startsGroup()) IosMenuSeparator()
             if (canRate) {
                 ActionRow(
@@ -301,6 +302,14 @@ fun SongActionsMenu(
                     label = stringResource(R.string.add_to_playlist),
                     accent = palette.accent,
                     onClick = onAddToPlaylist,
+                )
+            }
+            if (onShareBitChordCode != null) {
+                ActionRow(
+                    icon = SfIcons.GraphicEq,
+                    label = "Share BitChord Code",
+                    accent = palette.accent,
+                    onClick = onShareBitChordCode,
                 )
             }
             onRemoveFromPlaylist?.let {
