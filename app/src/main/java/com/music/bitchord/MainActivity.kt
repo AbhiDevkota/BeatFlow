@@ -119,6 +119,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -4330,7 +4331,13 @@ private fun BitChordApp(
                             }
                             val isSearchPage = onSearchTab && !inSearchResultPlace
                             if (isSearchPage) {
-                                IconButton(onClick = { showQrScanner = true }) {
+                                val keyboard = LocalSoftwareKeyboardController.current
+                                val focusManager = LocalFocusManager.current
+                                IconButton(onClick = {
+                                    keyboard?.hide()
+                                    focusManager.clearFocus(force = true)
+                                    showQrScanner = true
+                                }) {
                                     Icon(
                                         Icons.Rounded.CameraAlt,
                                         contentDescription = stringResource(R.string.listen_together_scan_qr),
@@ -5819,6 +5826,12 @@ private fun BitChordApp(
         }
 
         if (showQrScanner) {
+            val keyboard = LocalSoftwareKeyboardController.current
+            val focusManager = LocalFocusManager.current
+            LaunchedEffect(Unit) {
+                keyboard?.hide()
+                focusManager.clearFocus(force = true)
+            }
             BackHandler { showQrScanner = false }
             QrScannerSheet(
                 onDismiss = { showQrScanner = false },

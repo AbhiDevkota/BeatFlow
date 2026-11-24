@@ -84,7 +84,9 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -117,6 +119,8 @@ fun QrScannerSheet(
     val haptic = LocalHapticFeedback.current
     val clipboardManager = LocalClipboardManager.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -134,6 +138,8 @@ fun QrScannerSheet(
     }
 
     LaunchedEffect(Unit) {
+        keyboard?.hide()
+        focusManager.clearFocus(force = true)
         if (!hasCameraPermission) {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -611,15 +617,15 @@ private fun QrScannerViewfinder(
         }
         drawPath(blPath, color = bracketColor, style = Stroke(width = bracketStroke, cap = StrokeCap.Round))
 
-        // Inside the rectangle: Sleek scanning laser beam
+        // Inside the rectangle: Sleek scanning laser beam moving left to right and right to left
         clipPath(rectPath) {
             if (isScanning) {
-                val beamY = top + (bottom - top) * beamProgress
-                val beamHeight = 48.dp.toPx()
+                val beamX = left + (right - left) * beamProgress
+                val beamWidth = 48.dp.toPx()
 
-                // Soft glowing aura
+                // Soft glowing aura moving horizontally
                 drawRect(
-                    brush = Brush.verticalGradient(
+                    brush = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
                             Color(0x1500E5FF),
@@ -627,16 +633,16 @@ private fun QrScannerViewfinder(
                             Color(0x1500E5FF),
                             Color.Transparent,
                         ),
-                        startY = beamY - beamHeight / 2f,
-                        endY = beamY + beamHeight / 2f,
+                        startX = beamX - beamWidth / 2f,
+                        endX = beamX + beamWidth / 2f,
                     ),
-                    topLeft = Offset(left, beamY - beamHeight / 2f),
-                    size = Size(rectWidth, beamHeight),
+                    topLeft = Offset(beamX - beamWidth / 2f, top),
+                    size = Size(beamWidth, rectHeight),
                 )
 
-                // Laser beam line with fading edges
+                // Vertical laser beam line moving left to right and right to left
                 drawLine(
-                    brush = Brush.horizontalGradient(
+                    brush = Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
                             Color(0xFF00E5FF).copy(alpha = 0.85f),
@@ -644,12 +650,12 @@ private fun QrScannerViewfinder(
                             Color(0xFF00E5FF).copy(alpha = 0.85f),
                             Color.Transparent,
                         ),
-                        startX = left,
-                        endX = right,
+                        startY = top,
+                        endY = bottom,
                     ),
-                    start = Offset(left + 8.dp.toPx(), beamY),
-                    end = Offset(right - 8.dp.toPx(), beamY),
-                    strokeWidth = 2.dp.toPx(),
+                    start = Offset(beamX, top + 8.dp.toPx()),
+                    end = Offset(beamX, bottom - 8.dp.toPx()),
+                    strokeWidth = 2.5.dp.toPx(),
                     cap = StrokeCap.Round,
                 )
             }
