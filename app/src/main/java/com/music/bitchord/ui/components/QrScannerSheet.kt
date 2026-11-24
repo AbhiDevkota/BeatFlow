@@ -66,11 +66,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -150,9 +153,23 @@ fun QrScannerSheet(
     }
 
     var camera by remember { mutableStateOf<Camera?>(null) }
+    var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     var isTorchOn by remember { mutableStateOf(false) }
     var scannedCode by remember { mutableStateOf<String?>(null) }
     var copiedFeedback by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        onDispose {
+            cameraExecutor.shutdown()
+            try {
+                cameraProviderRef?.unbindAll()
+            } catch (e: Exception) {
+                Log.e("QrScanner", "Failed to unbind camera on dispose", e)
+            }
+        }
+    }
 
     LaunchedEffect(isTorchOn, camera) {
         camera?.cameraControl?.enableTorch(isTorchOn)
@@ -179,39 +196,41 @@ fun QrScannerSheet(
                         scaleType = PreviewView.ScaleType.FILL_CENTER
                     }
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                    val executor = ContextCompat.getMainExecutor(ctx)
                     cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = Preview.Builder().build().also {
-                            it.surfaceProvider = previewView.surfaceProvider
-                        }
-                        val imageAnalysis = ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .setTargetResolution(android.util.Size(1280, 720))
-                            .build()
-                            .also { analysis ->
-                                analysis.setAnalyzer(
-                                    executor,
-                                    QrCodeAnalyzer { text ->
-                                        if (scannedCode == null) {
-                                            scannedCode = text
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            val request = MusicLink.parseCode(text)
-                                            if (request != null) {
-                                                MusicLink.submit(request)
-                                                onCodeScanned(text)
-                                                onDismiss()
-                                            } else {
-                                                onCodeScanned(text)
-                                            }
-                                        }
-                                    },
-                                )
-                            }
-
-                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
                         try {
+                            val cameraProvider = cameraProviderFuture.get()
+                            cameraProviderRef = cameraProvider
+                            val preview = Preview.Builder().build().also {
+                                it.surfaceProvider = previewView.surfaceProvider
+                            }
+                            val imageAnalysis = ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .setTargetResolution(android.util.Size(1280, 720))
+                                .build()
+                                .also { analysis ->
+                                    analysis.setAnalyzer(
+                                        cameraExecutor,
+                                        QrCodeAnalyzer { text ->
+                                            mainExecutor.execute {
+                                                if (scannedCode == null) {
+                                                    scannedCode = text
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    val request = MusicLink.parseCode(text)
+                                                    if (request != null) {
+                                                        MusicLink.submit(request)
+                                                        onCodeScanned(text)
+                                                        onDismiss()
+                                                    } else {
+                                                        onCodeScanned(text)
+                                                    }
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
+
+                            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
                             cameraProvider.unbindAll()
                             val boundCamera = cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
@@ -245,7 +264,7 @@ fun QrScannerSheet(
                         } catch (e: Exception) {
                             Log.e("QrScanner", "Failed to bind camera use cases", e)
                         }
-                    }, executor)
+                    }, mainExecutor)
                     previewView
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -722,6 +741,7 @@ private fun QrScannerViewfinder(
 private class QrCodeAnalyzer(
     private val onQrCodeScanned: (String) -> Unit,
 ) : ImageAnalysis.Analyzer {
+    private val isAnalyzing = AtomicBoolean(false)
     private val reader = MultiFormatReader().apply {
         setHints(
             mapOf(
@@ -734,116 +754,137 @@ private class QrCodeAnalyzer(
     }
 
     private var lastScannedTime = 0L
+    private var rotatedBuffer: ByteArray? = null
+    private var packedBuffer: ByteArray? = null
 
     override fun analyze(imageProxy: ImageProxy) {
-        val currentTime = System.currentTimeMillis()
-        // Throttle scans: don't analyze more than once every 180ms
-        if (currentTime - lastScannedTime < 180L) {
+        if (!isAnalyzing.compareAndSet(false, true)) {
             imageProxy.close()
             return
         }
 
-        val plane = imageProxy.planes.getOrNull(0)
-        if (plane == null) {
-            imageProxy.close()
-            return
-        }
-
-        val buffer = plane.buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
-
-        val width = imageProxy.width
-        val height = imageProxy.height
-        val rowStride = plane.rowStride
-        val rotation = imageProxy.imageInfo.rotationDegrees
-
-        val (rotatedBytes, rotWidth, rotHeight) = when (rotation) {
-            90 -> Triple(rotateYuv90(bytes, width, height, rowStride), height, width)
-            180 -> Triple(rotateYuv180(bytes, width, height, rowStride), width, height)
-            270 -> Triple(rotateYuv270(bytes, width, height, rowStride), height, width)
-            else -> {
-                if (rowStride == width) {
-                    Triple(bytes, width, height)
-                } else {
-                    val packed = ByteArray(width * height)
-                    for (y in 0 until height) {
-                        System.arraycopy(bytes, y * rowStride, packed, y * width, width)
-                    }
-                    Triple(packed, width, height)
-                }
-            }
-        }
-
-        // 1. First, attempt to detect and decode BitChord visual soundwave code
         try {
-            val bitChordPayload = BitChordBarDetector.detect(rotatedBytes, rotWidth, rotHeight)
-            if (bitChordPayload != null) {
-                lastScannedTime = currentTime
-                onQrCodeScanned(bitChordPayload.canonicalUri)
-                imageProxy.close()
+            val currentTime = System.currentTimeMillis()
+            // Throttle scans: don't analyze more than once every 180ms
+            if (currentTime - lastScannedTime < 180L) {
                 return
             }
-        } catch (_: Exception) {}
 
-        val stride = if (rotation == 90 || rotation == 270) rotWidth else rowStride
-        val source = PlanarYUVLuminanceSource(
-            rotatedBytes,
-            stride,
-            rotHeight,
-            0,
-            0,
-            rotWidth,
-            rotHeight,
-            false,
-        )
-        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+            val plane = imageProxy.planes.getOrNull(0) ?: return
+            val buffer = plane.buffer
+            val remaining = buffer.remaining()
+            val width = imageProxy.width
+            val height = imageProxy.height
+            val rowStride = plane.rowStride
+            val rotation = imageProxy.imageInfo.rotationDegrees
 
-        try {
-            val result = reader.decodeWithState(binaryBitmap)
-            if (!result.text.isNullOrBlank()) {
-                lastScannedTime = currentTime
-                onQrCodeScanned(result.text)
+            val targetSize = width * height
+            val currentRotated = rotatedBuffer?.takeIf { it.size == targetSize }
+                ?: ByteArray(targetSize).also { rotatedBuffer = it }
+
+            val bytes = if (rowStride == width && remaining == targetSize) {
+                val arr = packedBuffer?.takeIf { it.size == targetSize }
+                    ?: ByteArray(targetSize).also { packedBuffer = it }
+                buffer.get(arr)
+                arr
+            } else {
+                val raw = ByteArray(remaining)
+                buffer.get(raw)
+                raw
             }
-        } catch (_: Exception) {
-            // Normal when no barcode in current frame
+
+            val (rotBytes, rotWidth, rotHeight) = when (rotation) {
+                90 -> {
+                    rotateYuv90Into(bytes, width, height, rowStride, currentRotated)
+                    Triple(currentRotated, height, width)
+                }
+                180 -> {
+                    rotateYuv180Into(bytes, width, height, rowStride, currentRotated)
+                    Triple(currentRotated, width, height)
+                }
+                270 -> {
+                    rotateYuv270Into(bytes, width, height, rowStride, currentRotated)
+                    Triple(currentRotated, height, width)
+                }
+                else -> {
+                    if (rowStride == width) {
+                        Triple(bytes, width, height)
+                    } else {
+                        val packed = packedBuffer?.takeIf { it.size == targetSize }
+                            ?: ByteArray(targetSize).also { packedBuffer = it }
+                        for (y in 0 until height) {
+                            System.arraycopy(bytes, y * rowStride, packed, y * width, width)
+                        }
+                        Triple(packed, width, height)
+                    }
+                }
+            }
+
+            // 1. First, attempt to detect and decode BitChord visual soundwave code
+            try {
+                val bitChordPayload = BitChordBarDetector.detect(rotBytes, rotWidth, rotHeight)
+                if (bitChordPayload != null) {
+                    lastScannedTime = currentTime
+                    onQrCodeScanned(bitChordPayload.canonicalUri)
+                    return
+                }
+            } catch (_: Exception) {}
+
+            val stride = if (rotation == 90 || rotation == 270) rotWidth else rowStride
+            val source = PlanarYUVLuminanceSource(
+                rotBytes,
+                stride,
+                rotHeight,
+                0,
+                0,
+                rotWidth,
+                rotHeight,
+                false,
+            )
+            val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+
+            try {
+                val result = reader.decodeWithState(binaryBitmap)
+                if (!result.text.isNullOrBlank()) {
+                    lastScannedTime = currentTime
+                    onQrCodeScanned(result.text)
+                }
+            } catch (_: Exception) {
+                // Normal when no barcode in current frame
+            } finally {
+                reader.reset()
+            }
         } finally {
-            reader.reset()
             imageProxy.close()
+            isAnalyzing.set(false)
         }
     }
 
-    private fun rotateYuv90(data: ByteArray, width: Int, height: Int, rowStride: Int): ByteArray {
-        val rotated = ByteArray(width * height)
+    private fun rotateYuv90Into(data: ByteArray, width: Int, height: Int, rowStride: Int, out: ByteArray) {
         for (y in 0 until height) {
             val yOffset = y * rowStride
             for (x in 0 until width) {
-                rotated[x * height + (height - y - 1)] = data[yOffset + x]
+                out[x * height + (height - y - 1)] = data[yOffset + x]
             }
         }
-        return rotated
     }
 
-    private fun rotateYuv180(data: ByteArray, width: Int, height: Int, rowStride: Int): ByteArray {
-        val rotated = ByteArray(width * height)
+    private fun rotateYuv180Into(data: ByteArray, width: Int, height: Int, rowStride: Int, out: ByteArray) {
         for (y in 0 until height) {
             val yOffset = y * rowStride
             val targetY = (height - y - 1) * width
             for (x in 0 until width) {
-                rotated[targetY + (width - x - 1)] = data[yOffset + x]
+                out[targetY + (width - x - 1)] = data[yOffset + x]
             }
         }
-        return rotated
     }
 
-    private fun rotateYuv270(data: ByteArray, width: Int, height: Int, rowStride: Int): ByteArray {
-        val rotated = ByteArray(width * height)
+    private fun rotateYuv270Into(data: ByteArray, width: Int, height: Int, rowStride: Int, out: ByteArray) {
         for (y in 0 until height) {
             val yOffset = y * rowStride
             for (x in 0 until width) {
-                rotated[(width - x - 1) * height + y] = data[yOffset + x]
+                out[(width - x - 1) * height + y] = data[yOffset + x]
             }
         }
-        return rotated
     }
 }

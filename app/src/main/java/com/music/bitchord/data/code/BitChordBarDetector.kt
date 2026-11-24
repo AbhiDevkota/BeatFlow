@@ -72,8 +72,9 @@ object BitChordBarDetector {
 
         val binary = BooleanArray(total)
         val visited = BooleanArray(total)
-        val queueX = IntArray(total)
-        val queueY = IntArray(total)
+        val maxQueue = 8192
+        val queueX = IntArray(maxQueue)
+        val queueY = IntArray(maxQueue)
 
         // Test around Otsu threshold: otsu, otsu - 20, otsu + 20
         val thresholds = intArrayOf(otsu, (otsu - 20).coerceAtLeast(30), (otsu + 20).coerceAtMost(235))
@@ -121,32 +122,35 @@ object BitChordBarDetector {
                         if (qy < minY) minY = qy
                         if (qy > maxY) maxY = qy
 
-                        if (qx + 1 < roiW) {
-                            val n = qy * roiW + (qx + 1)
-                            if (binary[n] && !visited[n]) {
-                                visited[n] = true
-                                queueX[tail] = qx + 1; queueY[tail] = qy; tail++
+                        // Only continue queueing if within bar size bounds
+                        if (tail < maxQueue - 4) {
+                            if (qx + 1 < roiW) {
+                                val n = qy * roiW + (qx + 1)
+                                if (binary[n] && !visited[n]) {
+                                    visited[n] = true
+                                    queueX[tail] = qx + 1; queueY[tail] = qy; tail++
+                                }
                             }
-                        }
-                        if (qx - 1 >= 0) {
-                            val n = qy * roiW + (qx - 1)
-                            if (binary[n] && !visited[n]) {
-                                visited[n] = true
-                                queueX[tail] = qx - 1; queueY[tail] = qy; tail++
+                            if (qx - 1 >= 0) {
+                                val n = qy * roiW + (qx - 1)
+                                if (binary[n] && !visited[n]) {
+                                    visited[n] = true
+                                    queueX[tail] = qx - 1; queueY[tail] = qy; tail++
+                                }
                             }
-                        }
-                        if (qy + 1 < roiH) {
-                            val n = (qy + 1) * roiW + qx
-                            if (binary[n] && !visited[n]) {
-                                visited[n] = true
-                                queueX[tail] = qx; queueY[tail] = qy + 1; tail++
+                            if (qy + 1 < roiH) {
+                                val n = (qy + 1) * roiW + qx
+                                if (binary[n] && !visited[n]) {
+                                    visited[n] = true
+                                    queueX[tail] = qx; queueY[tail] = qy + 1; tail++
+                                }
                             }
-                        }
-                        if (qy - 1 >= 0) {
-                            val n = (qy - 1) * roiW + qx
-                            if (binary[n] && !visited[n]) {
-                                visited[n] = true
-                                queueX[tail] = qx; queueY[tail] = qy - 1; tail++
+                            if (qy - 1 >= 0) {
+                                val n = (qy - 1) * roiW + qx
+                                if (binary[n] && !visited[n]) {
+                                    visited[n] = true
+                                    queueX[tail] = qx; queueY[tail] = qy - 1; tail++
+                                }
                             }
                         }
                     }

@@ -144,7 +144,7 @@ fun BitChordCodeCard(
                 RoundedCornerShape(24.dp),
             ),
     ) {
-        // Song artwork cover as blurred background (matching fullscreen player and lyrics)
+        // Song artwork cover as blurred background (matching lyrics video share: 10.dp blur & 0.4f scrim)
         if (!song.thumbnailUrl.isNullOrBlank()) {
             AsyncImage(
                 model = song.thumbnailUrl,
@@ -152,19 +152,20 @@ fun BitChordCodeCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .matchParentSize()
-                    .blur(20.dp),
+                    .blur(10.dp),
             )
         }
 
-        // Translucent glass overlay passing color like the 3-dot menu in glass mode
+        // Translucent glass overlay passing color like the 3-dot menu in glass mode,
+        // with the exact 40% black scrim from the lyrics video share (CLIP_SCRIM = 0.4f)
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .background(
                     if (glassActive) {
-                        Color(0xFF161922).copy(alpha = 0.52f)
+                        Color.Black.copy(alpha = 0.35f)
                     } else {
-                        Color(0xFF0E1118).copy(alpha = 0.82f)
+                        Color.Black.copy(alpha = 0.40f)
                     },
                 ),
         )
@@ -487,17 +488,17 @@ suspend fun renderBitChordCodeBitmap(
         } catch (_: Exception) {}
     }
 
-    // 1. Background: Album artwork softly blurred across the entire card (matching fullscreen player & lyrics)
+    // 1. Background: Album artwork softly blurred across the entire card (matching lyrics video share: 10.dp blur & 40% scrim)
     if (artBitmap != null && !artBitmap.isRecycled) {
-        // Downsample to 80x80 and draw scaled with bilinear filtering for a subtle, soft frosted blur
-        val blurThumb = Bitmap.createScaledBitmap(artBitmap, 80, 80, true)
+        // Downsample to 100x100 and draw scaled with bilinear filtering for a subtle, soft frosted blur
+        val blurThumb = Bitmap.createScaledBitmap(artBitmap, 100, 100, true)
         val blurPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         canvas.drawBitmap(blurThumb, null, cardRect, blurPaint)
         blurThumb.recycle()
 
-        // Scrim over background: translucent tint so text and soundwave bars stand out while artwork is visible
+        // 40% black scrim matching lyrics card video share (CLIP_SCRIM = 0.40f)
         val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0x880E121B.toInt()
+            color = 0x66000000
         }
         canvas.drawRect(cardRect, scrimPaint)
     } else {
