@@ -102,27 +102,6 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.music.bitchord.R
-import kotlin.math.cos
-import kotlin.math.sin
-
-/**
- * A floating dot particle inspired by Google Photos / Google Lens visual search.
- */
-private data class ScanDot(
-    val relX: Float,
-    val relY: Float,
-    val radiusDp: Float,
-    val color: Color,
-    val freqX: Float,
-    val freqY: Float,
-    val phaseX: Float,
-    val phaseY: Float,
-    val ampX: Float,
-    val ampY: Float,
-    val pulseFreq: Float,
-    val pulsePhase: Float,
-    val baseAlpha: Float,
-)
 
 /**
  * QR / barcode scanner modal view with a camera preview, a rectangular viewfinder,
@@ -506,7 +485,7 @@ fun QrScannerSheet(
 
 /**
  * Viewfinder overlay with a centered rounded rectangle cutout and
- * Google Photos / Google Lens style organic floating dots.
+ * a sleek modern scanning beam animation.
  */
 @Composable
 private fun QrScannerViewfinder(
@@ -515,61 +494,28 @@ private fun QrScannerViewfinder(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "scannerAnimation")
 
-    // Continuous float time
-    val floatTime by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "floatTime",
-    )
-
     // Vertical scan beam progress
     val beamProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2600, easing = LinearEasing),
+            animation = tween(durationMillis = 2400, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "beamProgress",
     )
 
-    // Google Lens inspired color palette: vibrant cyan, mint, amber, coral, soft white
-    val dots = remember {
-        listOf(
-            ScanDot(0.18f, 0.22f, 3.5f, Color(0xFF38B6FF), 1.2f, 0.9f, 0.2f, 0.5f, 14f, 10f, 1.4f, 0.1f, 0.75f),
-            ScanDot(0.32f, 0.35f, 4.2f, Color(0xFF00E5FF), 0.8f, 1.3f, 1.1f, 0.8f, 18f, 12f, 1.1f, 0.6f, 0.85f),
-            ScanDot(0.48f, 0.20f, 3.2f, Color(0xFFF8F9FA), 1.5f, 1.0f, 2.3f, 1.4f, 12f, 15f, 1.7f, 1.2f, 0.70f),
-            ScanDot(0.65f, 0.28f, 4.0f, Color(0xFF00E676), 0.9f, 1.4f, 0.7f, 2.1f, 16f, 14f, 1.3f, 0.9f, 0.80f),
-            ScanDot(0.82f, 0.24f, 3.6f, Color(0xFFFFD54F), 1.3f, 0.8f, 1.8f, 0.4f, 15f, 11f, 1.5f, 2.0f, 0.75f),
-            ScanDot(0.25f, 0.52f, 4.5f, Color(0xFF80D8FF), 1.1f, 1.1f, 2.5f, 1.9f, 20f, 16f, 1.2f, 1.5f, 0.90f),
-            ScanDot(0.42f, 0.48f, 3.8f, Color(0xFFFFFFFF), 1.4f, 1.2f, 0.4f, 1.7f, 14f, 13f, 1.6f, 0.4f, 0.80f),
-            ScanDot(0.58f, 0.55f, 4.4f, Color(0xFF4285F4), 0.7f, 1.5f, 1.9f, 0.3f, 17f, 18f, 1.0f, 1.8f, 0.85f),
-            ScanDot(0.75f, 0.50f, 3.4f, Color(0xFFFF5252), 1.6f, 0.9f, 2.9f, 2.4f, 13f, 12f, 1.8f, 0.7f, 0.70f),
-            ScanDot(0.15f, 0.74f, 4.0f, Color(0xFF69F0AE), 1.0f, 1.3f, 1.3f, 1.0f, 16f, 15f, 1.3f, 2.2f, 0.80f),
-            ScanDot(0.35f, 0.80f, 3.5f, Color(0xFF00B0FF), 1.2f, 0.8f, 0.6f, 2.8f, 15f, 10f, 1.4f, 1.1f, 0.75f),
-            ScanDot(0.52f, 0.76f, 4.6f, Color(0xFFFFE082), 0.8f, 1.4f, 2.2f, 1.2f, 19f, 17f, 1.1f, 0.8f, 0.90f),
-            ScanDot(0.70f, 0.82f, 3.8f, Color(0xFF26C6DA), 1.3f, 1.1f, 0.9f, 0.7f, 14f, 14f, 1.5f, 1.6f, 0.80f),
-            ScanDot(0.85f, 0.72f, 3.2f, Color(0xFFFFFFFF), 1.5f, 1.2f, 3.1f, 1.8f, 12f, 13f, 1.7f, 0.3f, 0.70f),
-            ScanDot(0.50f, 0.38f, 5.0f, Color(0xFF00E5FF), 0.6f, 0.9f, 1.5f, 2.0f, 22f, 16f, 0.9f, 1.0f, 0.95f),
-            ScanDot(0.62f, 0.68f, 3.6f, Color(0xFFFF8A80), 1.4f, 1.0f, 2.0f, 0.9f, 13f, 12f, 1.4f, 2.5f, 0.75f),
-        )
-    }
-
     androidx.compose.foundation.Canvas(modifier = modifier) {
         val width = size.width
         val height = size.height
 
-        // Viewfinder rectangle size (proportional rectangular frame)
-        val rectWidth = (width * 0.78f).coerceIn(260.dp.toPx(), 340.dp.toPx())
-        val rectHeight = (rectWidth * 0.68f).coerceIn(180.dp.toPx(), 240.dp.toPx())
-        val cornerRadiusPx = 22.dp.toPx()
+        // Larger rectangular scanning frame with a wide aspect ratio
+        val rectWidth = (width * 0.88f).coerceIn(300.dp.toPx(), 420.dp.toPx())
+        val rectHeight = (rectWidth * 0.60f).coerceIn(200.dp.toPx(), 270.dp.toPx())
+        val cornerRadiusPx = 24.dp.toPx()
 
         val centerX = width / 2f
-        val centerY = height / 2f - 24.dp.toPx()
+        val centerY = height / 2f - 28.dp.toPx()
 
         val left = centerX - rectWidth / 2f
         val top = centerY - rectHeight / 2f
@@ -603,9 +549,9 @@ private fun QrScannerViewfinder(
             style = Stroke(width = 1.2.dp.toPx()),
         )
 
-        // 3. Four corner reticles / brackets (Google Lens style)
-        val bracketLength = 26.dp.toPx()
-        val bracketStroke = 3.5.dp.toPx()
+        // 3. Four corner reticles / brackets
+        val bracketLength = 32.dp.toPx()
+        val bracketStroke = 4.dp.toPx()
         val cornerR = cornerRadiusPx
         val bracketColor = Color.White
 
@@ -665,19 +611,20 @@ private fun QrScannerViewfinder(
         }
         drawPath(blPath, color = bracketColor, style = Stroke(width = bracketStroke, cap = StrokeCap.Round))
 
-        // Inside the rectangle: Google Photos / Google Lens floating dots & scanning beam
+        // Inside the rectangle: Sleek scanning laser beam
         clipPath(rectPath) {
             if (isScanning) {
-                // Vertical scanning beam wave
                 val beamY = top + (bottom - top) * beamProgress
-                val beamHeight = 40.dp.toPx()
+                val beamHeight = 48.dp.toPx()
+
+                // Soft glowing aura
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color(0x2200E5FF),
-                            Color(0x6600E5FF),
-                            Color(0x2200E5FF),
+                            Color(0x1500E5FF),
+                            Color(0x4000E5FF),
+                            Color(0x1500E5FF),
                             Color.Transparent,
                         ),
                         startY = beamY - beamHeight / 2f,
@@ -687,39 +634,24 @@ private fun QrScannerViewfinder(
                     size = Size(rectWidth, beamHeight),
                 )
 
-                // Floating dots (Google Photos style)
-                dots.forEach { dot ->
-                    val driftX = sin(floatTime * 2f * Math.PI.toFloat() * dot.freqX + dot.phaseX) * dot.ampX
-                    val driftY = cos(floatTime * 2f * Math.PI.toFloat() * dot.freqY + dot.phaseY) * dot.ampY
-
-                    val dotX = left + dot.relX * rectWidth + driftX
-                    val dotY = top + dot.relY * rectHeight + driftY
-
-                    val pulse = sin(floatTime * 2f * Math.PI.toFloat() * dot.pulseFreq + dot.pulsePhase)
-                    val alpha = (dot.baseAlpha + pulse * 0.22f).coerceIn(0.12f, 0.98f)
-                    val radius = dot.radiusDp.dp.toPx() * (1f + 0.24f * pulse)
-
-                    // Outer soft luminous halo
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                dot.color.copy(alpha = alpha * 0.7f),
-                                dot.color.copy(alpha = 0f),
-                            ),
-                            center = Offset(dotX, dotY),
-                            radius = radius * 3.4f,
+                // Laser beam line with fading edges
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color(0xFF00E5FF).copy(alpha = 0.85f),
+                            Color.White,
+                            Color(0xFF00E5FF).copy(alpha = 0.85f),
+                            Color.Transparent,
                         ),
-                        radius = radius * 3.4f,
-                        center = Offset(dotX, dotY),
-                    )
-
-                    // Solid bright inner core
-                    drawCircle(
-                        color = dot.color.copy(alpha = alpha),
-                        radius = radius,
-                        center = Offset(dotX, dotY),
-                    )
-                }
+                        startX = left,
+                        endX = right,
+                    ),
+                    start = Offset(left + 8.dp.toPx(), beamY),
+                    end = Offset(right - 8.dp.toPx(), beamY),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
             }
         }
     }
