@@ -309,6 +309,7 @@ import com.music.bitchord.ui.components.topBarHeight
 import com.music.bitchord.ui.components.AppLanguageDialog
 import com.music.bitchord.ui.components.TranslationLanguageDialog
 import com.music.bitchord.ui.components.LyricsSourcesDialog
+import com.music.bitchord.ui.components.QrScannerSheet
 import com.music.bitchord.ui.components.ServerEditorHost
 import com.music.bitchord.ui.components.UpdateAvailableDialog
 import com.music.bitchord.ui.components.WebDavConflictAlert
@@ -907,6 +908,7 @@ private fun BitChordApp(
     // doesn't bring it back — only a fresh launch does.
     var updateDialogShown by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    var showQrScanner by rememberSaveable { mutableStateOf(false) }
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
 
     /**
@@ -4328,7 +4330,7 @@ private fun BitChordApp(
                             }
                             val isSearchPage = onSearchTab && !inSearchResultPlace
                             if (isSearchPage) {
-                                IconButton(onClick = {}) {
+                                IconButton(onClick = { showQrScanner = true }) {
                                     Icon(
                                         Icons.Rounded.CameraAlt,
                                         contentDescription = stringResource(R.string.listen_together_scan_qr),
@@ -5814,6 +5816,13 @@ private fun BitChordApp(
                     },
                 )
             }
+        }
+
+        if (showQrScanner) {
+            BackHandler { showQrScanner = false }
+            QrScannerSheet(
+                onDismiss = { showQrScanner = false },
+            )
         }
 
         if (showLyricsSources) {
