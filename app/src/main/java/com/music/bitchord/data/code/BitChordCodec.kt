@@ -16,14 +16,15 @@ object BitChordCodec {
     const val ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
     enum class MediaType(val key: String, val code: Int) {
-        TRACK("track", 0),
+        TRACK("song", 0),
         ALBUM("album", 1),
         ARTIST("artist", 2),
         PLAYLIST("playlist", 3);
 
         companion object {
             fun fromKey(key: String): MediaType? = entries.firstOrNull {
-                it.key.equals(key, ignoreCase = true) || (it == TRACK && key.equals("song", ignoreCase = true))
+                it.key.equals(key, ignoreCase = true) ||
+                    (it == TRACK && (key.equals("song", ignoreCase = true) || key.equals("track", ignoreCase = true)))
             }
             fun fromCode(code: Int): MediaType? = entries.firstOrNull { it.code == code }
         }

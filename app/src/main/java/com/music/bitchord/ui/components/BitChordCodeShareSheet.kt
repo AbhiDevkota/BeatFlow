@@ -152,7 +152,7 @@ fun BitChordCodeCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .matchParentSize()
-                    .blur(36.dp),
+                    .blur(50.dp),
             )
         }
 
@@ -365,7 +365,7 @@ fun BitChordCodeShareSheet(
                                 isSharing = true
                                 scope.launch {
                                     val bitmap = renderBitChordCodeBitmap(context, song, levels)
-                                    val uri = cacheForSharing(context, bitmap, "bitchord-code-${song.videoId}.png")
+                                    val uri = cacheForSharing(context, bitmap, "bitchord-code.png")
                                     isSharing = false
                                     if (uri != null) {
                                         val intent = sendIntent(uri)
@@ -487,13 +487,17 @@ suspend fun renderBitChordCodeBitmap(
         } catch (_: Exception) {}
     }
 
-    // 1. Background: Album artwork stretched to cover the entire card (like fullscreen / lyrics)
-    if (artBitmap != null) {
-        val srcRect = android.graphics.Rect(0, 0, artBitmap.width, artBitmap.height)
-        canvas.drawBitmap(artBitmap, srcRect, cardRect, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+    // 1. Background: Album artwork blurred across the entire card (matching fullscreen player & lyrics)
+    if (artBitmap != null && !artBitmap.isRecycled) {
+        // Downsample to 24x24 and draw scaled with bilinear filtering for a smooth Gaussian blur
+        val blurThumb = Bitmap.createScaledBitmap(artBitmap, 24, 24, true)
+        val blurPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        canvas.drawBitmap(blurThumb, null, cardRect, blurPaint)
+        blurThumb.recycle()
+
         // Scrim over background: dark translucent tint so text and soundwave bars stand out
         val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xB80E121B.toInt()
+            color = 0xC40E121B.toInt()
         }
         canvas.drawRect(cardRect, scrimPaint)
     } else {

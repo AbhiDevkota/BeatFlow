@@ -17,6 +17,8 @@ class BitChordBarDetectorTest {
 
         val decoded = BitChordCodec.decode(levels)
         assertEquals(BitChordCodec.MediaType.TRACK, decoded.type)
+        assertEquals("song", decoded.type.key)
+        assertEquals("bitchord:song:$videoId", decoded.canonicalUri)
         assertEquals(videoId, decoded.id)
     }
 

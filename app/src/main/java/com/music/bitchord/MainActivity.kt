@@ -2075,10 +2075,7 @@ private fun BitChordApp(
                     song,
                     QueueSource(sharedLinkLabel, PlaybackSourceType.SHARED_LINK, song.videoId),
                 )
-                showNowPlaying = true
-                if (!reducePlayerMotion) {
-                    playerSheetMotion.open()
-                }
+                if (reducePlayerMotion) showNowPlaying = true else playerSheetMotion.open()
             }
             is LinkRequest.Page -> {
                 dismissPlayer()
