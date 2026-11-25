@@ -94,6 +94,46 @@ private const val MIN_BAR_HEIGHT_FRACTION = 0.20f
 private const val MAX_BAR_HEIGHT_FRACTION = 0.96f
 
 /**
+ * Target item (song track or artist album) rendered as a BitChord visual soundwave code card.
+ */
+data class BitChordCodeTarget(
+    val type: BitChordCodec.MediaType,
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val thumbnailUrl: String?,
+    val shareUrl: String,
+    val filePrefix: String,
+) {
+    companion object {
+        fun forSong(song: Song) = BitChordCodeTarget(
+            type = BitChordCodec.MediaType.TRACK,
+            id = song.videoId,
+            title = song.title,
+            subtitle = song.artist,
+            thumbnailUrl = song.thumbnailUrl,
+            shareUrl = "https://music.youtube.com/watch?v=${song.videoId}",
+            filePrefix = "bitchord-code",
+        )
+
+        fun forAlbum(
+            browseId: String,
+            title: String,
+            subtitle: String,
+            thumbnailUrl: String?,
+        ) = BitChordCodeTarget(
+            type = BitChordCodec.MediaType.ALBUM,
+            id = browseId,
+            title = title,
+            subtitle = subtitle,
+            thumbnailUrl = thumbnailUrl,
+            shareUrl = "https://music.youtube.com/browse/$browseId",
+            filePrefix = "bitchord-album-code",
+        )
+    }
+}
+
+/**
  * Draws the BitChord visual soundwave code bars in Compose.
  */
 @Composable
@@ -106,7 +146,7 @@ fun BitChordCodeBar(
         if (levels.isEmpty()) return@Canvas
         val count = levels.size
         val availableWidth = size.width
-        val barWidth = (availableWidth / (count * 1.8f)).coerceIn(3.5.dp.toPx(), 8.dp.toPx())
+        val barWidth = (availableWidth / (count * 1.8f)).coerceIn(1.8.dp.toPx(), 8.dp.toPx())
         val gap = (availableWidth - count * barWidth) / (count - 1).coerceAtLeast(1)
 
         val centerY = size.height / 2f
@@ -131,14 +171,14 @@ fun BitChordCodeBar(
 
 /**
  * The BitChord Code Card displaying:
- * - Background: Album artwork blurred (like lyrics video share), with scrim
- * - Top: Album cover on left, Song title & artist name on right
- * - Bottom: BitChord logo on left (below album cover), with the soundwave code
- *   bars expanding across to the right (below the artist name).
+ * - Background: Artwork blurred (like lyrics video share), with scrim
+ * - Top: Cover art on left, Title & subtitle/artist on right
+ * - Bottom: BitChord logo on left (below cover art), with the soundwave code
+ *   bars expanding across to the right (below the title column).
  */
 @Composable
 fun BitChordCodeCard(
-    song: Song,
+    target: BitChordCodeTarget,
     levels: List<Int>,
     modifier: Modifier = Modifier,
 ) {
@@ -154,10 +194,10 @@ fun BitChordCodeCard(
                 RoundedCornerShape(24.dp),
             ),
     ) {
-        // Song artwork cover as blurred background (matching lyrics video share: 10.dp blur & 0.4f scrim)
-        if (!song.thumbnailUrl.isNullOrBlank()) {
+        // Artwork cover as blurred background (matching lyrics video share: 10.dp blur & 0.4f scrim)
+        if (!target.thumbnailUrl.isNullOrBlank()) {
             AsyncImage(
-                model = song.thumbnailUrl,
+                model = target.thumbnailUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -185,14 +225,14 @@ fun BitChordCodeCard(
                 .fillMaxWidth()
                 .padding(18.dp),
         ) {
-            // Top Section: Album Cover on left, Title & Artist on right
+            // Top Section: Cover art on left, Title & Subtitle on right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Album cover thumbnail
+                // Cover thumbnail
                 AsyncImage(
-                    model = song.thumbnailUrl,
+                    model = target.thumbnailUrl,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -203,13 +243,13 @@ fun BitChordCodeCard(
 
                 Spacer(Modifier.width(14.dp))
 
-                // Song Title and Artist (no "BitChord Code" badge)
+                // Title and Subtitle (no "BitChord Code" badge)
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        text = song.title,
+                        text = target.title,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = (-0.2).sp,
@@ -218,14 +258,16 @@ fun BitChordCodeCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = song.artist,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.76f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (target.subtitle.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = target.subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.76f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
 
@@ -236,7 +278,7 @@ fun BitChordCodeCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // BitChord logo (centered directly below the album cover)
+                // BitChord logo (centered directly below the cover art)
                 Box(
                     modifier = Modifier.width(76.dp),
                     contentAlignment = Alignment.Center,
@@ -269,7 +311,7 @@ fun BitChordCodeCard(
  */
 @Composable
 fun BitChordCodeShareSheet(
-    song: Song,
+    target: BitChordCodeTarget,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -278,11 +320,10 @@ fun BitChordCodeShareSheet(
     val haptic = LocalHapticFeedback.current
     val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
 
-    val levels = remember(song.videoId) {
+    val levels = remember(target.type, target.id) {
         runCatching {
-            BitChordCodec.encode(BitChordCodec.MediaType.TRACK, song.videoId)
+            BitChordCodec.encode(target.type, target.id)
         }.getOrElse {
-            // Fallback default levels if videoId is malformed
             listOf(0, 2, 4, 1, 5, 3, 6, 2, 4, 7)
         }
     }
@@ -359,7 +400,7 @@ fun BitChordCodeShareSheet(
 
                     // The BitChord Code Card
                     BitChordCodeCard(
-                        song = song,
+                        target = target,
                         levels = levels,
                     )
 
@@ -376,8 +417,8 @@ fun BitChordCodeShareSheet(
                                 if (isSharing) return@Button
                                 isSharing = true
                                 scope.launch {
-                                    val bitmap = renderBitChordCodeBitmap(context, song, levels, glassActive)
-                                    val uri = cacheForSharing(context, bitmap, "bitchord-code.png")
+                                    val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
+                                    val uri = cacheForSharing(context, bitmap, "${target.filePrefix}.png")
                                     isSharing = false
                                     if (uri != null) {
                                         val intent = sendIntent(uri)
@@ -415,8 +456,8 @@ fun BitChordCodeShareSheet(
                                 if (isSaving) return@OutlinedButton
                                 isSaving = true
                                 scope.launch {
-                                    val bitmap = renderBitChordCodeBitmap(context, song, levels, glassActive)
-                                    val saved = saveToGallery(context, bitmap, song.title, "bitchord-code")
+                                    val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
+                                    val saved = saveToGallery(context, bitmap, target.title, target.filePrefix)
                                     isSaving = false
                                     Toast.makeText(
                                         context,
@@ -440,8 +481,7 @@ fun BitChordCodeShareSheet(
                         // Copy Link Button
                         OutlinedButton(
                             onClick = {
-                                val url = "https://music.youtube.com/watch?v=${song.videoId}"
-                                clipboard.setText(AnnotatedString(url))
+                                clipboard.setText(AnnotatedString(target.shareUrl))
                                 copied = true
                                 haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                             },
@@ -464,13 +504,13 @@ fun BitChordCodeShareSheet(
 /**
  * Renders a high-resolution BitChord Code card bitmap matching [BitChordCodeCard] pixel-for-pixel:
  * - Reference card width: 320.dp scaled 3.75x to 1200px
- * - True CenterCrop album artwork with 3-pass Gaussian blur (equivalent to 10.dp) + 35%/40% scrim
+ * - True CenterCrop artwork with 3-pass Gaussian blur (equivalent to 10.dp) + 35%/40% scrim
  * - SF Pro Display typography with 2-line title wrapping and vertical centering
  * - Exact cover, corner radius, logo, and soundwave bar proportions
  */
 suspend fun renderBitChordCodeBitmap(
     context: Context,
-    song: Song,
+    target: BitChordCodeTarget,
     levels: List<Int>,
     glassActive: Boolean = false,
 ): Bitmap = withContext(Dispatchers.IO) {
@@ -511,7 +551,7 @@ suspend fun renderBitChordCodeBitmap(
     val textMaxW = (width - pad - textLeft).roundToInt().coerceAtLeast(100)
 
     val titleLayout = StaticLayout.Builder
-        .obtain(song.title, 0, song.title.length, titlePaint, textMaxW)
+        .obtain(target.title, 0, target.title.length, titlePaint, textMaxW)
         .setAlignment(Layout.Alignment.ALIGN_NORMAL)
         .setLineSpacing(0f, 1.12f)
         .setIncludePad(false)
@@ -519,16 +559,21 @@ suspend fun renderBitChordCodeBitmap(
         .setEllipsize(TextUtils.TruncateAt.END)
         .build()
 
-    val artistLayout = StaticLayout.Builder
-        .obtain(song.artist, 0, song.artist.length, artistPaint, textMaxW)
-        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-        .setIncludePad(false)
-        .setMaxLines(1)
-        .setEllipsize(TextUtils.TruncateAt.END)
-        .build()
+    val hasSubtitle = target.subtitle.isNotBlank()
+    val artistLayout = if (hasSubtitle) {
+        StaticLayout.Builder
+            .obtain(target.subtitle, 0, target.subtitle.length, artistPaint, textMaxW)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setIncludePad(false)
+            .setMaxLines(1)
+            .setEllipsize(TextUtils.TruncateAt.END)
+            .build()
+    } else {
+        null
+    }
 
-    val artistGap = 4f * scale
-    val textBlockH = titleLayout.height + artistGap + artistLayout.height
+    val artistGap = if (hasSubtitle) 4f * scale else 0f
+    val textBlockH = titleLayout.height + artistGap + (artistLayout?.height ?: 0)
     val topRowH = max(artSize, textBlockH)
     val height = (pad + topRowH + gapY + codeBarH + pad).roundToInt()
 
@@ -544,10 +589,10 @@ suspend fun renderBitChordCodeBitmap(
 
     // Load artwork bitmap via Coil
     var artBitmap: Bitmap? = null
-    if (!song.thumbnailUrl.isNullOrBlank()) {
+    if (!target.thumbnailUrl.isNullOrBlank()) {
         try {
             val request = ImageRequest.Builder(context)
-                .data(song.thumbnailUrl)
+                .data(target.thumbnailUrl)
                 .allowHardware(false)
                 .build()
             val result = SingletonImageLoader.get(context).execute(request)
@@ -563,7 +608,6 @@ suspend fun renderBitChordCodeBitmap(
         val bw = (width / bgScaleDown).coerceAtLeast(64)
         val bh = (height / bgScaleDown).coerceAtLeast(32)
         val smallCropped = centerCropBitmap(artBitmap, bw, bh)
-        // Blur radius of ~10.dp * 3.75 / 4 = ~9px at 1/4 resolution approximates 10.dp Gaussian blur
         boxBlur3Pass(smallCropped, radius = (10f * scale / bgScaleDown).roundToInt().coerceIn(5, 16))
         val blurPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         canvas.drawBitmap(smallCropped, null, cardRect, blurPaint)
@@ -587,7 +631,7 @@ suspend fun renderBitChordCodeBitmap(
     }
     canvas.drawRoundRect(borderRect, cardRadius - borderInset, cardRadius - borderInset, borderPaint)
 
-    // 3. Top Row: Center-cropped album cover thumbnail & vertically centered Title/Artist
+    // 3. Top Row: Center-cropped cover thumbnail & vertically centered Title/Subtitle
     val artTop = pad + (topRowH - artSize) / 2f
     val artRect = RectF(pad, artTop, pad + artSize, artTop + artSize)
     if (artBitmap != null && !artBitmap.isRecycled) {
@@ -610,13 +654,15 @@ suspend fun renderBitChordCodeBitmap(
     }
     canvas.drawRoundRect(artRect, artRadius, artRadius, artBorder)
 
-    // Draw vertically centered Title & Artist
+    // Draw vertically centered Title & Subtitle
     val textTop = pad + (topRowH - textBlockH) / 2f
     canvas.save()
     canvas.translate(textLeft, textTop)
     titleLayout.draw(canvas)
-    canvas.translate(0f, titleLayout.height + artistGap)
-    artistLayout.draw(canvas)
+    if (artistLayout != null) {
+        canvas.translate(0f, titleLayout.height + artistGap)
+        artistLayout.draw(canvas)
+    }
     canvas.restore()
 
     // 4. Bottom Row: BitChord logo (38x24 dp scaled) & soundwave code bars (44 dp scaled)
@@ -646,7 +692,7 @@ suspend fun renderBitChordCodeBitmap(
     val count = levels.size
 
     if (count > 0) {
-        val barWidth = (codeWidth / (count * 1.8f)).coerceIn(3.5f * scale, 8f * scale)
+        val barWidth = (codeWidth / (count * 1.8f)).coerceIn(1.8f * scale, 8f * scale)
         val gap = (codeWidth - count * barWidth) / (count - 1).coerceAtLeast(1)
         val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
 

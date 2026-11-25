@@ -110,6 +110,7 @@ fun BrowseActionsMenu(
     onPlay: (() -> Unit)? = null,
     onShuffle: (() -> Unit)? = null,
     onAddToPlaylists: (() -> Unit)? = null,
+    onShareBitChordCode: (() -> Unit)? = null,
     /** Null where the menu was opened from the page it would navigate to. */
     onOpen: (() -> Unit)? = null,
     onDownloadAll: (() -> Unit)? = null,
@@ -181,6 +182,13 @@ fun BrowseActionsMenu(
                         onClick = it,
                     )
                 }
+                onShareBitChordCode?.let {
+                    ActionRow(
+                        icon = SfIcons.GraphicEq,
+                        label = "Share BitChord Code",
+                        onClick = it,
+                    )
+                }
             }
             onPlay?.let { ActionRow(SfIcons.Play, stringResource(R.string.play), onClick = it) }
             onShuffle?.let { ActionRow(SfIcons.Shuffle, stringResource(R.string.shuffle), onClick = it) }
@@ -189,6 +197,13 @@ fun BrowseActionsMenu(
                     ActionRow(
                         icon = SfIcons.AddToPlaylist,
                         label = stringResource(R.string.add_to_playlist),
+                        onClick = it,
+                    )
+                }
+                onShareBitChordCode?.let {
+                    ActionRow(
+                        icon = SfIcons.GraphicEq,
+                        label = "Share BitChord Code",
                         onClick = it,
                     )
                 }

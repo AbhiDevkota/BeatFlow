@@ -312,6 +312,7 @@ import com.music.bitchord.ui.components.TranslationLanguageDialog
 import com.music.bitchord.ui.components.LyricsSourcesDialog
 import com.music.bitchord.ui.components.QrScannerSheet
 import com.music.bitchord.ui.components.BitChordCodeShareSheet
+import com.music.bitchord.ui.components.BitChordCodeTarget
 import com.music.bitchord.ui.components.ServerEditorHost
 import com.music.bitchord.ui.components.UpdateAvailableDialog
 import com.music.bitchord.ui.components.WebDavConflictAlert
@@ -911,7 +912,7 @@ private fun BitChordApp(
     var updateDialogShown by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showQrScanner by rememberSaveable { mutableStateOf(false) }
-    var shareBitChordCodeTarget by remember { mutableStateOf<Song?>(null) }
+    var shareBitChordCodeTarget by remember { mutableStateOf<BitChordCodeTarget?>(null) }
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
 
     /**
@@ -4764,7 +4765,7 @@ private fun BitChordApp(
                 onShareBitChordCode = {
                     val target = song
                     songActions = null
-                    shareBitChordCodeTarget = target
+                    shareBitChordCodeTarget = BitChordCodeTarget.forSong(target)
                 },
                 onRemoveFromPlaylist = editable?.let {
                     {
@@ -5481,6 +5482,19 @@ private fun BitChordApp(
                 } else {
                     null
                 },
+                onShareBitChordCode = target.browseId
+                    ?.takeIf { remote && target.type == BrowseType.ALBUM }
+                    ?.let { id ->
+                        {
+                            browseActions = null
+                            shareBitChordCodeTarget = BitChordCodeTarget.forAlbum(
+                                browseId = id,
+                                title = target.title,
+                                subtitle = target.subtitle,
+                                thumbnailUrl = target.thumbnailUrl,
+                            )
+                        }
+                    },
                 onOpen = target.browseId
                     ?.takeIf { target.fromCard }
                     ?.let { id ->
@@ -6715,7 +6729,7 @@ private fun Float?.orZero(): Float = this ?: 0f
 private fun BitChordScannerAndCodeOverlays(
     showQrScanner: Boolean,
     onDismissQrScanner: () -> Unit,
-    shareBitChordCodeTarget: Song?,
+    shareBitChordCodeTarget: BitChordCodeTarget?,
     onDismissShareBitChordCode: () -> Unit,
 ) {
     if (showQrScanner) {
@@ -6734,7 +6748,7 @@ private fun BitChordScannerAndCodeOverlays(
 
     if (shareBitChordCodeTarget != null) {
         BitChordCodeShareSheet(
-            song = shareBitChordCodeTarget,
+            target = shareBitChordCodeTarget,
             onDismiss = onDismissShareBitChordCode,
         )
     }

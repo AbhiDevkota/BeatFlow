@@ -132,6 +132,34 @@ class BitChordBarDetectorTest {
     }
 
     @Test
+    fun testDetectorOnAlbumBarcode() {
+        val albumId = "MPREb_g9nBVaaauTA"
+        val levels = BitChordCodec.encode(BitChordCodec.MediaType.ALBUM, albumId)
+        assertEquals(42, levels.size)
+
+        val w = 720
+        val h = 1000
+        val image = renderSyntheticBarcode(
+            levels = levels,
+            width = w,
+            height = h,
+            barW = 6,
+            gap = 7,
+            minH = 14,
+            maxH = 72,
+            bgFn = { x, _ -> (35 + (x.toFloat() / w) * 110f).roundToInt() },
+            barVal = 248,
+        )
+        val blurred = boxBlur3x3(image, w, h)
+
+        val detected = BitChordBarDetector.detect(blurred, w, h)
+        assertNotNull("Detector should detect 42-bar album code", detected)
+        assertEquals(BitChordCodec.MediaType.ALBUM, detected?.type)
+        assertEquals(albumId, detected?.id)
+        assertEquals("bitchord:album:$albumId", detected?.canonicalUri)
+    }
+
+    @Test
     fun testDetectorRejectsRandomNoise() {
         val rng = Random(42)
         val w = 720

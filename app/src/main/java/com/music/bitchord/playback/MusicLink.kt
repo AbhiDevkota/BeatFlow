@@ -126,7 +126,7 @@ object MusicLink {
                 val id = parts[1].trim()
                 return when (kind) {
                     "track", "song" -> track(id)
-                    "album" -> LinkRequest.Page(if (id.startsWith("MPREb") || id.startsWith("OLAK5uy")) id else "VL$id")
+                    "album" -> LinkRequest.Page(if (id.startsWith("MPREb") || id.startsWith("OLAK5uy") || id.startsWith("VL")) id else "VL$id")
                     "playlist" -> playlist(id)
                     "artist" -> LinkRequest.Page(id)
                     else -> null
@@ -169,7 +169,7 @@ object MusicLink {
                 val id = parts[1].trim()
                 return when (kind) {
                     "track", "song" -> track(id)
-                    "album" -> LinkRequest.Page(if (id.startsWith("MPREb") || id.startsWith("OLAK5uy")) id else "VL$id")
+                    "album" -> LinkRequest.Page(if (id.startsWith("MPREb") || id.startsWith("OLAK5uy") || id.startsWith("VL")) id else "VL$id")
                     "playlist" -> playlist(id)
                     "artist" -> LinkRequest.Page(id)
                     else -> null

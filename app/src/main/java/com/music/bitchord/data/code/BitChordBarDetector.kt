@@ -24,17 +24,19 @@ data class BarBox(
 /**
  * High-performance real-time detector for BitChord visual soundwave codes from camera frames.
  *
- * Uses a multi-stage pipeline for high real-world consistency across varied lighting,
- * colorful/gradient artwork backgrounds, camera tilt, and perspective:
+ * Supports variable-length codes (e.g., 30 bars for tracks/songs and ~42 bars for albums) via:
  * 1. Local adaptive thresholding via a 2D Integral Image (+ global Otsu fallback), isolating white bars
  *    cleanly even when card background brightness varies across the image.
  * 2. Fragment merging + tilt-tolerant chain linking + arithmetic grid reconstruction to recover
- *    exact 30-bar centers even if individual bars are small, merged, or slightly skewed.
+ *    all bar centers even if individual bars are small, merged, or slightly skewed.
  * 3. Sub-pixel FWHM (Full Width at Half Maximum) vertical height profiling from raw luminance,
  *    making level quantization invariant to optical blur and uneven lighting.
  * 4. Band-averaged multi-row scanline fallback when component segmentation struggles.
  */
 object BitChordBarDetector {
+
+    private const val MIN_CODE_BARS = 16
+    private const val MAX_CODE_BARS = 68
 
     fun detect(
         yuvBytes: ByteArray,
@@ -54,7 +56,7 @@ object BitChordBarDetector {
 
     /**
      * Pass 1: Isolates vertical bars using local adaptive thresholding (via 2D integral image)
-     * plus an Otsu pass, then fits a 30-bar line/grid and decodes heights.
+     * plus an Otsu pass, then fits an N-bar line/grid and decodes heights.
      */
     private fun detectByComponents(
         yuvBytes: ByteArray,
@@ -201,7 +203,7 @@ object BitChordBarDetector {
                 }
             }
 
-            if (candidates.size < 18) continue
+            if (candidates.size < MIN_CODE_BARS) continue
             candidates.sortBy { it.x }
 
             // Merge only vertically split fragments of the same bar (substantial horizontal overlap)
@@ -231,23 +233,23 @@ object BitChordBarDetector {
                 }
             }
 
-            if (merged.size < 18) continue
+            if (merged.size < MIN_CODE_BARS) continue
 
             // Find aligned sequences along a straight (possibly tilted) line
             val chains = findAlignedComponentChains(merged)
             for (chain in chains) {
-                // Fast path: exact 30-bar chain with uniform pitch using bounding-box heights
-                if (chain.size == 30 && isUniformGrid(chain)) {
-                    val directHeights = FloatArray(30) { chain[it].h.toFloat() }
+                // Fast path: uniform chain of exact bar count (e.g., 30 for songs, 42 for albums)
+                if (chain.size in MIN_CODE_BARS..MAX_CODE_BARS && isUniformGrid(chain)) {
+                    val directHeights = FloatArray(chain.size) { chain[it].h.toFloat() }
                     tryDecodeHeights(directHeights)?.let { return it }
 
-                    val centersX = FloatArray(30) { chain[it].centerX }
-                    val centersY = FloatArray(30) { chain[it].centerY }
+                    val centersX = FloatArray(chain.size) { chain[it].centerX }
+                    val centersY = FloatArray(chain.size) { chain[it].centerY }
                     val maxHalf = (chain.maxOf { it.h } * 0.75f).coerceIn(20f, height * 0.25f)
                     decodeWithFwhm(yuvBytes, width, height, centersX, centersY, maxHalf)?.let { return it }
                 }
 
-                // General path: reconstruct exact 30-bar grid (recovers missing bars, trims extra noise)
+                // General path: reconstruct exact grid (recovers missing bars, trims trailing noise)
                 reconstructAndDecodeGrid(yuvBytes, width, height, chain)?.let { return it }
             }
         }
@@ -256,10 +258,10 @@ object BitChordBarDetector {
     }
 
     private fun isUniformGrid(chain: List<BarBox>): Boolean {
-        if (chain.size < 2) return false
+        if (chain.size < MIN_CODE_BARS) return false
         val span = chain.last().centerX - chain.first().centerX
         val pitch = span / (chain.size - 1)
-        if (pitch < 3f || pitch > 55f) return false
+        if (pitch < 2.5f || pitch > 55f) return false
         var maxDev = 0f
         for (k in chain.indices) {
             val expectedX = chain.first().centerX + k * pitch
@@ -278,8 +280,8 @@ object BitChordBarDetector {
 
         for (i in bars.indices) {
             if (used[i]) continue
-            val chain = ArrayList<BarBox>(32)
-            val indices = ArrayList<Int>(32)
+            val chain = ArrayList<BarBox>(48)
+            val indices = ArrayList<Int>(48)
             chain.add(bars[i])
             indices.add(i)
 
@@ -290,11 +292,11 @@ object BitChordBarDetector {
             for (j in (i + 1) until bars.size) {
                 val next = bars[j]
                 val dx = next.centerX - current.centerX
-                if (dx <= 2.5f) continue
+                if (dx <= 2.2f) continue
 
                 val maxJump = if (avgPitch > 0f) avgPitch * 3.4f else (max(current.w, next.w) * 6f + 40f)
                 if (dx > maxJump) {
-                    if (chain.size >= 18) break else continue
+                    if (chain.size >= MIN_CODE_BARS) break else continue
                 }
 
                 val expectedY = current.centerY + slopeY * dx
@@ -303,7 +305,6 @@ object BitChordBarDetector {
                 val gap = next.x - current.right
 
                 if (gap >= -2 && dy <= maxDy) {
-                    // Prefer single-step pitch match if another bar already lies closer
                     if (avgPitch <= 0f) {
                         avgPitch = dx
                     } else if (dx < avgPitch * 1.45f) {
@@ -321,7 +322,7 @@ object BitChordBarDetector {
                 }
             }
 
-            if (chain.size >= 18) {
+            if (chain.size >= MIN_CODE_BARS) {
                 for (idx in indices) used[idx] = true
                 result.add(chain)
             }
@@ -330,7 +331,7 @@ object BitChordBarDetector {
     }
 
     /**
-     * Reconstructs exact 30-bar (x, y) center grid from a partial or noisy component chain,
+     * Reconstructs exact N-bar (x, y) center grid from a partial or noisy component chain,
      * then resamples each bar height directly from raw luminance via FWHM.
      */
     private fun reconstructAndDecodeGrid(
@@ -339,19 +340,22 @@ object BitChordBarDetector {
         height: Int,
         chain: List<BarBox>,
     ): BitChordCodec.Payload? {
-        if (chain.size < 18) return null
+        if (chain.size < MIN_CODE_BARS) return null
 
-        // If >30 bars, try slicing 30-bar contiguous windows first
-        if (chain.size in 31..35) {
-            for (start in 0..(chain.size - 30)) {
-                val sub = chain.subList(start, start + 30)
-                if (isUniformGrid(sub)) {
-                    val directHeights = FloatArray(30) { sub[it].h.toFloat() }
-                    tryDecodeHeights(directHeights)?.let { return it }
-                    val cx = FloatArray(30) { sub[it].centerX }
-                    val cy = FloatArray(30) { sub[it].centerY }
-                    val maxHalf = (sub.maxOf { it.h } * 0.75f).coerceIn(20f, height * 0.25f)
-                    decodeWithFwhm(yuvBytes, width, height, cx, cy, maxHalf)?.let { return it }
+        // If slightly oversized by stray start/end noise, try trimming 1-3 bars from ends
+        if (chain.size in (MIN_CODE_BARS + 1)..(MAX_CODE_BARS + 4)) {
+            for (trimLeft in 0..min(2, chain.size - MIN_CODE_BARS)) {
+                for (trimRight in 0..min(2, chain.size - MIN_CODE_BARS - trimLeft)) {
+                    if (trimLeft == 0 && trimRight == 0) continue
+                    val sub = chain.subList(trimLeft, chain.size - trimRight)
+                    if (sub.size in MIN_CODE_BARS..MAX_CODE_BARS && isUniformGrid(sub)) {
+                        val directHeights = FloatArray(sub.size) { sub[it].h.toFloat() }
+                        tryDecodeHeights(directHeights)?.let { return it }
+                        val cx = FloatArray(sub.size) { sub[it].centerX }
+                        val cy = FloatArray(sub.size) { sub[it].centerY }
+                        val maxHalf = (sub.maxOf { it.h } * 0.75f).coerceIn(20f, height * 0.25f)
+                        decodeWithFwhm(yuvBytes, width, height, cx, cy, maxHalf)?.let { return it }
+                    }
                 }
             }
         }
@@ -360,25 +364,23 @@ object BitChordBarDetector {
         val gaps = ArrayList<Float>(chain.size)
         for (k in 1 until chain.size) {
             val dx = chain[k].centerX - chain[k - 1].centerX
-            if (dx >= 3f) gaps.add(dx)
+            if (dx >= 2.5f) gaps.add(dx)
         }
         if (gaps.isEmpty()) return null
         gaps.sort()
-        // Lower-third median avoids double/triple-gaps skewing pitch upward when bars are missing
         val basePitch = gaps[(gaps.size / 3).coerceIn(0, gaps.lastIndex)]
-        if (basePitch < 3f || basePitch > 55f) return null
+        if (basePitch < 2.5f || basePitch > 55f) return null
 
         val maxBarH = chain.maxOf { it.h }.toFloat()
         val maxHalf = (maxBarH * 0.85f).coerceIn(20f, height * 0.28f)
 
-        // Anchor using first bar, or test shifting grid by -2..+2 slots if bar 0/29 was missed
         val firstX = chain.first().centerX
         val mapped = IntArray(chain.size)
         for (k in chain.indices) {
             mapped[k] = ((chain[k].centerX - firstX) / basePitch).roundToInt()
         }
         val spanSlots = mapped.last() - mapped.first()
-        if (spanSlots !in 25..32) return null
+        if (spanSlots !in (MIN_CODE_BARS - 3)..(MAX_CODE_BARS + 2)) return null
 
         // Linear regression over (slot, centerX) and (slot, centerY)
         var sumK = 0.0
@@ -401,7 +403,7 @@ object BitChordBarDetector {
                 n++
             }
         }
-        if (n < 16) return null
+        if (n < 14) return null
 
         val denom = n * sumKK - sumK * sumK
         if (abs(denom) < 1e-5) return null
@@ -410,18 +412,21 @@ object BitChordBarDetector {
         val stepY = ((n * sumKY - sumK * sumY) / denom).toFloat()
         val originY = ((sumY - stepY * sumK) / n).toFloat()
 
-        // Try grid shifts so missing first/last calibration bar is still checked cleanly
-        val shiftCandidates = when (spanSlots) {
-            29 -> intArrayOf(0)
-            28 -> intArrayOf(0, -1)
-            27 -> intArrayOf(-1, 0, -2)
-            else -> intArrayOf(0, 1, -1, 2)
-        }
+        val estCount = spanSlots + 1
+        // Test estimated count and ±1 in case an endpoint calibration bar was dropped or stray bar attached
+        val candidateCountsAndShifts = arrayOf(
+            estCount to 0,
+            (estCount + 1) to 0,
+            (estCount + 1) to -1,
+            (estCount - 1) to 0,
+            (estCount - 1) to 1,
+        )
 
-        for (shift in shiftCandidates) {
-            val cx = FloatArray(30)
-            val cy = FloatArray(30)
-            for (i in 0 until 30) {
+        for ((targetCount, shift) in candidateCountsAndShifts) {
+            if (targetCount !in MIN_CODE_BARS..MAX_CODE_BARS) continue
+            val cx = FloatArray(targetCount)
+            val cy = FloatArray(targetCount)
+            for (i in 0 until targetCount) {
                 val slot = i + shift
                 cx[i] = originX + slot * stepX
                 cy[i] = originY + slot * stepY
@@ -510,38 +515,32 @@ object BitChordBarDetector {
                 }
             }
 
-            if (peakX.size < 25) continue
+            if (peakX.size < MIN_CODE_BARS) continue
 
             val chains = findScanlineChains(peakX)
             for (chain in chains) {
-                if (chain.size !in 27..34) continue
+                if (chain.size !in MIN_CODE_BARS..(MAX_CODE_BARS + 2)) continue
                 val span = chain.last() - chain.first()
                 val pitch = span / (chain.size - 1)
-                if (pitch < 3f || pitch > 50f) continue
+                if (pitch < 2.5f || pitch > 50f) continue
 
                 val maxHalf = (height * 0.22f).coerceAtLeast(30f)
 
-                if (chain.size == 30) {
-                    val cx = FloatArray(30) { chain[it] }
-                    val cy = FloatArray(30) { y.toFloat() }
+                if (chain.size in MIN_CODE_BARS..MAX_CODE_BARS) {
+                    val cx = FloatArray(chain.size) { chain[it] }
+                    val cy = FloatArray(chain.size) { y.toFloat() }
                     decodeWithFwhm(yuvBytes, width, height, cx, cy, maxHalf)?.let { return it }
-                } else if (chain.size > 30) {
-                    for (start in 0..(chain.size - 30)) {
-                        val cx = FloatArray(30) { chain[start + it] }
-                        val cy = FloatArray(30) { y.toFloat() }
-                        decodeWithFwhm(yuvBytes, width, height, cx, cy, maxHalf)?.let { return it }
-                    }
-                } else {
-                    // Recover missing bar gaps (27..29 peaks)
-                    val firstX = chain.first()
-                    val slots = FloatArray(30)
-                    val totalSpan = chain.last() - firstX
-                    val estPitch = totalSpan / 29f
-                    for (i in 0 until 30) {
-                        slots[i] = firstX + i * estPitch
-                    }
-                    val cy = FloatArray(30) { y.toFloat() }
-                    decodeWithFwhm(yuvBytes, width, height, slots, cy, maxHalf)?.let { return it }
+                }
+
+                // Also test trimming 1 stray peak from start/end if needed
+                if (chain.size > MIN_CODE_BARS + 1) {
+                    val trimLeft = FloatArray(chain.size - 1) { chain[it + 1] }
+                    val cyLeft = FloatArray(trimLeft.size) { y.toFloat() }
+                    decodeWithFwhm(yuvBytes, width, height, trimLeft, cyLeft, maxHalf)?.let { return it }
+
+                    val trimRight = FloatArray(chain.size - 1) { chain[it] }
+                    val cyRight = FloatArray(trimRight.size) { y.toFloat() }
+                    decodeWithFwhm(yuvBytes, width, height, trimRight, cyRight, maxHalf)?.let { return it }
                 }
             }
         }
@@ -559,20 +558,20 @@ object BitChordBarDetector {
                 continue
             }
             val gap = px - current.last()
-            if (gap in 3f..50f) {
+            if (gap in 2.5f..50f) {
                 current.add(px)
             } else {
-                if (current.size >= 25) result.add(current)
+                if (current.size >= MIN_CODE_BARS) result.add(current)
                 current = ArrayList()
                 current.add(px)
             }
         }
-        if (current.size >= 25) result.add(current)
+        if (current.size >= MIN_CODE_BARS) result.add(current)
         return result
     }
 
     /**
-     * Measures sub-pixel FWHM (Full Width at Half Maximum) heights at the 30 known bar centers
+     * Measures sub-pixel FWHM (Full Width at Half Maximum) heights at the known bar centers
      * and attempts decoding across slight cutoff variations.
      */
     private fun decodeWithFwhm(
@@ -583,10 +582,13 @@ object BitChordBarDetector {
         centersY: FloatArray,
         maxHalfH: Float,
     ): BitChordCodec.Payload? {
+        val n = centersX.size
+        if (n !in MIN_CODE_BARS..MAX_CODE_BARS) return null
+
         for (cutoffFrac in floatArrayOf(0.50f, 0.42f, 0.58f)) {
-            val heights = FloatArray(30)
+            val heights = FloatArray(n)
             var validCount = 0
-            for (i in 0 until 30) {
+            for (i in 0 until n) {
                 val h = measureFwhmHeight(
                     yuvBytes,
                     width,
@@ -599,7 +601,7 @@ object BitChordBarDetector {
                 heights[i] = h
                 if (h >= 3.5f) validCount++
             }
-            if (validCount >= 28) {
+            if (validCount >= (n - 2).coerceAtLeast(14)) {
                 tryDecodeHeights(heights)?.let { return it }
             }
         }
@@ -759,7 +761,7 @@ object BitChordBarDetector {
     }
 
     private fun tryDecodeHeights(h: FloatArray): BitChordCodec.Payload? {
-        if (h.size != 30) return null
+        if (h.size !in MIN_CODE_BARS..MAX_CODE_BARS) return null
 
         // 1. Forward direction: first bar is 0, last bar is 7
         tryDecodeDirection(h)?.let { return it }
@@ -772,18 +774,19 @@ object BitChordBarDetector {
     }
 
     private fun tryDecodeDirection(h: FloatArray): BitChordCodec.Payload? {
+        val n = h.size
         val lowBase = h.first()
         val highBase = h.last()
         val rawSpan = highBase - lowBase
         if (rawSpan <= 4f) return null
 
-        // First try zero-perspective with small proportional endpoint tweaks
+        val half = (n - 1) / 2f
         val endpointDeltas = floatArrayOf(0f, -0.025f * rawSpan, 0.025f * rawSpan, -0.05f * rawSpan, 0.05f * rawSpan)
         for (p in floatArrayOf(0f, -0.05f, 0.05f)) {
             val corrected = if (p == 0f) {
                 h
             } else {
-                FloatArray(30) { i -> h[i] * (1f + p * ((i - 14.5f) / 14.5f)) }
+                FloatArray(n) { i -> h[i] * (1f + p * ((i - half) / half)) }
             }
             val cLowBase = corrected.first()
             val cHighBase = corrected.last()
@@ -796,7 +799,7 @@ object BitChordBarDetector {
                     val high = cHighBase + dHigh
                     if (high <= low + 4f) continue
 
-                    val levels = ArrayList<Int>(30)
+                    val levels = ArrayList<Int>(n)
                     for (v in corrected) {
                         val scaled = ((v - low) / (high - low)) * 7f
                         levels.add(scaled.roundToInt().coerceIn(0, 7))
