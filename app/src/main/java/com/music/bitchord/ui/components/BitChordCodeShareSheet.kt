@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -70,7 +71,10 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
 import com.music.bitchord.R
+import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.code.BitChordCodec
+import com.music.bitchord.data.model.SearchFilter
+import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
@@ -101,6 +105,7 @@ data class BitChordCodeTarget(
     val thumbnailUrl: String?,
     val shareUrl: String,
     val filePrefix: String,
+    val fallbackThumbnailUrl: String? = null,
 ) {
     companion object {
         fun forSong(song: Song) = BitChordCodeTarget(
@@ -128,6 +133,14 @@ data class BitChordCodeTarget(
             filePrefix = "bitchord-album-code",
         )
     }
+}
+
+private fun isValidCodecId(id: String): Boolean =
+    id.isNotEmpty() && id.length <= 63 && id.all { it in BitChordCodec.ALPHABET }
+
+private fun localMediaFallbackId(rawId: String): String? {
+    val tail = rawId.substringBefore('?').substringAfterLast('/')
+    return if (tail.isNotEmpty() && tail.all(Char::isDigit)) "loc_$tail" else null
 }
 
 /**
@@ -178,8 +191,13 @@ fun BitChordCodeCard(
     target: BitChordCodeTarget,
     levels: List<Int>,
     modifier: Modifier = Modifier,
+    isLoadingCode: Boolean = false,
 ) {
     val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
+    var useFallbackArt by remember(target.thumbnailUrl, target.fallbackThumbnailUrl) {
+        mutableStateOf(target.thumbnailUrl.isNullOrBlank())
+    }
+    val artModel = if (useFallbackArt) target.fallbackThumbnailUrl else target.thumbnailUrl
 
     Box(
         modifier = modifier
@@ -192,11 +210,16 @@ fun BitChordCodeCard(
             ),
     ) {
         // Artwork cover as blurred background (matching lyrics video share: 10.dp blur & 0.4f scrim)
-        if (!target.thumbnailUrl.isNullOrBlank()) {
+        if (!artModel.isNullOrBlank()) {
             AsyncImage(
-                model = target.thumbnailUrl,
+                model = artModel,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                onError = {
+                    if (!useFallbackArt && !target.fallbackThumbnailUrl.isNullOrBlank()) {
+                        useFallbackArt = true
+                    }
+                },
                 modifier = Modifier
                     .matchParentSize()
                     .blur(10.dp),
@@ -229,9 +252,14 @@ fun BitChordCodeCard(
             ) {
                 // Cover thumbnail
                 AsyncImage(
-                    model = target.thumbnailUrl,
+                    model = artModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    onError = {
+                        if (!useFallbackArt && !target.fallbackThumbnailUrl.isNullOrBlank()) {
+                            useFallbackArt = true
+                        }
+                    },
                     modifier = Modifier
                         .size(76.dp)
                         .clip(RoundedCornerShape(12.dp))
@@ -291,13 +319,28 @@ fun BitChordCodeCard(
                 Spacer(Modifier.width(14.dp))
 
                 // Soundwave code bars expanded across to the right
-                BitChordCodeBar(
-                    levels = levels,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp),
-                    barColor = Color.White,
-                )
+                if (isLoadingCode) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White.copy(alpha = 0.75f),
+                        )
+                    }
+                } else {
+                    BitChordCodeBar(
+                        levels = levels,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        barColor = Color.White,
+                    )
+                }
             }
         }
     }
@@ -323,14 +366,66 @@ fun BitChordCodeShareSheet(
     val haptics = rememberHaptics()
     val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
 
-    val levels = remember(target.type, target.id) {
-        runCatching {
-            BitChordCodec.encode(target.type, target.id)
-        }.getOrElse {
-            listOf(0, 2, 4, 1, 5, 3, 6, 2, 4, 7)
+    val isDirectCodecId = remember(target.id) { isValidCodecId(target.id) }
+    var activeTarget by remember(target) {
+        mutableStateOf(
+            if (isDirectCodecId) {
+                target
+            } else {
+                localMediaFallbackId(target.id)?.let { locId ->
+                    target.copy(id = locId, shareUrl = target.title)
+                } ?: target
+            },
+        )
+    }
+    var resolvingCode by remember(target) { mutableStateOf(!isDirectCodecId) }
+
+    // For local music files (content:// or file:// URIs), try matching the track on YouTube Music
+    // so anyone scanning the card can play it, falling back cleanly to the local loc_<id> code offline.
+    LaunchedEffect(target) {
+        if (isDirectCodecId) return@LaunchedEffect
+        val query = if (target.subtitle.isNotBlank() &&
+            !target.subtitle.equals("Unknown Artist", ignoreCase = true)
+        ) {
+            "${target.title} ${target.subtitle}"
+        } else {
+            target.title
+        }.trim()
+
+        val matched = if (query.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    YtMusicRepository.search(query, SearchFilter.SONGS).getOrNull()
+                        ?.filterIsInstance<SearchResult.Track>()
+                        ?.firstOrNull { isValidCodecId(it.song.videoId) }
+                        ?.song
+                }.getOrNull()
+            }
+        } else {
+            null
+        }
+
+        if (matched != null) {
+            activeTarget = target.copy(
+                id = matched.videoId,
+                shareUrl = "https://music.youtube.com/watch?v=${matched.videoId}",
+                fallbackThumbnailUrl = matched.thumbnailUrl,
+            )
+        }
+        resolvingCode = false
+    }
+
+    val levels = remember(activeTarget.type, activeTarget.id) {
+        if (!isValidCodecId(activeTarget.id)) {
+            emptyList()
+        } else {
+            runCatching {
+                BitChordCodec.encode(activeTarget.type, activeTarget.id)
+            }.getOrDefault(emptyList())
         }
     }
 
+    val canExport = !resolvingCode && levels.isNotEmpty()
     var isSharing by remember(target) { mutableStateOf(false) }
     var isSaving by remember(target) { mutableStateOf(false) }
     var saved by remember(target) { mutableStateOf(false) }
@@ -359,7 +454,7 @@ fun BitChordCodeShareSheet(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = if (target.type == BitChordCodec.MediaType.ALBUM) {
+                text = if (activeTarget.type == BitChordCodec.MediaType.ALBUM) {
                     "Scan this code in BitChord to open the album"
                 } else {
                     "Scan this code in BitChord to play the song"
@@ -372,8 +467,9 @@ fun BitChordCodeShareSheet(
             )
 
             BitChordCodeCard(
-                target = target,
+                target = activeTarget,
                 levels = levels,
+                isLoadingCode = resolvingCode && levels.isEmpty(),
             )
 
             Row(
@@ -387,7 +483,7 @@ fun BitChordCodeShareSheet(
                     label = stringResource(R.string.save),
                     icon = Icons.Rounded.Download,
                     accent = false,
-                    enabled = !isSaving && !isSharing,
+                    enabled = canExport && !isSaving && !isSharing,
                     plainFill = DrawerPlainFill,
                     saved = saved,
                     savedLabel = stringResource(R.string.saved_bang),
@@ -399,8 +495,8 @@ fun BitChordCodeShareSheet(
                         saved = false
                         isSaving = true
                         scope.launch {
-                            val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
-                            val ok = saveToGallery(context, bitmap, target.title, target.filePrefix)
+                            val bitmap = renderBitChordCodeBitmap(context, activeTarget, levels, glassActive)
+                            val ok = saveToGallery(context, bitmap, activeTarget.title, activeTarget.filePrefix)
                             isSaving = false
                             if (ok) {
                                 saved = true
@@ -415,15 +511,15 @@ fun BitChordCodeShareSheet(
                     label = stringResource(R.string.share),
                     icon = Icons.Rounded.IosShare,
                     accent = true,
-                    enabled = !isSharing && !isSaving,
+                    enabled = canExport && !isSharing && !isSaving,
                     busy = isSharing,
                     modifier = Modifier.weight(1f),
                     onClick = {
                         haptics.play(Haptic.Tap)
                         isSharing = true
                         scope.launch {
-                            val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
-                            val uri = cacheForSharing(context, bitmap, "${target.filePrefix}.png")
+                            val bitmap = renderBitChordCodeBitmap(context, activeTarget, levels, glassActive)
+                            val uri = cacheForSharing(context, bitmap, "${activeTarget.filePrefix}.png")
                             isSharing = false
                             if (uri != null) {
                                 val intent = sendIntent(uri)
@@ -438,9 +534,9 @@ fun BitChordCodeShareSheet(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
-                        .background(DrawerPlainFill)
-                        .clickable {
-                            clipboard.setText(AnnotatedString(target.shareUrl))
+                        .background(DrawerPlainFill.copy(alpha = if (canExport) DrawerPlainFill.alpha else 0.04f))
+                        .clickable(enabled = canExport) {
+                            clipboard.setText(AnnotatedString(activeTarget.shareUrl))
                             copied = true
                             haptics.play(Haptic.Tap)
                         }
@@ -450,7 +546,7 @@ fun BitChordCodeShareSheet(
                     Icon(
                         imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                         contentDescription = "Copy Link",
-                        tint = Color.White,
+                        tint = Color.White.copy(alpha = if (canExport) 1f else 0.4f),
                         modifier = Modifier.size(21.dp),
                     )
                 }
@@ -545,17 +641,19 @@ suspend fun renderBitChordCodeBitmap(
     canvas.save()
     canvas.clipPath(clipPath)
 
-    // Load artwork bitmap via Coil
+    // Load artwork bitmap via Coil (trying primary URL, then fallback remote artwork)
     var artBitmap: Bitmap? = null
-    if (!target.thumbnailUrl.isNullOrBlank()) {
+    for (url in listOfNotNull(target.thumbnailUrl, target.fallbackThumbnailUrl)) {
+        if (url.isBlank()) continue
         try {
             val request = ImageRequest.Builder(context)
-                .data(target.thumbnailUrl)
+                .data(url)
                 .allowHardware(false)
                 .build()
             val result = SingletonImageLoader.get(context).execute(request)
             if (result is SuccessResult) {
                 artBitmap = result.image.toBitmap()
+                break
             }
         } catch (_: Exception) {}
     }

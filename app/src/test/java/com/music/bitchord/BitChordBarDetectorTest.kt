@@ -239,6 +239,19 @@ class BitChordBarDetectorTest {
     }
 
     @Test
+    fun testEncodeDecodeLocalTrackId() {
+        val localId = "loc_123456"
+        val levels = BitChordCodec.encode(BitChordCodec.MediaType.TRACK, localId)
+        val image = renderSyntheticBarcode(levels, 800, 400)
+
+        val detected = BitChordBarDetector.detect(image, 800, 400)
+        assertNotNull("Detector should detect local music track code", detected)
+        assertEquals(BitChordCodec.MediaType.TRACK, detected?.type)
+        assertEquals(localId, detected?.id)
+        assertEquals("bitchord:song:$localId", detected?.canonicalUri)
+    }
+
+    @Test
     fun testDetectorRejectsRandomNoise() {
         val rng = Random(42)
         val w = 720

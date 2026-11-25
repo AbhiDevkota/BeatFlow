@@ -207,8 +207,17 @@ object MusicLink {
         }
     }
 
-    private fun track(videoId: String): LinkRequest.Track? =
-        videoId.trim().takeIf { it.isNotEmpty() }?.let(LinkRequest::Track)
+    private fun track(videoId: String): LinkRequest? {
+        val clean = videoId.trim()
+        if (clean.isEmpty()) return null
+        if (clean.startsWith("loc_")) {
+            val mediaId = clean.removePrefix("loc_")
+            if (mediaId.isNotEmpty() && mediaId.all(Char::isDigit)) {
+                return LinkRequest.LocalFile(Uri.parse("content://media/external/audio/media/$mediaId"))
+            }
+        }
+        return LinkRequest.Track(clean)
+    }
 
     /**
      * A playlist id as the browse id its page is fetched under.
