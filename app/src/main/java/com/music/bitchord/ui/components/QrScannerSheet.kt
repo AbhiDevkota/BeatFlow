@@ -1,11 +1,16 @@
 package com.music.bitchord.ui.components
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -51,6 +56,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.FlashOff
 import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
@@ -59,6 +65,7 @@ import com.music.bitchord.playback.MusicLink
 import com.music.bitchord.playback.LinkRequest
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,9 +78,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -109,6 +120,8 @@ import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
 import com.music.bitchord.R
 
@@ -156,9 +169,47 @@ fun QrScannerSheet(
     var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
+    val scope = rememberCoroutineScope()
     var isTorchOn by remember { mutableStateOf(false) }
     var scannedCode by remember { mutableStateOf<String?>(null) }
     var copiedFeedback by remember { mutableStateOf(false) }
+    var isScanningGallery by remember { mutableStateOf(false) }
+
+    val handleScannedResult: (String) -> Unit = { text ->
+        if (scannedCode == null) {
+            scannedCode = text
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            val request = MusicLink.parseCode(text)
+            if (request != null) {
+                MusicLink.submit(request)
+                onCodeScanned(text)
+                onDismiss()
+            } else {
+                onCodeScanned(text)
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null && !isScanningGallery) {
+            isScanningGallery = true
+            scope.launch {
+                val decoded = decodeCodeFromImageUri(context, uri)
+                isScanningGallery = false
+                if (!decoded.isNullOrBlank()) {
+                    handleScannedResult(decoded)
+                } else {
+                    Toast.makeText(
+                        context,
+                        "No BitChord or QR code found in image",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+    }
 
     DisposableEffect(lifecycleOwner) {
         onDispose {
@@ -212,18 +263,7 @@ fun QrScannerSheet(
                                         cameraExecutor,
                                         QrCodeAnalyzer { text ->
                                             mainExecutor.execute {
-                                                if (scannedCode == null) {
-                                                    scannedCode = text
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    val request = MusicLink.parseCode(text)
-                                                    if (request != null) {
-                                                        MusicLink.submit(request)
-                                                        onCodeScanned(text)
-                                                        onDismiss()
-                                                    } else {
-                                                        onCodeScanned(text)
-                                                    }
-                                                }
+                                                handleScannedResult(text)
                                             }
                                         },
                                     )
@@ -382,7 +422,7 @@ fun QrScannerSheet(
             }
         }
 
-        // Bottom section: hint or result sheet
+        // Bottom section: hint, gallery scan option, or result sheet
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -392,23 +432,67 @@ fun QrScannerSheet(
             contentAlignment = Alignment.Center,
         ) {
             AnimatedVisibility(
-                visible = scannedCode == null && hasCameraPermission,
+                visible = scannedCode == null,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
-                // Frosted guidance pill
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
-                        text = "Align QR code within the frame",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.85f),
-                    )
+                    if (hasCameraPermission) {
+                        // Frosted guidance pill
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 18.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                text = "Align code within the frame",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.85f),
+                            )
+                        }
+                    }
+
+                    // Scan Code From Your Gallery pill button
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color.Black.copy(alpha = 0.62f))
+                            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(24.dp))
+                            .clickable(enabled = !isScanningGallery) {
+                                galleryLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (isScanningGallery) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.PhotoLibrary,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = if (isScanningGallery) "Scanning image…" else "Scan Code From Your Gallery",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
                 }
             }
 
@@ -880,4 +964,107 @@ private class QrCodeAnalyzer(
             }
         }
     }
+}
+
+/**
+ * Loads a gallery image from [uri], scales it safely, and runs both [BitChordBarDetector]
+ * (in full-frame mode, upright and 90-degree rotated) and ZXing QR decoding.
+ */
+private suspend fun decodeCodeFromImageUri(
+    context: Context,
+    uri: Uri,
+): String? = withContext(Dispatchers.Default) {
+    val rawBitmap = loadScaledBitmapForScan(context, uri, maxDim = 1280) ?: return@withContext null
+    try {
+        val w = rawBitmap.width
+        val h = rawBitmap.height
+        val pixels = IntArray(w * h)
+        rawBitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        // Compute luminance bytes, compositing transparent rounded corners over dark #0F1219
+        val lum = ByteArray(w * h)
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            val a = (c ushr 24) and 0xFF
+            var r = (c ushr 16) and 0xFF
+            var g = (c ushr 8) and 0xFF
+            var b = c and 0xFF
+            if (a < 255) {
+                val invA = 255 - a
+                r = (r * a + 15 * invA) / 255
+                g = (g * a + 18 * invA) / 255
+                b = (b * a + 25 * invA) / 255
+                pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+            }
+            lum[i] = (((66 * r + 129 * g + 25 * b + 128) shr 8) + 16).coerceIn(0, 255).toByte()
+        }
+
+        // 1. Try BitChord visual soundwave code across full image (covers saved cards & screenshots)
+        runCatching { BitChordBarDetector.detect(lum, w, h, fullFrame = true) }
+            .getOrNull()?.let { return@withContext it.canonicalUri }
+
+        // Retry rotated 90 degrees in case an image/screenshot was stored sideways
+        val rot90 = ByteArray(w * h)
+        for (y in 0 until h) {
+            val rowOff = y * w
+            for (x in 0 until w) {
+                rot90[x * h + (h - y - 1)] = lum[rowOff + x]
+            }
+        }
+        runCatching { BitChordBarDetector.detect(rot90, h, w, fullFrame = true) }
+            .getOrNull()?.let { return@withContext it.canonicalUri }
+
+        // 2. Fallback to ZXing QR decoding
+        val reader = MultiFormatReader().apply {
+            setHints(
+                mapOf(
+                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                    DecodeHintType.TRY_HARDER to true,
+                ),
+            )
+        }
+        val source = RGBLuminanceSource(w, h, pixels)
+        runCatching { reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))) }
+            .getOrNull()?.text?.takeIf { it.isNotBlank() }?.let { return@withContext it }
+
+        reader.reset()
+        runCatching { reader.decodeWithState(BinaryBitmap(GlobalHistogramBinarizer(source))) }
+            .getOrNull()?.text?.takeIf { it.isNotBlank() }?.let { return@withContext it }
+
+        null
+    } finally {
+        rawBitmap.recycle()
+    }
+}
+
+private fun loadScaledBitmapForScan(context: Context, uri: Uri, maxDim: Int): Bitmap? {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+    val srcW = bounds.outWidth
+    val srcH = bounds.outHeight
+    if (srcW <= 0 || srcH <= 0) return null
+
+    var sampleSize = 1
+    while ((srcW / sampleSize) > maxDim * 2 || (srcH / sampleSize) > maxDim * 2) {
+        sampleSize *= 2
+    }
+
+    val decodeOpts = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    val decoded = resolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, decodeOpts)
+    } ?: return null
+
+    val maxSide = maxOf(decoded.width, decoded.height)
+    if (maxSide <= maxDim) return decoded
+
+    val scale = maxDim.toFloat() / maxSide
+    val dstW = (decoded.width * scale).toInt().coerceAtLeast(1)
+    val dstH = (decoded.height * scale).toInt().coerceAtLeast(1)
+    val scaled = Bitmap.createScaledBitmap(decoded, dstW, dstH, true)
+    if (scaled !== decoded) decoded.recycle()
+    return scaled
 }

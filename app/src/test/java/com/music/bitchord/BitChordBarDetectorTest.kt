@@ -160,6 +160,40 @@ class BitChordBarDetectorTest {
     }
 
     @Test
+    fun testDetectorFullFrameOnCardBottomPlacement() {
+        val videoId = "dQw4w9WgXcQ"
+        val levels = BitChordCodec.encode(BitChordCodec.MediaType.TRACK, videoId)
+        val w = 1200
+        val h = 652
+        // Mimic a saved BitChord card PNG: bars sit in the bottom right (~y = 502, reaching ~89% height)
+        val image = ByteArray(w * h) { 25 }
+        val codeLeft = 405
+        val codeWidth = 1200 - 405 - 68
+        val barW = 13
+        val gap = (codeWidth - levels.size * barW) / (levels.size - 1)
+        val centerY = 502
+        val minH = 33
+        val maxH = 158
+
+        for (i in levels.indices) {
+            val lvl = levels[i]
+            val bh = minH + ((lvl / 7f) * (maxH - minH)).roundToInt()
+            val bx = codeLeft + i * (barW + gap)
+            val topY = centerY - bh / 2
+            val botY = centerY + bh / 2
+            for (y in topY..botY) {
+                for (x in bx until (bx + barW)) {
+                    image[y * w + x] = 250.toByte()
+                }
+            }
+        }
+
+        val detected = BitChordBarDetector.detect(image, w, h, fullFrame = true)
+        assertNotNull("Full-frame detector should detect bars positioned at card bottom", detected)
+        assertEquals(videoId, detected?.id)
+    }
+
+    @Test
     fun testDetectorRejectsRandomNoise() {
         val rng = Random(42)
         val w = 720

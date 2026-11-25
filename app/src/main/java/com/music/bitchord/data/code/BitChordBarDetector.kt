@@ -42,14 +42,15 @@ object BitChordBarDetector {
         yuvBytes: ByteArray,
         width: Int,
         height: Int,
+        fullFrame: Boolean = false,
     ): BitChordCodec.Payload? {
         if (width < 100 || height < 100 || yuvBytes.size < width * height) return null
 
         // Pass 1: Integral-image adaptive connected components + grid FWHM resampling
-        detectByComponents(yuvBytes, width, height)?.let { return it }
+        detectByComponents(yuvBytes, width, height, fullFrame)?.let { return it }
 
         // Pass 2: Band-averaged scanline peak profiling + grid FWHM resampling
-        detectByScanlines(yuvBytes, width, height)?.let { return it }
+        detectByScanlines(yuvBytes, width, height, fullFrame)?.let { return it }
 
         return null
     }
@@ -62,11 +63,12 @@ object BitChordBarDetector {
         yuvBytes: ByteArray,
         width: Int,
         height: Int,
+        fullFrame: Boolean,
     ): BitChordCodec.Payload? {
-        val roiX = (width * 0.03f).toInt()
-        val roiY = (height * 0.14f).toInt()
-        val roiW = (width * 0.94f).toInt().coerceAtMost(width - roiX)
-        val roiH = (height * 0.72f).toInt().coerceAtMost(height - roiY)
+        val roiX = if (fullFrame) 0 else (width * 0.03f).toInt()
+        val roiY = if (fullFrame) 0 else (height * 0.14f).toInt()
+        val roiW = if (fullFrame) width else (width * 0.94f).toInt().coerceAtMost(width - roiX)
+        val roiH = if (fullFrame) height else (height * 0.72f).toInt().coerceAtMost(height - roiY)
         val total = roiW * roiH
         if (total <= 0) return null
 
@@ -446,11 +448,12 @@ object BitChordBarDetector {
         yuvBytes: ByteArray,
         width: Int,
         height: Int,
+        fullFrame: Boolean,
     ): BitChordCodec.Payload? {
-        val roiLeft = (width * 0.04f).toInt()
-        val roiRight = (width * 0.96f).toInt()
-        val roiTop = (height * 0.16f).toInt()
-        val roiBottom = (height * 0.84f).toInt()
+        val roiLeft = if (fullFrame) (width * 0.01f).toInt() else (width * 0.04f).toInt()
+        val roiRight = if (fullFrame) (width * 0.99f).toInt() else (width * 0.96f).toInt()
+        val roiTop = if (fullFrame) (height * 0.02f).toInt() else (height * 0.16f).toInt()
+        val roiBottom = if (fullFrame) (height * 0.98f).toInt() else (height * 0.84f).toInt()
         val roiW = roiRight - roiLeft
         if (roiW < 100) return null
 
