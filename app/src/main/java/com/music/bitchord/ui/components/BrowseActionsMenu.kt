@@ -182,13 +182,6 @@ fun BrowseActionsMenu(
                         onClick = it,
                     )
                 }
-                onShareBitChordCode?.let {
-                    ActionRow(
-                        icon = SfIcons.GraphicEq,
-                        label = "Share BitChord Code",
-                        onClick = it,
-                    )
-                }
             }
             onPlay?.let { ActionRow(SfIcons.Play, stringResource(R.string.play), onClick = it) }
             onShuffle?.let { ActionRow(SfIcons.Shuffle, stringResource(R.string.shuffle), onClick = it) }
@@ -197,13 +190,6 @@ fun BrowseActionsMenu(
                     ActionRow(
                         icon = SfIcons.AddToPlaylist,
                         label = stringResource(R.string.add_to_playlist),
-                        onClick = it,
-                    )
-                }
-                onShareBitChordCode?.let {
-                    ActionRow(
-                        icon = SfIcons.GraphicEq,
-                        label = "Share BitChord Code",
                         onClick = it,
                     )
                 }
@@ -268,6 +254,13 @@ fun BrowseActionsMenu(
             }
             onShare?.let {
                 ActionRow(SfIcons.Share, stringResource(R.string.share), onClick = it)
+            }
+            onShareBitChordCode?.let {
+                ActionRow(
+                    icon = SfIcons.GraphicEq,
+                    label = "Share BitChord Code",
+                    onClick = it,
+                )
             }
             onTogglePin?.let {
                 ActionRow(
