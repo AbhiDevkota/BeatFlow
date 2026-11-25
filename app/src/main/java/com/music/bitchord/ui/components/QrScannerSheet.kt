@@ -6,7 +6,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -35,6 +37,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -233,11 +236,14 @@ fun QrScannerSheet(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
+        val rectWidthDp = (maxWidth * 0.88f).coerceIn(300.dp, 420.dp)
+        val rectHeightDp = (rectWidthDp * 0.60f).coerceIn(200.dp, 270.dp)
+        val viewfinderBottomDp = (maxHeight / 2f) - 28.dp + (rectHeightDp / 2f)
         if (hasCameraPermission) {
             // Camera preview
             AndroidView(
@@ -422,7 +428,75 @@ fun QrScannerSheet(
             }
         }
 
-        // Bottom section: hint, gallery scan option, or result sheet
+        // Guidance hint & gallery scan option positioned directly below the scanning rectangle
+        AnimatedVisibility(
+            visible = scannedCode == null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(if (hasCameraPermission) Alignment.TopCenter else Alignment.BottomCenter)
+                .fillMaxWidth()
+                .then(
+                    if (hasCameraPermission) {
+                        Modifier.padding(top = viewfinderBottomDp + 22.dp)
+                    } else {
+                        Modifier.navigationBarsPadding().padding(bottom = 36.dp)
+                    },
+                ),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                if (hasCameraPermission) {
+                    Text(
+                        text = "Align code within the frame",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.82f),
+                    )
+                }
+
+                // Scan Code From Your Gallery pill button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.Black.copy(alpha = 0.58f))
+                        .border(1.dp, Color.White.copy(alpha = 0.24f), RoundedCornerShape(24.dp))
+                        .clickable(enabled = !isScanningGallery) {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isScanningGallery) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.PhotoLibrary,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = if (isScanningGallery) "Scanning image…" else "Scan Code From Your Gallery",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
+            }
+        }
+
+        // Bottom section: scanned code result sheet
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -431,70 +505,6 @@ fun QrScannerSheet(
                 .padding(bottom = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
-            AnimatedVisibility(
-                visible = scannedCode == null,
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    if (hasCameraPermission) {
-                        // Frosted guidance pill
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.Black.copy(alpha = 0.45f))
-                                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 18.dp, vertical = 8.dp),
-                        ) {
-                            Text(
-                                text = "Align code within the frame",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.85f),
-                            )
-                        }
-                    }
-
-                    // Scan Code From Your Gallery pill button
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Color.Black.copy(alpha = 0.62f))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(24.dp))
-                            .clickable(enabled = !isScanningGallery) {
-                                galleryLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                )
-                            }
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (isScanningGallery) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.White,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.PhotoLibrary,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = if (isScanningGallery) "Scanning image…" else "Scan Code From Your Gallery",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
-                        )
-                    }
-                }
-            }
 
             // Scanned code result card
             AnimatedVisibility(
@@ -974,7 +984,10 @@ private suspend fun decodeCodeFromImageUri(
     context: Context,
     uri: Uri,
 ): String? = withContext(Dispatchers.Default) {
-    val rawBitmap = loadScaledBitmapForScan(context, uri, maxDim = 1280) ?: return@withContext null
+    val rawBitmap = loadScaledBitmapForScan(context, uri, maxMinSide = 1440) ?: run {
+        Log.w("QrScanner", "Failed to decode bitmap from gallery URI: $uri")
+        return@withContext null
+    }
     try {
         val w = rawBitmap.width
         val h = rawBitmap.height
@@ -999,11 +1012,11 @@ private suspend fun decodeCodeFromImageUri(
             lum[i] = (((66 * r + 129 * g + 25 * b + 128) shr 8) + 16).coerceIn(0, 255).toByte()
         }
 
-        // 1. Try BitChord visual soundwave code across full image (covers saved cards & screenshots)
+        // 1. Try BitChord visual soundwave code (bright bars on dark background)
         runCatching { BitChordBarDetector.detect(lum, w, h, fullFrame = true) }
             .getOrNull()?.let { return@withContext it.canonicalUri }
 
-        // Retry rotated 90 degrees in case an image/screenshot was stored sideways
+        // Retry rotated 90 degrees (sideways photo/card)
         val rot90 = ByteArray(w * h)
         for (y in 0 until h) {
             val rowOff = y * w
@@ -1012,6 +1025,11 @@ private suspend fun decodeCodeFromImageUri(
             }
         }
         runCatching { BitChordBarDetector.detect(rot90, h, w, fullFrame = true) }
+            .getOrNull()?.let { return@withContext it.canonicalUri }
+
+        // Retry inverted polarity (dark bars on light/white background)
+        val invLum = ByteArray(lum.size) { i -> (255 - (lum[i].toInt() and 0xFF)).toByte() }
+        runCatching { BitChordBarDetector.detect(invLum, w, h, fullFrame = true) }
             .getOrNull()?.let { return@withContext it.canonicalUri }
 
         // 2. Fallback to ZXing QR decoding
@@ -1031,14 +1049,41 @@ private suspend fun decodeCodeFromImageUri(
         runCatching { reader.decodeWithState(BinaryBitmap(GlobalHistogramBinarizer(source))) }
             .getOrNull()?.text?.takeIf { it.isNotBlank() }?.let { return@withContext it }
 
+        Log.d("QrScanner", "No code detected in gallery image (${w}x${h})")
         null
     } finally {
         rawBitmap.recycle()
     }
 }
 
-private fun loadScaledBitmapForScan(context: Context, uri: Uri, maxDim: Int): Bitmap? {
+private fun loadScaledBitmapForScan(context: Context, uri: Uri, maxMinSide: Int): Bitmap? {
     val resolver = context.contentResolver
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        runCatching {
+            val source = ImageDecoder.createSource(resolver, uri)
+            return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val w = info.size.width
+                val h = info.size.height
+                val minSide = minOf(w, h)
+                val maxSide = maxOf(w, h)
+                // Only downscale huge camera photos; keep screenshots (1080x2400) & cards (1200x653) full-res
+                val factor = maxOf(
+                    if (minSide > maxMinSide) minSide.toFloat() / maxMinSide else 1f,
+                    if (maxSide > 2600) maxSide.toFloat() / 2600f else 1f,
+                )
+                if (factor > 1.05f) {
+                    decoder.setTargetSize(
+                        (w / factor).toInt().coerceAtLeast(1),
+                        (h / factor).toInt().coerceAtLeast(1),
+                    )
+                }
+            }
+        }.onFailure {
+            Log.w("QrScanner", "ImageDecoder failed, falling back to BitmapFactory", it)
+        }
+    }
+
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
     val srcW = bounds.outWidth
@@ -1046,7 +1091,7 @@ private fun loadScaledBitmapForScan(context: Context, uri: Uri, maxDim: Int): Bi
     if (srcW <= 0 || srcH <= 0) return null
 
     var sampleSize = 1
-    while ((srcW / sampleSize) > maxDim * 2 || (srcH / sampleSize) > maxDim * 2) {
+    while (minOf(srcW / sampleSize, srcH / sampleSize) > maxMinSide * 2) {
         sampleSize *= 2
     }
 
@@ -1058,12 +1103,16 @@ private fun loadScaledBitmapForScan(context: Context, uri: Uri, maxDim: Int): Bi
         BitmapFactory.decodeStream(it, null, decodeOpts)
     } ?: return null
 
+    val minSide = minOf(decoded.width, decoded.height)
     val maxSide = maxOf(decoded.width, decoded.height)
-    if (maxSide <= maxDim) return decoded
+    val factor = maxOf(
+        if (minSide > maxMinSide) minSide.toFloat() / maxMinSide else 1f,
+        if (maxSide > 2600) maxSide.toFloat() / 2600f else 1f,
+    )
+    if (factor <= 1.05f) return decoded
 
-    val scale = maxDim.toFloat() / maxSide
-    val dstW = (decoded.width * scale).toInt().coerceAtLeast(1)
-    val dstH = (decoded.height * scale).toInt().coerceAtLeast(1)
+    val dstW = (decoded.width / factor).toInt().coerceAtLeast(1)
+    val dstH = (decoded.height / factor).toInt().coerceAtLeast(1)
     val scaled = Bitmap.createScaledBitmap(decoded, dstW, dstH, true)
     if (scaled !== decoded) decoded.recycle()
     return scaled

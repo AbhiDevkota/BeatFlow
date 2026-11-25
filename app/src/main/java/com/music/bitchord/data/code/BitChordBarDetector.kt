@@ -325,11 +325,54 @@ object BitChordBarDetector {
             }
 
             if (chain.size >= MIN_CODE_BARS) {
-                for (idx in indices) used[idx] = true
-                result.add(chain)
+                // Split out large horizontal gap outliers (e.g., adjacent logo/text strokes before bar 0)
+                val cleanSegment = extractContiguousTightRun(chain, indices, used)
+                if (cleanSegment.size >= MIN_CODE_BARS) {
+                    result.add(cleanSegment)
+                }
             }
         }
         return result
+    }
+
+    /**
+     * Extracts the longest contiguous sub-sequence with tight, uniform horizontal spacing,
+     * only marking those kept bars as [used] so stray elements never lock out real bars.
+     */
+    private fun extractContiguousTightRun(
+        chain: List<BarBox>,
+        indices: List<Int>,
+        used: BooleanArray,
+    ): List<BarBox> {
+        if (chain.size < 3) return emptyList()
+        val dxs = FloatArray(chain.size - 1) { chain[it + 1].centerX - chain[it].centerX }
+        val sortedDx = dxs.sorted()
+        val medianDx = sortedDx[sortedDx.size / 2].coerceAtLeast(2.5f)
+        val maxGap = medianDx * 2.25f
+
+        var bestStart = 0
+        var bestEnd = 0
+        var curStart = 0
+        for (k in dxs.indices) {
+            if (dxs[k] > maxGap) {
+                if (k - curStart > bestEnd - bestStart) {
+                    bestStart = curStart
+                    bestEnd = k
+                }
+                curStart = k + 1
+            }
+        }
+        if (chain.lastIndex - curStart > bestEnd - bestStart) {
+            bestStart = curStart
+            bestEnd = chain.lastIndex
+        }
+
+        val count = bestEnd - bestStart + 1
+        if (count < MIN_CODE_BARS) return emptyList()
+        for (k in bestStart..bestEnd) {
+            used[indices[k]] = true
+        }
+        return chain.subList(bestStart, bestEnd + 1)
     }
 
     /**

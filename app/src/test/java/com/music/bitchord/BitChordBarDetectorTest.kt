@@ -194,6 +194,51 @@ class BitChordBarDetectorTest {
     }
 
     @Test
+    fun testDetectorWithAdjacentLogoAndArtwork() {
+        val videoId = "IxJjY5T9yag"
+        val levels = BitChordCodec.encode(BitChordCodec.MediaType.TRACK, videoId)
+        val w = 1200
+        val h = 653
+        val image = ByteArray(w * h) { y -> 35 }
+        // Strong left-to-right + dark center gradient like real album backdrop
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val bg = if (x in 520..920) 10 else 135
+                image[y * w + x] = bg.toByte()
+            }
+        }
+        // Bright album cover top-left
+        for (y in 68..353) for (x in 68..353) image[y * w + x] = 220.toByte()
+        // White logo strokes directly to the left of bar 0 at centerY = 502
+        for (strokeY in listOf(465..480, 495..510, 525..542)) {
+            for (y in strokeY) for (x in 140..280) image[y * w + x] = 235.toByte()
+        }
+
+        val codeLeft = 405
+        val codeWidth = 1200 - 405 - 68
+        val barW = 13
+        val gap = (codeWidth - levels.size * barW) / (levels.size - 1)
+        val centerY = 502
+        val minH = 33
+        val maxH = 158
+
+        for (i in levels.indices) {
+            val lvl = levels[i]
+            val bh = minH + ((lvl / 7f) * (maxH - minH)).roundToInt()
+            val bx = codeLeft + i * (barW + gap)
+            for (y in (centerY - bh / 2)..(centerY + bh / 2)) {
+                for (x in bx until (bx + barW)) {
+                    image[y * w + x] = 235.toByte()
+                }
+            }
+        }
+
+        val detected = BitChordBarDetector.detect(image, w, h, fullFrame = true)
+        assertNotNull("Detector should ignore adjacent logo strokes and decode full card", detected)
+        assertEquals(videoId, detected?.id)
+    }
+
+    @Test
     fun testDetectorRejectsRandomNoise() {
         val rng = Random(42)
         val w = 720
