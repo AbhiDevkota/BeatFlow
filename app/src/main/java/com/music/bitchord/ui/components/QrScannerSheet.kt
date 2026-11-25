@@ -240,22 +240,14 @@ fun QrScannerSheet(
                             )
                             camera = boundCamera
 
-                            // Initial center focus on the viewfinder area
-                            previewView.post {
-                                val factory = previewView.meteringPointFactory
-                                val cx = previewView.width / 2f
-                                val cy = previewView.height / 2f
-                                val point = factory.createPoint(cx, cy)
-                                val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
-                                boundCamera.cameraControl.startFocusAndMetering(action)
-                            }
-
-                            // Tap to focus on preview
+                            // Tap to focus on preview, auto-cancelling after 2s so continuous AF resumes
                             previewView.setOnTouchListener { view, event ->
                                 if (event.action == android.view.MotionEvent.ACTION_UP) {
                                     val factory = previewView.meteringPointFactory
                                     val point = factory.createPoint(event.x, event.y)
-                                    val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                                    val action = androidx.camera.core.FocusMeteringAction.Builder(point)
+                                        .setAutoCancelDuration(2, java.util.concurrent.TimeUnit.SECONDS)
+                                        .build()
                                     boundCamera.cameraControl.startFocusAndMetering(action)
                                     view.performClick()
                                 }
@@ -765,10 +757,11 @@ private class QrCodeAnalyzer(
 
         try {
             val currentTime = System.currentTimeMillis()
-            // Throttle scans: don't analyze more than once every 180ms
-            if (currentTime - lastScannedTime < 180L) {
+            // Cap analysis rate at ~12 fps to keep CPU cool and preview smooth
+            if (currentTime - lastScannedTime < 80L) {
                 return
             }
+            lastScannedTime = currentTime
 
             val plane = imageProxy.planes.getOrNull(0) ?: return
             val buffer = plane.buffer

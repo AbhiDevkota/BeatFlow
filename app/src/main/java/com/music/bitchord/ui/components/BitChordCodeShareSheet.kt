@@ -5,9 +5,13 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.net.Uri
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.text.TextUtils
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -68,20 +72,26 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.res.ResourcesCompat
 import coil3.SingletonImageLoader
-import coil3.toBitmap
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
+import coil3.toBitmap
 import com.music.bitchord.R
 import com.music.bitchord.data.code.BitChordCodec
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.ui.replay.cacheForSharing
 import com.music.bitchord.ui.replay.saveToGallery
 import com.music.bitchord.ui.replay.sendIntent
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private const val MIN_BAR_HEIGHT_FRACTION = 0.20f
+private const val MAX_BAR_HEIGHT_FRACTION = 0.96f
 
 /**
  * Draws the BitChord visual soundwave code bars in Compose.
@@ -100,8 +110,8 @@ fun BitChordCodeBar(
         val gap = (availableWidth - count * barWidth) / (count - 1).coerceAtLeast(1)
 
         val centerY = size.height / 2f
-        val minH = size.height * 0.18f
-        val maxH = size.height * 0.96f
+        val minH = size.height * MIN_BAR_HEIGHT_FRACTION
+        val maxH = size.height * MAX_BAR_HEIGHT_FRACTION
 
         for (i in levels.indices) {
             val level = levels[i].coerceIn(0, 7)
@@ -121,7 +131,7 @@ fun BitChordCodeBar(
 
 /**
  * The BitChord Code Card displaying:
- * - Background: Album artwork blurred (like fullscreen player / lyrics), with frosted/translucent glass
+ * - Background: Album artwork blurred (like lyrics video share), with scrim
  * - Top: Album cover on left, Song title & artist name on right
  * - Bottom: BitChord logo on left (below album cover), with the soundwave code
  *   bars expanding across to the right (below the artist name).
@@ -241,7 +251,7 @@ fun BitChordCodeCard(
 
                 Spacer(Modifier.width(14.dp))
 
-                // Soundwave code bars expanded across to the right (taller & clearer)
+                // Soundwave code bars expanded across to the right
                 BitChordCodeBar(
                     levels = levels,
                     modifier = Modifier
@@ -266,6 +276,7 @@ fun BitChordCodeShareSheet(
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
+    val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
 
     val levels = remember(song.videoId) {
         runCatching {
@@ -365,7 +376,7 @@ fun BitChordCodeShareSheet(
                                 if (isSharing) return@Button
                                 isSharing = true
                                 scope.launch {
-                                    val bitmap = renderBitChordCodeBitmap(context, song, levels)
+                                    val bitmap = renderBitChordCodeBitmap(context, song, levels, glassActive)
                                     val uri = cacheForSharing(context, bitmap, "bitchord-code.png")
                                     isSharing = false
                                     if (uri != null) {
@@ -404,7 +415,7 @@ fun BitChordCodeShareSheet(
                                 if (isSaving) return@OutlinedButton
                                 isSaving = true
                                 scope.launch {
-                                    val bitmap = renderBitChordCodeBitmap(context, song, levels)
+                                    val bitmap = renderBitChordCodeBitmap(context, song, levels, glassActive)
                                     val saved = saveToGallery(context, bitmap, song.title, "bitchord-code")
                                     isSaving = false
                                     Toast.makeText(
@@ -451,29 +462,87 @@ fun BitChordCodeShareSheet(
 }
 
 /**
- * Renders a crisp high-resolution BitChord Code card bitmap for sharing and saving.
+ * Renders a high-resolution BitChord Code card bitmap matching [BitChordCodeCard] pixel-for-pixel:
+ * - Reference card width: 320.dp scaled 3.75x to 1200px
+ * - True CenterCrop album artwork with 3-pass Gaussian blur (equivalent to 10.dp) + 35%/40% scrim
+ * - SF Pro Display typography with 2-line title wrapping and vertical centering
+ * - Exact cover, corner radius, logo, and soundwave bar proportions
  */
 suspend fun renderBitChordCodeBitmap(
     context: Context,
     song: Song,
     levels: List<Int>,
+    glassActive: Boolean = false,
 ): Bitmap = withContext(Dispatchers.IO) {
     val width = 1200
-    val height = 560
+    val scale = width / 320f // 3.75px per dp
+
+    val pad = 18f * scale
+    val artSize = 76f * scale
+    val artRadius = 12f * scale
+    val gapX = 14f * scale
+    val gapY = 18f * scale
+    val cardRadius = 24f * scale
+    val codeBarH = 44f * scale
+    val borderStroke = 1f * scale
+
+    // Typography matching Material3 titleMedium (16sp bold) & bodyMedium (14sp) in SF Pro
+    val semiboldFace = runCatching {
+        ResourcesCompat.getFont(context, R.font.sf_pro_display_semibold)
+    }.getOrNull() ?: Typeface.DEFAULT_BOLD
+    val regularFace = runCatching {
+        ResourcesCompat.getFont(context, R.font.sf_pro_display_regular)
+    }.getOrNull() ?: Typeface.DEFAULT
+
+    val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFFFFF.toInt()
+        textSize = 16f * scale
+        typeface = semiboldFace
+        letterSpacing = -0.012f
+    }
+
+    val artistPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xC2FFFFFF.toInt() // 0.76f white
+        textSize = 14f * scale
+        typeface = regularFace
+    }
+
+    val textLeft = pad + artSize + gapX
+    val textMaxW = (width - pad - textLeft).roundToInt().coerceAtLeast(100)
+
+    val titleLayout = StaticLayout.Builder
+        .obtain(song.title, 0, song.title.length, titlePaint, textMaxW)
+        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+        .setLineSpacing(0f, 1.12f)
+        .setIncludePad(false)
+        .setMaxLines(2)
+        .setEllipsize(TextUtils.TruncateAt.END)
+        .build()
+
+    val artistLayout = StaticLayout.Builder
+        .obtain(song.artist, 0, song.artist.length, artistPaint, textMaxW)
+        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+        .setIncludePad(false)
+        .setMaxLines(1)
+        .setEllipsize(TextUtils.TruncateAt.END)
+        .build()
+
+    val artistGap = 4f * scale
+    val textBlockH = titleLayout.height + artistGap + artistLayout.height
+    val topRowH = max(artSize, textBlockH)
+    val height = (pad + topRowH + gapY + codeBarH + pad).roundToInt()
+
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
     val cardRect = RectF(0f, 0f, width.toFloat(), height.toFloat())
     val clipPath = android.graphics.Path().apply {
-        addRoundRect(cardRect, 48f, 48f, android.graphics.Path.Direction.CW)
+        addRoundRect(cardRect, cardRadius, cardRadius, android.graphics.Path.Direction.CW)
     }
     canvas.save()
     canvas.clipPath(clipPath)
 
     // Load artwork bitmap via Coil
-    val artSize = 220f
-    val artLeft = 60f
-    val artTop = 60f
     var artBitmap: Bitmap? = null
     if (!song.thumbnailUrl.isNullOrBlank()) {
         try {
@@ -488,131 +557,107 @@ suspend fun renderBitChordCodeBitmap(
         } catch (_: Exception) {}
     }
 
-    // 1. Background: Album artwork softly blurred across the entire card (matching lyrics video share: 10.dp blur & 40% scrim)
+    // 1. Background: CenterCrop artwork with smooth Gaussian blur (10.dp equivalent) + scrim
     if (artBitmap != null && !artBitmap.isRecycled) {
-        // Downsample to 100x100 and draw scaled with bilinear filtering for a subtle, soft frosted blur
-        val blurThumb = Bitmap.createScaledBitmap(artBitmap, 100, 100, true)
+        val bgScaleDown = 4
+        val bw = (width / bgScaleDown).coerceAtLeast(64)
+        val bh = (height / bgScaleDown).coerceAtLeast(32)
+        val smallCropped = centerCropBitmap(artBitmap, bw, bh)
+        // Blur radius of ~10.dp * 3.75 / 4 = ~9px at 1/4 resolution approximates 10.dp Gaussian blur
+        boxBlur3Pass(smallCropped, radius = (10f * scale / bgScaleDown).roundToInt().coerceIn(5, 16))
         val blurPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        canvas.drawBitmap(blurThumb, null, cardRect, blurPaint)
-        blurThumb.recycle()
+        canvas.drawBitmap(smallCropped, null, cardRect, blurPaint)
+        smallCropped.recycle()
 
-        // 40% black scrim matching lyrics card video share (CLIP_SCRIM = 0.40f)
-        val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0x66000000
-        }
+        val scrimAlpha = if (glassActive) 0x59000000 else 0x66000000
+        val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = scrimAlpha }
         canvas.drawRect(cardRect, scrimPaint)
     } else {
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFF12151E.toInt()
-        }
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF12151E.toInt() }
         canvas.drawRect(cardRect, bgPaint)
     }
 
-    // 2. Border
+    // 2. Outer card border (inset by half stroke so it is not clipped by clipPath)
+    val borderInset = borderStroke / 2f
+    val borderRect = RectF(borderInset, borderInset, width - borderInset, height - borderInset)
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 3f
-        color = 0x38FFFFFF
+        strokeWidth = borderStroke
+        color = if (glassActive) 0x42FFFFFF else 0x29FFFFFF // 0.26f or 0.16f white
     }
-    canvas.drawRoundRect(cardRect, 48f, 48f, borderPaint)
+    canvas.drawRoundRect(borderRect, cardRadius - borderInset, cardRadius - borderInset, borderPaint)
 
-    // 3. Draw artwork thumbnail on top-left
-    val artRect = RectF(artLeft, artTop, artLeft + artSize, artTop + artSize)
-    if (artBitmap != null) {
+    // 3. Top Row: Center-cropped album cover thumbnail & vertically centered Title/Artist
+    val artTop = pad + (topRowH - artSize) / 2f
+    val artRect = RectF(pad, artTop, pad + artSize, artTop + artSize)
+    if (artBitmap != null && !artBitmap.isRecycled) {
         val artPath = android.graphics.Path().apply {
-            addRoundRect(artRect, 28f, 28f, android.graphics.Path.Direction.CW)
+            addRoundRect(artRect, artRadius, artRadius, android.graphics.Path.Direction.CW)
         }
+        val srcRect = centerCropSrcRect(artBitmap.width, artBitmap.height, artRect.width(), artRect.height())
         canvas.save()
         canvas.clipPath(artPath)
-        canvas.drawBitmap(artBitmap, null, artRect, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        canvas.drawBitmap(artBitmap, srcRect, artRect, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
         canvas.restore()
     } else {
         val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF242834.toInt() }
-        canvas.drawRoundRect(artRect, 28f, 28f, placeholderPaint)
+        canvas.drawRoundRect(artRect, artRadius, artRadius, placeholderPaint)
     }
-    // Art thumbnail border
     val artBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2f
-        color = 0x44FFFFFF
+        strokeWidth = borderStroke
+        color = 0x38FFFFFF // ~0.22f white
     }
-    canvas.drawRoundRect(artRect, 28f, 28f, artBorder)
+    canvas.drawRoundRect(artRect, artRadius, artRadius, artBorder)
 
-    // 4. Text details (Title and Artist only, NO "BITCHORD CODE" label)
-    val textLeft = artLeft + artSize + 40f
-    val textMaxW = width - textLeft - 60f
+    // Draw vertically centered Title & Artist
+    val textTop = pad + (topRowH - textBlockH) / 2f
+    canvas.save()
+    canvas.translate(textLeft, textTop)
+    titleLayout.draw(canvas)
+    canvas.translate(0f, titleLayout.height + artistGap)
+    artistLayout.draw(canvas)
+    canvas.restore()
 
-    val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFFFFF.toInt()
-        textSize = 52f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-    }
+    // 4. Bottom Row: BitChord logo (38x24 dp scaled) & soundwave code bars (44 dp scaled)
+    val bottomRowTop = pad + topRowH + gapY
+    val bottomCenterY = bottomRowTop + codeBarH / 2f
 
-    val artistPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xCCFFFFFF.toInt()
-        textSize = 38f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-    }
-
-    // Draw Title (truncated if too long)
-    val titleText = android.text.TextUtils.ellipsize(
-        song.title,
-        android.text.TextPaint(titlePaint),
-        textMaxW,
-        android.text.TextUtils.TruncateAt.END,
-    ).toString()
-    canvas.drawText(titleText, textLeft, artTop + 85f, titlePaint)
-
-    // Draw Artist
-    val artistText = android.text.TextUtils.ellipsize(
-        song.artist,
-        android.text.TextPaint(artistPaint),
-        textMaxW,
-        android.text.TextUtils.TruncateAt.END,
-    ).toString()
-    canvas.drawText(artistText, textLeft, artTop + 155f, artistPaint)
-
-    // 5. Bottom Section: Logo + Soundwave Code Bars
-    val bottomY = height - 120f
     val logoDrawable = ResourcesCompat.getDrawable(context.resources, R.drawable.ic_logo, null)
-    val logoH = 54f
-    val logoW = if (logoDrawable != null && logoDrawable.intrinsicHeight > 0) {
-        logoH * logoDrawable.intrinsicWidth / logoDrawable.intrinsicHeight
-    } else {
-        80f
-    }
-    val logoLeft = artLeft + (artSize - logoW) / 2f
+    val logoW = 38f * scale
+    val logoH = 24f * scale
+    val logoLeft = pad + (artSize - logoW) / 2f
 
     if (logoDrawable != null) {
         logoDrawable.setTint(0xFFFFFFFF.toInt())
         logoDrawable.setBounds(
-            logoLeft.toInt(),
-            (bottomY - logoH / 2f).toInt(),
-            (logoLeft + logoW).toInt(),
-            (bottomY + logoH / 2f).toInt(),
+            logoLeft.roundToInt(),
+            (bottomCenterY - logoH / 2f).roundToInt(),
+            (logoLeft + logoW).roundToInt(),
+            (bottomCenterY + logoH / 2f).roundToInt(),
         )
         logoDrawable.draw(canvas)
     }
 
-    // Draw Code Bars aligned directly with the text column
+    // Draw Code Bars matching BitChordCodeBar proportions
     val codeLeft = textLeft
-    val codeRight = width - 60f
+    val codeRight = width - pad
     val codeWidth = codeRight - codeLeft
     val count = levels.size
 
     if (count > 0) {
-        val barWidth = (codeWidth / (count * 1.8f)).coerceIn(10f, 22f)
+        val barWidth = (codeWidth / (count * 1.8f)).coerceIn(3.5f * scale, 8f * scale)
         val gap = (codeWidth - count * barWidth) / (count - 1).coerceAtLeast(1)
         val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
 
-        val minH = 26f
-        val maxH = 135f
+        val minH = codeBarH * MIN_BAR_HEIGHT_FRACTION
+        val maxH = codeBarH * MAX_BAR_HEIGHT_FRACTION
 
         for (i in levels.indices) {
             val level = levels[i].coerceIn(0, 7)
             val barH = minH + (level / 7f) * (maxH - minH)
             val bx = codeLeft + i * (barWidth + gap)
-            val by = bottomY - barH / 2f
+            val by = bottomCenterY - barH / 2f
             canvas.drawRoundRect(
                 RectF(bx, by, bx + barWidth, by + barH),
                 barWidth / 2f,
@@ -624,4 +669,103 @@ suspend fun renderBitChordCodeBitmap(
 
     canvas.restore()
     bitmap
+}
+
+/**
+ * Computes the source [Rect] for CenterCrop scaling of an image into a target aspect ratio.
+ */
+private fun centerCropSrcRect(srcW: Int, srcH: Int, dstW: Float, dstH: Float): Rect {
+    val srcRatio = srcW.toFloat() / max(1, srcH)
+    val dstRatio = dstW / max(1f, dstH)
+    return if (srcRatio > dstRatio) {
+        val cropW = (srcH * dstRatio).roundToInt().coerceIn(1, srcW)
+        val left = (srcW - cropW) / 2
+        Rect(left, 0, left + cropW, srcH)
+    } else {
+        val cropH = (srcW / dstRatio).roundToInt().coerceIn(1, srcH)
+        val top = (srcH - cropH) / 2
+        Rect(0, top, srcW, top + cropH)
+    }
+}
+
+/**
+ * Creates a center-cropped mutable ARGB_8888 bitmap of exact dimensions [targetW] x [targetH].
+ */
+private fun centerCropBitmap(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
+    val out = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+    val c = Canvas(out)
+    val srcRect = centerCropSrcRect(src.width, src.height, targetW.toFloat(), targetH.toFloat())
+    val dstRect = Rect(0, 0, targetW, targetH)
+    c.drawBitmap(src, srcRect, dstRect, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+    return out
+}
+
+/**
+ * Fast 3-pass separable box blur on a small mutable bitmap, closely approximating a true Gaussian blur
+ * with edge clamping (matching Compose Modifier.blur behavior).
+ */
+private fun boxBlur3Pass(bitmap: Bitmap, radius: Int) {
+    if (radius < 1) return
+    val w = bitmap.width
+    val h = bitmap.height
+    val pixels = IntArray(w * h)
+    val temp = IntArray(w * h)
+    bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+
+    repeat(3) {
+        boxBlurHorizontal(pixels, temp, w, h, radius)
+        boxBlurVertical(temp, pixels, w, h, radius)
+    }
+    bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
+}
+
+private fun boxBlurHorizontal(src: IntArray, dst: IntArray, w: Int, h: Int, r: Int) {
+    val div = r * 2 + 1
+    for (y in 0 until h) {
+        val row = y * w
+        var rSum = 0
+        var gSum = 0
+        var bSum = 0
+        for (i in -r..r) {
+            val p = src[row + i.coerceIn(0, w - 1)]
+            rSum += (p ushr 16) and 0xFF
+            gSum += (p ushr 8) and 0xFF
+            bSum += p and 0xFF
+        }
+        for (x in 0 until w) {
+            dst[row + x] = (0xFF shl 24) or ((rSum / div) shl 16) or ((gSum / div) shl 8) or (bSum / div)
+            val addX = min(w - 1, x + r + 1)
+            val remX = max(0, x - r)
+            val addP = src[row + addX]
+            val remP = src[row + remX]
+            rSum += ((addP ushr 16) and 0xFF) - ((remP ushr 16) and 0xFF)
+            gSum += ((addP ushr 8) and 0xFF) - ((remP ushr 8) and 0xFF)
+            bSum += (addP and 0xFF) - (remP and 0xFF)
+        }
+    }
+}
+
+private fun boxBlurVertical(src: IntArray, dst: IntArray, w: Int, h: Int, r: Int) {
+    val div = r * 2 + 1
+    for (x in 0 until w) {
+        var rSum = 0
+        var gSum = 0
+        var bSum = 0
+        for (i in -r..r) {
+            val p = src[i.coerceIn(0, h - 1) * w + x]
+            rSum += (p ushr 16) and 0xFF
+            gSum += (p ushr 8) and 0xFF
+            bSum += p and 0xFF
+        }
+        for (y in 0 until h) {
+            dst[y * w + x] = (0xFF shl 24) or ((rSum / div) shl 16) or ((gSum / div) shl 8) or (bSum / div)
+            val addY = min(h - 1, y + r + 1)
+            val remY = max(0, y - r)
+            val addP = src[addY * w + x]
+            val remP = src[remY * w + x]
+            rSum += ((addP ushr 16) and 0xFF) - ((remP ushr 16) and 0xFF)
+            gSum += ((addP ushr 8) and 0xFF) - ((remP ushr 8) and 0xFF)
+            bSum += (addP and 0xFF) - (remP and 0xFF)
+        }
+    }
 }
