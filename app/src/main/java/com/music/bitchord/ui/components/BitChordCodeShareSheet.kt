@@ -523,7 +523,7 @@ fun BitChordCodeShareSheet(
                             isSharing = false
                             if (uri != null) {
                                 val intent = sendIntent(uri)
-                                context.startActivity(Intent.createChooser(intent, "Share BitChord Code"))
+                                context.startActivity(Intent.createChooser(intent, "BitChord Code"))
                             } else {
                                 Toast.makeText(context, "Could not create share image", Toast.LENGTH_SHORT).show()
                             }

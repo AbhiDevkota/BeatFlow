@@ -304,7 +304,7 @@ fun SongActionsMenu(
         if (onShareBitChordCode != null) {
             ActionRow(
                 icon = SfIcons.GraphicEq,
-                label = "Share BitChord Code",
+                label = "BitChord Code",
                 accent = palette.accent,
                 onClick = onShareBitChordCode,
             )

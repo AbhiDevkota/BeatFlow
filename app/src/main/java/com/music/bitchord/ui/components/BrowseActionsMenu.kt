@@ -258,7 +258,7 @@ fun BrowseActionsMenu(
             onShareBitChordCode?.let {
                 ActionRow(
                     icon = SfIcons.GraphicEq,
-                    label = "Share BitChord Code",
+                    label = "BitChord Code",
                     onClick = it,
                 )
             }
