@@ -10,12 +10,16 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
@@ -79,11 +83,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -174,6 +182,9 @@ fun QrScannerSheet(
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     val scope = rememberCoroutineScope()
     var isTorchOn by remember { mutableStateOf(false) }
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var zoomInteractionSeq by remember { mutableIntStateOf(0) }
+    var showZoomPill by remember { mutableStateOf(false) }
     var scannedCode by remember { mutableStateOf<String?>(null) }
     var copiedFeedback by remember { mutableStateOf(false) }
     var isScanningGallery by remember { mutableStateOf(false) }
@@ -236,6 +247,14 @@ fun QrScannerSheet(
         }
     }
 
+    LaunchedEffect(zoomInteractionSeq) {
+        if (zoomInteractionSeq > 0) {
+            showZoomPill = true
+            kotlinx.coroutines.delay(1400L)
+            showZoomPill = false
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -243,6 +262,7 @@ fun QrScannerSheet(
     ) {
         val rectWidthDp = (maxWidth * 0.88f).coerceIn(300.dp, 420.dp)
         val rectHeightDp = (rectWidthDp * 0.60f).coerceIn(200.dp, 270.dp)
+        val viewfinderTopDp = (maxHeight / 2f) - 28.dp - (rectHeightDp / 2f)
         val viewfinderBottomDp = (maxHeight / 2f) - 28.dp + (rectHeightDp / 2f)
         if (hasCameraPermission) {
             // Camera preview
@@ -286,16 +306,75 @@ fun QrScannerSheet(
                             )
                             camera = boundCamera
 
-                            // Tap to focus on preview, auto-cancelling after 2s so continuous AF resumes
+                            // Pinch / double-tap-drag to zoom + single-tap to focus
+                            var activeZoom = 1f
+                            var scaledInGesture = false
+                            val scaleGestureDetector = ScaleGestureDetector(
+                                ctx,
+                                object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                                    override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                                        activeZoom = boundCamera.cameraInfo.zoomState.value?.zoomRatio ?: activeZoom
+                                        scaledInGesture = false
+                                        return true
+                                    }
+
+                                    override fun onScale(detector: ScaleGestureDetector): Boolean {
+                                        val zoomState = boundCamera.cameraInfo.zoomState.value ?: return true
+                                        activeZoom = (activeZoom * detector.scaleFactor)
+                                            .coerceIn(zoomState.minZoomRatio, zoomState.maxZoomRatio)
+                                        boundCamera.cameraControl.setZoomRatio(activeZoom)
+                                        zoomRatio = activeZoom
+                                        zoomInteractionSeq++
+                                        scaledInGesture = true
+                                        return true
+                                    }
+                                },
+                            )
+                            val tapGestureDetector = GestureDetector(
+                                ctx,
+                                object : GestureDetector.SimpleOnGestureListener() {
+                                    override fun onDown(e: MotionEvent): Boolean {
+                                        scaledInGesture = false
+                                        return true
+                                    }
+
+                                    override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                                        if (scaledInGesture) return false
+                                        val factory = previewView.meteringPointFactory
+                                        val point = factory.createPoint(e.x, e.y)
+                                        val action = FocusMeteringAction.Builder(point)
+                                            .setAutoCancelDuration(2, TimeUnit.SECONDS)
+                                            .build()
+                                        boundCamera.cameraControl.startFocusAndMetering(action)
+                                        previewView.performClick()
+                                        return true
+                                    }
+
+                                    override fun onDoubleTapEvent(e: MotionEvent): Boolean {
+                                        if (e.actionMasked == MotionEvent.ACTION_UP && !scaledInGesture) {
+                                            val zoomState = boundCamera.cameraInfo.zoomState.value ?: return true
+                                            val baseZoom = zoomState.minZoomRatio.coerceAtLeast(1f)
+                                            val nextZoom = if (zoomState.zoomRatio > baseZoom * 1.25f) {
+                                                baseZoom
+                                            } else {
+                                                (baseZoom * 2f).coerceIn(zoomState.minZoomRatio, zoomState.maxZoomRatio)
+                                            }
+                                            activeZoom = nextZoom
+                                            boundCamera.cameraControl.setZoomRatio(nextZoom)
+                                            zoomRatio = nextZoom
+                                            zoomInteractionSeq++
+                                        }
+                                        return true
+                                    }
+                                },
+                            )
                             previewView.setOnTouchListener { view, event ->
-                                if (event.action == android.view.MotionEvent.ACTION_UP) {
-                                    val factory = previewView.meteringPointFactory
-                                    val point = factory.createPoint(event.x, event.y)
-                                    val action = androidx.camera.core.FocusMeteringAction.Builder(point)
-                                        .setAutoCancelDuration(2, java.util.concurrent.TimeUnit.SECONDS)
-                                        .build()
-                                    boundCamera.cameraControl.startFocusAndMetering(action)
-                                    view.performClick()
+                                if (event.pointerCount > 1) {
+                                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                                }
+                                scaleGestureDetector.onTouchEvent(event)
+                                if (!scaleGestureDetector.isInProgress) {
+                                    tapGestureDetector.onTouchEvent(event)
                                 }
                                 true
                             }
@@ -313,6 +392,30 @@ fun QrScannerSheet(
                 modifier = Modifier.fillMaxSize(),
                 isScanning = scannedCode == null,
             )
+
+            // Transient non-interactive zoom level indicator while pinching / zooming
+            AnimatedVisibility(
+                visible = showZoomPill && scannedCode == null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = (viewfinderTopDp - 44.dp).coerceAtLeast(88.dp)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.58f))
+                        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                ) {
+                    Text(
+                        text = String.format(Locale.US, "%.1f×", zoomRatio),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                    )
+                }
+            }
         } else {
             // Permission request fallback card
             Column(
