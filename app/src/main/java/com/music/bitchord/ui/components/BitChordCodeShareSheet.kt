@@ -13,6 +13,7 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,25 +24,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,16 +53,15 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.res.ResourcesCompat
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
@@ -80,9 +72,14 @@ import coil3.toBitmap
 import com.music.bitchord.R
 import com.music.bitchord.data.code.BitChordCodec
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.ui.haptics.Haptic
+import com.music.bitchord.ui.haptics.rememberHaptics
+import com.music.bitchord.ui.player.PlayerDrawer
+import com.music.bitchord.ui.replay.ShareAction
 import com.music.bitchord.ui.replay.cacheForSharing
 import com.music.bitchord.ui.replay.saveToGallery
 import com.music.bitchord.ui.replay.sendIntent
+import dev.chrisbanes.haze.HazeState
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -306,18 +303,24 @@ fun BitChordCodeCard(
     }
 }
 
+private val DrawerPlainFill = Color.White.copy(alpha = 0.10f)
+private const val DRAWER_SCREEN_SHARE = 0.85f
+
 /**
- * Modal sheet presenting the BitChord Code card with Share, Save, and Copy Link actions.
+ * Bottom drawer presenting the BitChord Code card in the same frosted bottom-sheet
+ * style as the Lyrics Share sheet, with Save, Share, and Copy Link actions.
  */
 @Composable
 fun BitChordCodeShareSheet(
+    hazeState: HazeState,
     target: BitChordCodeTarget,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
 
     val levels = remember(target.type, target.id) {
@@ -328,9 +331,10 @@ fun BitChordCodeShareSheet(
         }
     }
 
-    var isSharing by remember { mutableStateOf(false) }
-    var isSaving by remember { mutableStateOf(false) }
-    var copied by remember { mutableStateOf(false) }
+    var isSharing by remember(target) { mutableStateOf(false) }
+    var isSaving by remember(target) { mutableStateOf(false) }
+    var saved by remember(target) { mutableStateOf(false) }
+    var copied by remember(target) { mutableStateOf(false) }
 
     LaunchedEffect(copied) {
         if (copied) {
@@ -339,162 +343,116 @@ fun BitChordCodeShareSheet(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    BackHandler(onBack = onDismiss)
+
+    PlayerDrawer(
+        hazeState = hazeState,
+        title = "BitChord Code",
+        onDismiss = onDismiss,
+        modifier = modifier,
+        titleGap = 6.dp,
+        maxHeight = (LocalConfiguration.current.screenHeightDp * DRAWER_SCREEN_SHARE).dp,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.65f))
-                .clickable(onClick = onDismiss),
-            contentAlignment = Alignment.Center,
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Surface(
+            Text(
+                text = if (target.type == BitChordCodec.MediaType.ALBUM) {
+                    "Scan this code in BitChord to open the album"
+                } else {
+                    "Scan this code in BitChord to play the song"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.7f),
                 modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .clip(RoundedCornerShape(28.dp))
-                    .clickable(enabled = false) {}
-                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(28.dp)),
-                color = Color(0xFF0F1219),
-                shape = RoundedCornerShape(28.dp),
+                    .fillMaxWidth()
+                    .padding(start = 4.dp),
+            )
+
+            BitChordCodeCard(
+                target = target,
+                levels = levels,
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
+                ShareAction(
+                    label = stringResource(R.string.save),
+                    icon = Icons.Rounded.Download,
+                    accent = false,
+                    enabled = !isSaving && !isSharing,
+                    plainFill = DrawerPlainFill,
+                    saved = saved,
+                    savedLabel = stringResource(R.string.saved_bang),
+                    busy = isSaving,
+                    busyLabel = stringResource(R.string.lyrics_share_saving),
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        haptics.play(Haptic.Tap)
+                        saved = false
+                        isSaving = true
+                        scope.launch {
+                            val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
+                            val ok = saveToGallery(context, bitmap, target.title, target.filePrefix)
+                            isSaving = false
+                            if (ok) {
+                                saved = true
+                            } else {
+                                Toast.makeText(context, "Failed to save", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                )
+
+                ShareAction(
+                    label = stringResource(R.string.share),
+                    icon = Icons.Rounded.IosShare,
+                    accent = true,
+                    enabled = !isSharing && !isSaving,
+                    busy = isSharing,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        haptics.play(Haptic.Tap)
+                        isSharing = true
+                        scope.launch {
+                            val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
+                            val uri = cacheForSharing(context, bitmap, "${target.filePrefix}.png")
+                            isSharing = false
+                            if (uri != null) {
+                                val intent = sendIntent(uri)
+                                context.startActivity(Intent.createChooser(intent, "Share BitChord Code"))
+                            } else {
+                                Toast.makeText(context, "Could not create share image", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                )
+
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                        .navigationBarsPadding(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(DrawerPlainFill)
+                        .clickable {
+                            clipboard.setText(AnnotatedString(target.shareUrl))
+                            copied = true
+                            haptics.play(Haptic.Tap)
+                        }
+                        .padding(horizontal = 16.dp, vertical = 15.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = "BitChord Code",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.1f))
-                                .clickable(onClick = onDismiss),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Rounded.Close,
-                                contentDescription = "Close",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(18.dp))
-
-                    // The BitChord Code Card
-                    BitChordCodeCard(
-                        target = target,
-                        levels = levels,
+                    Icon(
+                        imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                        contentDescription = "Copy Link",
+                        tint = Color.White,
+                        modifier = Modifier.size(21.dp),
                     )
-
-                    Spacer(Modifier.height(24.dp))
-
-                    // Action buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        // Share Image Button
-                        Button(
-                            onClick = {
-                                if (isSharing) return@Button
-                                isSharing = true
-                                scope.launch {
-                                    val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
-                                    val uri = cacheForSharing(context, bitmap, "${target.filePrefix}.png")
-                                    isSharing = false
-                                    if (uri != null) {
-                                        val intent = sendIntent(uri)
-                                        context.startActivity(Intent.createChooser(intent, "Share BitChord Code"))
-                                    } else {
-                                        Toast.makeText(context, "Could not create share image", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                        ) {
-                            if (isSharing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
-                            } else {
-                                Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Share", fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-
-                        // Save to Gallery Button
-                        OutlinedButton(
-                            onClick = {
-                                if (isSaving) return@OutlinedButton
-                                isSaving = true
-                                scope.launch {
-                                    val bitmap = renderBitChordCodeBitmap(context, target, levels, glassActive)
-                                    val saved = saveToGallery(context, bitmap, target.title, target.filePrefix)
-                                    isSaving = false
-                                    Toast.makeText(
-                                        context,
-                                        if (saved) "Saved to Pictures" else "Failed to save",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.height(48.dp),
-                        ) {
-                            if (isSaving) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Rounded.Download, contentDescription = "Save", modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Save")
-                            }
-                        }
-
-                        // Copy Link Button
-                        OutlinedButton(
-                            onClick = {
-                                clipboard.setText(AnnotatedString(target.shareUrl))
-                                copied = true
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.height(48.dp),
-                        ) {
-                            Icon(
-                                if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                                contentDescription = "Copy Link",
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
                 }
             }
         }

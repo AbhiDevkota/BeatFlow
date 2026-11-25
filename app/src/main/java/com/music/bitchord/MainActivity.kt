@@ -5104,6 +5104,13 @@ private fun BitChordApp(
                     ) { song ->
                         songMenuBody(song)
                     }
+                    shareBitChordCodeTarget?.let { codeTarget ->
+                        BitChordCodeShareSheet(
+                            hazeState = playerMenuHaze,
+                            target = codeTarget,
+                            onDismiss = { shareBitChordCodeTarget = null },
+                        )
+                    }
                 }
             }
         }
@@ -5847,9 +5854,10 @@ private fun BitChordApp(
         }
 
         BitChordScannerAndCodeOverlays(
+            hazeState = hazeState,
             showQrScanner = showQrScanner,
             onDismissQrScanner = { showQrScanner = false },
-            shareBitChordCodeTarget = shareBitChordCodeTarget,
+            shareBitChordCodeTarget = shareBitChordCodeTarget.takeUnless { playerRaised },
             onDismissShareBitChordCode = { shareBitChordCodeTarget = null },
         )
 
@@ -6727,6 +6735,7 @@ private fun Float?.orZero(): Float = this ?: 0f
 
 @Composable
 private fun BitChordScannerAndCodeOverlays(
+    hazeState: HazeState,
     showQrScanner: Boolean,
     onDismissQrScanner: () -> Unit,
     shareBitChordCodeTarget: BitChordCodeTarget?,
@@ -6748,6 +6757,7 @@ private fun BitChordScannerAndCodeOverlays(
 
     if (shareBitChordCodeTarget != null) {
         BitChordCodeShareSheet(
+            hazeState = hazeState,
             target = shareBitChordCodeTarget,
             onDismiss = onDismissShareBitChordCode,
         )
