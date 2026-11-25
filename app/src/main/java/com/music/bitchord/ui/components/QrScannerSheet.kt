@@ -839,7 +839,9 @@ private class QrCodeAnalyzer(
         )
     }
 
-    private var lastScannedTime = 0L
+    private var lastAnalyzedTime = 0L
+    private var pendingBitChordUri: String? = null
+    private var pendingBitChordAtMs = 0L
     private var rotatedBuffer: ByteArray? = null
     private var packedBuffer: ByteArray? = null
 
@@ -852,10 +854,10 @@ private class QrCodeAnalyzer(
         try {
             val currentTime = System.currentTimeMillis()
             // Cap analysis rate at ~12 fps to keep CPU cool and preview smooth
-            if (currentTime - lastScannedTime < 80L) {
+            if (currentTime - lastAnalyzedTime < 80L) {
                 return
             }
-            lastScannedTime = currentTime
+            lastAnalyzedTime = currentTime
 
             val plane = imageProxy.planes.getOrNull(0) ?: return
             val buffer = plane.buffer
@@ -908,11 +910,18 @@ private class QrCodeAnalyzer(
             }
 
             // 1. First, attempt to detect and decode BitChord visual soundwave code
+            // Require 2 agreeing detections within 1.5s on live camera frames to prevent settling/blur false positives
             try {
                 val bitChordPayload = BitChordBarDetector.detect(rotBytes, rotWidth, rotHeight)
                 if (bitChordPayload != null) {
-                    lastScannedTime = currentTime
-                    onQrCodeScanned(bitChordPayload.canonicalUri)
+                    val uri = bitChordPayload.canonicalUri
+                    if (uri == pendingBitChordUri && (currentTime - pendingBitChordAtMs) <= 1500L) {
+                        pendingBitChordUri = null
+                        onQrCodeScanned(uri)
+                    } else {
+                        pendingBitChordUri = uri
+                        pendingBitChordAtMs = currentTime
+                    }
                     return
                 }
             } catch (_: Exception) {}
@@ -933,7 +942,7 @@ private class QrCodeAnalyzer(
             try {
                 val result = reader.decodeWithState(binaryBitmap)
                 if (!result.text.isNullOrBlank()) {
-                    lastScannedTime = currentTime
+                    pendingBitChordUri = null
                     onQrCodeScanned(result.text)
                 }
             } catch (_: Exception) {

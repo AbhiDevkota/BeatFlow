@@ -824,11 +824,12 @@ object BitChordBarDetector {
         val lowBase = h.first()
         val highBase = h.last()
         val rawSpan = highBase - lowBase
-        if (rawSpan <= 4f) return null
+        // Calibration bar 7 (0.96H) is naturally ~4.8x bar 0 (0.20H); require at least 1.6x to reject flat patterns
+        if (rawSpan <= 4f || highBase < lowBase * 1.6f) return null
 
         val half = (n - 1) / 2f
-        val endpointDeltas = floatArrayOf(0f, -0.025f * rawSpan, 0.025f * rawSpan, -0.05f * rawSpan, 0.05f * rawSpan)
-        for (p in floatArrayOf(0f, -0.05f, 0.05f)) {
+        val endpointDeltas = floatArrayOf(0f, -0.025f * rawSpan, 0.025f * rawSpan, -0.045f * rawSpan, 0.045f * rawSpan)
+        for (p in floatArrayOf(0f, -0.04f, 0.04f)) {
             val corrected = if (p == 0f) {
                 h
             } else {
@@ -836,7 +837,7 @@ object BitChordBarDetector {
             }
             val cLowBase = corrected.first()
             val cHighBase = corrected.last()
-            if (cHighBase <= cLowBase + 4f) continue
+            if (cHighBase <= cLowBase + 4f || cHighBase < cLowBase * 1.5f) continue
 
             val deltas = if (p == 0f) endpointDeltas else floatArrayOf(0f, -0.025f * rawSpan, 0.025f * rawSpan)
             for (dLow in deltas) {

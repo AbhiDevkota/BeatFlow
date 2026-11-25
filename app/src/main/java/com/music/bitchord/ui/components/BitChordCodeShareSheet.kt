@@ -8,6 +8,8 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -60,6 +63,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -135,12 +139,18 @@ data class BitChordCodeTarget(
     }
 }
 
+private const val CODE_UNAVAILABLE_MESSAGE =
+    "Cannot create a BitChord Code right now. Connect to the internet or make sure this track is available on YouTube Music."
+
 private fun isValidCodecId(id: String): Boolean =
     id.isNotEmpty() && id.length <= 63 && id.all { it in BitChordCodec.ALPHABET }
 
-private fun localMediaFallbackId(rawId: String): String? {
-    val tail = rawId.substringBefore('?').substringAfterLast('/')
-    return if (tail.isNotEmpty() && tail.all(Char::isDigit)) "loc_$tail" else null
+private fun hasInternetConnection(context: Context): Boolean {
+    val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return false
+    val capabilities = runCatching {
+        connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+    }.getOrNull() ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
 /**
@@ -366,43 +376,43 @@ fun BitChordCodeShareSheet(
     val haptics = rememberHaptics()
     val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
 
+    val isOnline = remember(target) { hasInternetConnection(context) }
     val isDirectCodecId = remember(target.id) { isValidCodecId(target.id) }
-    var activeTarget by remember(target) {
-        mutableStateOf(
-            if (isDirectCodecId) {
-                target
-            } else {
-                localMediaFallbackId(target.id)?.let { locId ->
-                    target.copy(id = locId, shareUrl = target.title)
-                } ?: target
-            },
-        )
+    var activeTarget by remember(target) { mutableStateOf(target) }
+    var resolvingCode by remember(target) { mutableStateOf(isOnline && !isDirectCodecId) }
+    var errorMessage by remember(target) {
+        mutableStateOf(if (!isOnline) CODE_UNAVAILABLE_MESSAGE else null)
     }
-    var resolvingCode by remember(target) { mutableStateOf(!isDirectCodecId) }
 
-    // For local music files (content:// or file:// URIs), try matching the track on YouTube Music
-    // so anyone scanning the card can play it, falling back cleanly to the local loc_<id> code offline.
-    LaunchedEffect(target) {
+    // Online local tracks (content:// or file:// URIs) resolve their YouTube Music videoId by
+    // title + artist so the shared card links to a playable track; otherwise show the unavailable error.
+    LaunchedEffect(target, isOnline, isDirectCodecId) {
+        if (!isOnline) {
+            errorMessage = CODE_UNAVAILABLE_MESSAGE
+            resolvingCode = false
+            return@LaunchedEffect
+        }
         if (isDirectCodecId) return@LaunchedEffect
-        val query = if (target.subtitle.isNotBlank() &&
-            !target.subtitle.equals("Unknown Artist", ignoreCase = true)
-        ) {
-            "${target.title} ${target.subtitle}"
-        } else {
-            target.title
-        }.trim()
 
-        val matched = if (query.isNotBlank()) {
-            withContext(Dispatchers.IO) {
-                runCatching {
+        val hasArtist = target.subtitle.isNotBlank() &&
+            !target.subtitle.equals("Unknown Artist", ignoreCase = true)
+        val queries = buildList {
+            if (hasArtist) add("${target.title} ${target.subtitle}".trim())
+            if (target.title.isNotBlank()) add(target.title.trim())
+        }.distinct()
+
+        val matched = withContext(Dispatchers.IO) {
+            var resolved: Song? = null
+            for (query in queries) {
+                resolved = runCatching {
                     YtMusicRepository.search(query, SearchFilter.SONGS).getOrNull()
                         ?.filterIsInstance<SearchResult.Track>()
                         ?.firstOrNull { isValidCodecId(it.song.videoId) }
                         ?.song
                 }.getOrNull()
+                if (resolved != null) break
             }
-        } else {
-            null
+            resolved
         }
 
         if (matched != null) {
@@ -411,12 +421,15 @@ fun BitChordCodeShareSheet(
                 shareUrl = "https://music.youtube.com/watch?v=${matched.videoId}",
                 fallbackThumbnailUrl = matched.thumbnailUrl,
             )
+            errorMessage = null
+        } else {
+            errorMessage = CODE_UNAVAILABLE_MESSAGE
         }
         resolvingCode = false
     }
 
-    val levels = remember(activeTarget.type, activeTarget.id) {
-        if (!isValidCodecId(activeTarget.id)) {
+    val levels = remember(activeTarget.type, activeTarget.id, errorMessage) {
+        if (errorMessage != null || !isValidCodecId(activeTarget.id)) {
             emptyList()
         } else {
             runCatching {
@@ -425,7 +438,7 @@ fun BitChordCodeShareSheet(
         }
     }
 
-    val canExport = !resolvingCode && levels.isNotEmpty()
+    val canExport = errorMessage == null && !resolvingCode && levels.isNotEmpty()
     var isSharing by remember(target) { mutableStateOf(false) }
     var isSaving by remember(target) { mutableStateOf(false) }
     var saved by remember(target) { mutableStateOf(false) }
@@ -453,102 +466,157 @@ fun BitChordCodeShareSheet(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = if (activeTarget.type == BitChordCodec.MediaType.ALBUM) {
-                    "Scan this code in BitChord to open the album"
-                } else {
-                    "Scan this code in BitChord to play the song"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 4.dp),
-            )
-
-            BitChordCodeCard(
-                target = activeTarget,
-                levels = levels,
-                isLoadingCode = resolvingCode && levels.isEmpty(),
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ShareAction(
-                    label = stringResource(R.string.save),
-                    icon = Icons.Rounded.Download,
-                    accent = false,
-                    enabled = canExport && !isSaving && !isSharing,
-                    plainFill = DrawerPlainFill,
-                    saved = saved,
-                    savedLabel = stringResource(R.string.saved_bang),
-                    busy = isSaving,
-                    busyLabel = stringResource(R.string.lyrics_share_saving),
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        haptics.play(Haptic.Tap)
-                        saved = false
-                        isSaving = true
-                        scope.launch {
-                            val bitmap = renderBitChordCodeBitmap(context, activeTarget, levels, glassActive)
-                            val ok = saveToGallery(context, bitmap, activeTarget.title, activeTarget.filePrefix)
-                            isSaving = false
-                            if (ok) {
-                                saved = true
-                            } else {
-                                Toast.makeText(context, "Failed to save", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                )
-
-                ShareAction(
-                    label = stringResource(R.string.share),
-                    icon = Icons.Rounded.IosShare,
-                    accent = true,
-                    enabled = canExport && !isSharing && !isSaving,
-                    busy = isSharing,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        haptics.play(Haptic.Tap)
-                        isSharing = true
-                        scope.launch {
-                            val bitmap = renderBitChordCodeBitmap(context, activeTarget, levels, glassActive)
-                            val uri = cacheForSharing(context, bitmap, "${activeTarget.filePrefix}.png")
-                            isSharing = false
-                            if (uri != null) {
-                                val intent = sendIntent(uri)
-                                context.startActivity(Intent.createChooser(intent, "BitChord Code"))
-                            } else {
-                                Toast.makeText(context, "Could not create share image", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                )
+            if (errorMessage != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(DrawerPlainFill)
+                        .border(
+                            width = 1.dp,
+                            color = Color.White.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(24.dp),
+                        )
+                        .padding(horizontal = 24.dp, vertical = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ErrorOutline,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(34.dp),
+                    )
+                    Text(
+                        text = "BitChord Code Unavailable",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        text = errorMessage.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.72f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
 
                 Box(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(DrawerPlainFill.copy(alpha = if (canExport) DrawerPlainFill.alpha else 0.04f))
-                        .clickable(enabled = canExport) {
-                            clipboard.setText(AnnotatedString(activeTarget.shareUrl))
-                            copied = true
+                        .background(DrawerPlainFill)
+                        .clickable {
                             haptics.play(Haptic.Tap)
+                            onDismiss()
                         }
-                        .padding(horizontal = 16.dp, vertical = 15.dp),
+                        .padding(vertical = 14.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                        contentDescription = "Copy Link",
-                        tint = Color.White.copy(alpha = if (canExport) 1f else 0.4f),
-                        modifier = Modifier.size(21.dp),
+                    Text(
+                        text = "Close",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
                     )
+                }
+            } else {
+                Text(
+                    text = if (activeTarget.type == BitChordCodec.MediaType.ALBUM) {
+                        "Scan this code in BitChord to open the album"
+                    } else {
+                        "Scan this code in BitChord to play the song"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 4.dp),
+                )
+
+                BitChordCodeCard(
+                    target = activeTarget,
+                    levels = levels,
+                    isLoadingCode = resolvingCode && levels.isEmpty(),
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ShareAction(
+                        label = stringResource(R.string.save),
+                        icon = Icons.Rounded.Download,
+                        accent = false,
+                        enabled = canExport && !isSaving && !isSharing,
+                        plainFill = DrawerPlainFill,
+                        saved = saved,
+                        savedLabel = stringResource(R.string.saved_bang),
+                        busy = isSaving,
+                        busyLabel = stringResource(R.string.lyrics_share_saving),
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            haptics.play(Haptic.Tap)
+                            saved = false
+                            isSaving = true
+                            scope.launch {
+                                val bitmap = renderBitChordCodeBitmap(context, activeTarget, levels, glassActive)
+                                val ok = saveToGallery(context, bitmap, activeTarget.title, activeTarget.filePrefix)
+                                isSaving = false
+                                if (ok) {
+                                    saved = true
+                                } else {
+                                    Toast.makeText(context, "Failed to save", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                    )
+
+                    ShareAction(
+                        label = stringResource(R.string.share),
+                        icon = Icons.Rounded.IosShare,
+                        accent = true,
+                        enabled = canExport && !isSharing && !isSaving,
+                        busy = isSharing,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            haptics.play(Haptic.Tap)
+                            isSharing = true
+                            scope.launch {
+                                val bitmap = renderBitChordCodeBitmap(context, activeTarget, levels, glassActive)
+                                val uri = cacheForSharing(context, bitmap, "${activeTarget.filePrefix}.png")
+                                isSharing = false
+                                if (uri != null) {
+                                    val intent = sendIntent(uri)
+                                    context.startActivity(Intent.createChooser(intent, "BitChord Code"))
+                                } else {
+                                    Toast.makeText(context, "Could not create share image", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(DrawerPlainFill.copy(alpha = if (canExport) DrawerPlainFill.alpha else 0.04f))
+                            .clickable(enabled = canExport) {
+                                clipboard.setText(AnnotatedString(activeTarget.shareUrl))
+                                copied = true
+                                haptics.play(Haptic.Tap)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 15.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                            contentDescription = "Copy Link",
+                            tint = Color.White.copy(alpha = if (canExport) 1f else 0.4f),
+                            modifier = Modifier.size(21.dp),
+                        )
+                    }
                 }
             }
         }

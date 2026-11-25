@@ -261,6 +261,32 @@ class BitChordBarDetectorTest {
         assertNull("Random noise must never falsely decode", detected)
     }
 
+    @Test
+    fun testDetectorRejectsFlatUniformBars() {
+        val w = 800
+        val h = 400
+        val bg = 18.toByte()
+        val fg = 240.toByte()
+        val image = ByteArray(w * h) { bg }
+        val step = 12
+        val barWidth = 6
+        val startX = 120
+        val halfH = 18
+        val midY = h / 2
+        // 30 uniform-height picket fence bars must fail the anchor dynamic-range check
+        for (i in 0 until 30) {
+            val left = startX + i * step
+            for (y in (midY - halfH)..(midY + halfH)) {
+                val rowOffset = y * w
+                for (x in left until (left + barWidth)) {
+                    image[rowOffset + x] = fg
+                }
+            }
+        }
+        val detected = BitChordBarDetector.detect(image, w, h)
+        assertNull("Flat uniform bars must be rejected to prevent single-frame false decodes", detected)
+    }
+
     private fun renderSyntheticBarcode(
         levels: List<Int>,
         width: Int,
